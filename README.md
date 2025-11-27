@@ -1,6 +1,6 @@
-# LightningShop ⚡
+# BoltCanvas ⚡
 
-LightningShop is a small, opinionated art shop template:
+BoltCanvas is a small, opinionated shop template:
 
 - A clean public gallery where people can browse your products.
 - A simple admin area where you manage products, texts and orders.
@@ -16,7 +16,7 @@ To have an idea how it look, go here: [MaviLab](https://mavilab.art)
 
 ### Storefront
 
-The homepage is a simple grid of artworks with large images and clear prices.
+The homepage is a simple grid of items with large images and clear prices.
 
 ![Storefront](images/storefront.png)
 
@@ -49,7 +49,7 @@ Both paths end in the same “Payment received” page and the admin sees the or
 
 The admin lives at `/admin` and is protected by a simple PIN.
 
-- Add and edit artworks with multiple photos, prices and shipping presets.
+- Add and edit items with multiple photos, prices and shipping presets.
 - Reorder products with drag & drop.
 
 ![Add and edit products](images/addandeditproducts.png)
@@ -72,7 +72,7 @@ If you use Nostr, you can:
 
 - Show your npub and NIP-05 on the About page.
 - Log buyers in with Nostr so their carts and order history follow them.
-- Create and publish simple teaser posts for each artwork with one click.
+- Create and publish simple teaser posts for each item with one click.
 
 ![Nostr teaser helper](images/NOSTR-teaser.png)
 
