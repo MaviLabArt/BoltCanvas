@@ -1,0 +1,391 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+
+/* -------- Typography via CSS variables (admin-controlled) -------- */
+:root {
+  --font-display: "Space Grotesk", system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji","Segoe UI Emoji", "Segoe UI Symbol";
+  --font-body: "Inter", system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji","Segoe UI Emoji", "Segoe UI Symbol";
+}
+body { font-family: var(--font-body); }
+h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em; }
+
+/* Subtle grey-purple loading background (no disco animation) */
+.btn-loading {
+  /* base fallback color */
+  background-color: #3d3a56; /* muted grey-purple */
+  /* a very gentle vertical gradient for depth */
+  background-image: linear-gradient(180deg, rgba(99, 102, 241, 0.16), rgba(2, 6, 23, 0.25));
+  background-size: 100% 100%;
+  transition: background-color 200ms ease, opacity 200ms ease;
+}
+
+/* -------- Skeleton cards for Home grid -------- */
+.skel {
+  @apply rounded-3xl bg-slate-900 ring-1 ring-white/10 overflow-hidden;
+}
+.skel-img { @apply w-full aspect-[4/3] bg-slate-800; }
+.skel-line { @apply h-4 rounded bg-slate-800; }
+.skel-anim {
+  background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.06), rgba(255,255,255,0));
+  background-size: 200% 100%;
+  animation: skel 1.2s ease-in-out infinite;
+}
+@keyframes skel { 0%{background-position: 200% 0} 100%{background-position: -200% 0} }
+
+/* -------- Motion preferences -------- */
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+
+/* Safelist dynamic radius classes used via settings (Tailwind JIT keep) */
+.rounded-xl{}
+.rounded-2xl{}
+.rounded-3xl{}
+
+/* -------------------------------------------------------------------
+   Free shipping pill - theme aware
+   ------------------------------------------------------------------- */
+.free-shipping-pill {
+  background-color: #101437;
+  color: #e0f2fe;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+[data-theme='ember'] .free-shipping-pill {
+  background-color: rgba(249, 115, 22, 0.18);
+  color: #fed7aa;
+}
+
+.data-theme-fix{} /* noop holder to keep block structure */
+[data-theme='light'] .free-shipping-pill {
+  background-color: rgba(163, 104, 60, 0.16);
+  color: #6b3b1a;
+}
+
+/* View overlay pill: always use light text; tweak gradient in light theme */
+.view-pill {
+  color: #f9fafb;
+}
+[data-theme='light'] .view-pill {
+  background-image: linear-gradient(to top, rgba(31,27,22,0.72), transparent);
+}
+
+/* ===================================================================
+   EMBER NIGHT THEME (dark navy + orange accent)
+   -------------------------------------------------------------------
+   Activated when <html data-theme="ember"> is present.
+   Keeps a dark canvas but uses a deep blue-grey background and warm
+   orange accents inspired by the reference screenshot.
+   =================================================================== */
+
+:root {
+  --em-bg: #0b1018;         /* deep navy background */
+  --em-surface: #141a23;    /* primary card surface */
+  --em-surface2: #1b2230;   /* secondary surface */
+  --em-text: #f9fafb;       /* near-white text */
+  --em-muted: #cbd5f5;      /* soft desaturated blue-grey */
+  --em-border: #1f2937;     /* subtle border */
+  --em-accent: #f97316;     /* warm orange accent */
+  --em-accent-soft: rgba(249, 115, 22, 0.09);
+}
+
+[data-theme='ember'] {
+  color-scheme: dark;
+}
+
+[data-theme='ember'] body {
+  background-color: var(--em-bg);
+  color: var(--em-text);
+}
+
+/* Map common dark surfaces to Ember tones */
+[data-theme='ember'] .bg-slate-950 { background-color: var(--em-bg) !important; }
+[data-theme='ember'] .bg-slate-900 { background-color: var(--em-surface) !important; }
+[data-theme='ember'] .bg-slate-800 { background-color: var(--em-surface2) !important; }
+
+/* Subtle header glass on dark navy */
+[data-theme='ember'] .bg-black\/20 {
+  background-color: rgba(7, 10, 18, 0.65) !important;
+}
+
+/* Rings & borders softened */
+[data-theme='ember'] .ring-white\/10,
+[data-theme='ember'] .ring-white\/15,
+[data-theme='ember'] .ring-white\/20 {
+  --tw-ring-color: var(--em-border) !important;
+}
+[data-theme='ember'] .border-white\/10,
+[data-theme='ember'] .border-white\/20 {
+  border-color: var(--em-border) !important;
+}
+
+/* Text utilities stay mostly white; nudge "muted" tones toward blue-grey */
+[data-theme='ember'] .text-white\/80,
+[data-theme='ember'] .text-white\/70,
+[data-theme='ember'] .text-white\/60,
+[data-theme='ember'] .text-white\/50,
+[data-theme='ember'] .text-white\/40 {
+  color: var(--em-muted) !important;
+}
+
+/* Accent buttons / links: swap indigo for warm orange */
+[data-theme='ember'] .bg-indigo-500\/90,
+[data-theme='ember'] .bg-indigo-500\/80,
+[data-theme='ember'] .hover\:bg-indigo-500:hover {
+  background-color: var(--em-accent) !important;
+  color: #ffffff !important;
+}
+[data-theme='ember'] .bg-indigo-500\/70,
+[data-theme='ember'] .bg-indigo-500\/60 {
+  background-color: var(--em-accent) !important;
+  color: #ffffff !important;
+}
+[data-theme='ember'] .bg-indigo-500\/15 {
+  background-color: var(--em-accent-soft) !important;
+  color: var(--em-accent) !important;
+}
+[data-theme='ember'] .text-indigo-100,
+[data-theme='ember'] .text-indigo-200,
+[data-theme='ember'] .text-indigo-200\/80 {
+  color: var(--em-accent) !important;
+}
+[data-theme='ember'] .bg-indigo-400 {
+  background-color: var(--em-accent) !important;
+}
+
+/* Skeleton cards in Ember theme */
+[data-theme='ember'] .skel {
+  background-color: var(--em-surface) !important;
+  box-shadow: inset 0 0 0 1px rgba(15,23,42,0.65);
+}
+[data-theme='ember'] .skel-img,
+[data-theme='ember'] .skel-line {
+  background-color: var(--em-surface2) !important;
+}
+
+/* Loading button tone in Ember */
+[data-theme='ember'] .btn-loading {
+  background-color: #1e2534;
+  background-image: linear-gradient(180deg, rgba(249, 115, 22, 0.22), rgba(7, 10, 18, 0.6));
+}
+
+/* Footer + small pills remain readable on navy */
+[data-theme='ember'] footer {
+  border-color: var(--em-border) !important;
+}
+
+/* ===================================================================
+   LIGHT ATELIER THEME (beige) - runtime, no Tailwind rebuild needed
+   -------------------------------------------------------------------
+   We override common Tailwind utility colors used in the app when
+   <html data-theme="light"> is present. Dark stays exactly as-is.
+   =================================================================== */
+
+/* Tokens for Light Atelier */
+:root {
+  --lt-bg: #F5EFE6;        /* warm beige */
+  --lt-surface: #FFFBF5;   /* off-white card */
+  --lt-surface2: #F2E9DF;  /* pale almond */
+  --lt-text: #1F1B16;      /* rich charcoal */
+  --lt-muted: #6F655C;     /* warm gray */
+  --lt-border: #E8DFD6;    /* linen */
+  --lt-ring: #D9CFC5;      /* sand */
+  --lt-accent: #A3683C;    /* cocoa/terracotta */
+  --lt-accent-hover: #8F5C36;
+}
+
+[data-theme='light'] { color-scheme: light; }
+
+/* Base canvas & default text */
+[data-theme='light'] body {
+  background-color: var(--lt-bg);
+  color: var(--lt-text);
+}
+
+/* Ensure headings/subheadings readable on beige */
+[data-theme='light'] h1,
+[data-theme='light'] h2,
+[data-theme='light'] h3,
+[data-theme='light'] h4,
+[data-theme='light'] .heading {
+  color: var(--lt-text) !important;
+}
+
+/* Map dark surfaces to light ones */
+[data-theme='light'] .bg-slate-950 { background-color: var(--lt-bg) !important; }
+[data-theme='light'] .bg-slate-950\/90,
+[data-theme='light'] .bg-slate-950\/80 { background-color: rgba(245, 239, 230, 0.88) !important; }
+[data-theme='light'] .bg-slate-900 { background-color: var(--lt-surface) !important; }
+[data-theme='light'] .bg-slate-900\/95 { background-color: rgba(255, 251, 245, 0.95) !important; }
+[data-theme='light'] .bg-slate-900\/80,
+[data-theme='light'] .bg-slate-900\/70 { background-color: rgba(255, 251, 245, 0.82) !important; }
+[data-theme='light'] .bg-slate-800 { background-color: var(--lt-surface2) !important; }
+[data-theme='light'] .bg-slate-800\/70 { background-color: rgba(242, 233, 223, 0.7) !important; }
+
+/* Header translucency */
+[data-theme='light'] .bg-black\/20 { background-color: rgba(0,0,0,0.06) !important; }
+[data-theme='light'] .supports-\[backdrop-filter\]\:bg-white\/5 { background-color: rgba(255,255,255,0.55) !important; }
+
+/* Rings & borders */
+[data-theme='light'] .ring-white\/10,
+[data-theme='light'] .ring-white\/15,
+[data-theme='light'] .ring-white\/20 { --tw-ring-color: var(--lt-border) !important; }
+[data-theme='light'] .border-white\/10,
+[data-theme='light'] .border-white\/20 { border-color: var(--lt-border) !important; }
+
+/* -------------------------------------------------------------------
+   TEXT: convert any "white text" utilities to dark text in Light Atelier
+   Covers titles, buttons, footers, totals, labels, QR modal, etc.
+   ------------------------------------------------------------------- */
+
+/* Plain white and near-white text */
+[data-theme='light'] .text-white        { color: var(--lt-text) !important; }
+[data-theme='light'] .text-white\/95    { color: var(--lt-text) !important; }
+[data-theme='light'] .text-white\/90    { color: var(--lt-text) !important; }
+[data-theme='light'] .text-white\/85    { color: var(--lt-text) !important; }
+
+/* Keep these mappings for “muted” tints */
+[data-theme='light'] .text-white\/80 { color: var(--lt-muted) !important; }
+[data-theme='light'] .text-white\/70 { color: var(--lt-muted) !important; opacity: 0.95; }
+[data-theme='light'] .text-white\/60 { color: var(--lt-muted) !important; opacity: 0.85; }
+[data-theme='light'] .text-white\/50 { color: var(--lt-muted) !important; opacity: 0.8; }
+[data-theme='light'] .text-white\/40 { color: var(--lt-muted) !important; opacity: 0.65; }
+[data-theme='light'] .text-white\/30 { color: var(--lt-muted) !important; opacity: 0.55; }
+[data-theme='light'] .text-white\/20 { color: var(--lt-muted) !important; opacity: 0.45; }
+[data-theme='light'] .text-white\/10 { color: var(--lt-muted) !important; opacity: 0.35; }
+
+/* Common grey/near-white aliases sometimes used by components */
+[data-theme='light'] .text-slate-50,
+[data-theme='light'] .text-gray-50,
+[data-theme='light'] .text-zinc-50,
+[data-theme='light'] .text-neutral-50,
+[data-theme='light'] .text-stone-50,
+[data-theme='light'] .text-slate-100,
+[data-theme='light'] .text-gray-100,
+[data-theme='light'] .text-zinc-100,
+[data-theme='light'] .text-neutral-100,
+[data-theme='light'] .text-stone-100 {
+  color: var(--lt-text) !important;
+}
+
+/* Links & inline actions (e.g., "Read more", back links) default to dark */
+[data-theme='light'] a:not(.no-theme-color) {
+  color: var(--lt-text);
+}
+[data-theme='light'] a:hover:not(.no-theme-color) {
+  opacity: 0.9;
+}
+
+/* Placeholders (e.g., "Contact (at least one)", "Notes (Optional)") */
+[data-theme='light'] ::placeholder {
+  color: var(--lt-muted);
+  opacity: 1;
+}
+
+/* Icon strokes/fills that were forced white */
+[data-theme='light'] .fill-white  { fill:  var(--lt-text) !important; }
+[data-theme='light'] .stroke-white{ stroke: var(--lt-text) !important; }
+
+/* -------------------------------------------------------------------
+   BUTTONS
+   ------------------------------------------------------------------- */
+
+/* Neutral buttons that relied on dark surfaces now become light,
+   so ensure label text is dark */
+[data-theme='light'] .bg-slate-900,
+[data-theme='light'] .bg-slate-950 {
+  color: var(--lt-text) !important;
+}
+
+/* Accent buttons (brownish background in Light Atelier):
+   keep the warm cocoa background AND make the label WHITE. */
+[data-theme='light'] .bg-indigo-500\/90,
+[data-theme='light'] .bg-indigo-500\/80,
+[data-theme='light'] .hover\:bg-indigo-500:hover {
+  background-color: var(--lt-accent) !important;
+  color: #ffffff !important; /* white label on brownish background */
+}
+[data-theme='light'] .bg-indigo-500\/70,
+[data-theme='light'] .bg-indigo-500\/60 {
+  background-color: var(--lt-accent) !important;
+  color: #ffffff !important;
+}
+[data-theme='light'] .bg-indigo-500\/15 {
+  background-color: rgba(163, 104, 60, 0.16) !important;
+  color: var(--lt-accent) !important;
+}
+[data-theme='light'] .text-indigo-100,
+[data-theme='light'] .text-indigo-200,
+[data-theme='light'] .text-indigo-200\/80 {
+  color: var(--lt-accent) !important;
+}
+
+/* The little ping dot on Cart keeps the accent tone */
+[data-theme='light'] .bg-indigo-400 { background-color: var(--lt-accent) !important; }
+
+/* Skeleton tweaks in light theme */
+[data-theme='light'] .skel {
+  background-color: var(--lt-surface) !important;
+  box-shadow: inset 0 0 0 1px var(--lt-border);
+}
+[data-theme='light'] .skel-img,
+[data-theme='light'] .skel-line {
+  background-color: var(--lt-surface2) !important;
+}
+
+/* Loading button tone in light mode */
+[data-theme='light'] .btn-loading {
+  background-color: #E5D8C7;
+  background-image: linear-gradient(180deg, rgba(163, 104, 60, 0.12), rgba(31, 27, 22, 0.05));
+}
+
+/* -------------------------------------------------------------------
+   Product card price pill inside dark bubble (Home): keep text WHITE
+   ------------------------------------------------------------------- */
+[data-theme='light'] .bg-black\/55.backdrop-blur.ring-white\/20 {
+  color: #ffffff !important;
+}
+[data-theme='light'] .bg-black\/60 { background-color: rgba(31, 27, 22, 0.28) !important; }
+[data-theme='light'] .bg-black\/40 { background-color: rgba(31, 27, 22, 0.18) !important; }
+[data-theme='light'] .bg-black\/30 { background-color: rgba(31, 27, 22, 0.12) !important; }
+[data-theme='light'] .bg-black\/20 { background-color: rgba(31, 27, 22, 0.08) !important; }
+[data-theme='light'] .bg-black\/10 { background-color: rgba(31, 27, 22, 0.04) !important; }
+
+/* Light Atelier: keep lightbox arrows and zoom indicator readable */
+[data-theme='light'] .lightbox-arrow {
+  background-color: rgba(31, 27, 22, 0.85) !important;
+  color: #f9fafb !important;
+}
+[data-theme='light'] .zoom-indicator-pill {
+  background-color: rgba(31, 27, 22, 0.9) !important;
+  color: #f9fafb !important;
+  border-color: rgba(31, 27, 22, 0.96) !important;
+}
+
+[data-theme='light'] .sold-pill,
+[data-theme='light'] .sold-overlay {
+  background-color: rgba(31, 27, 22, 0.85) !important;
+  color: #f9fafb !important;
+  border-color: rgba(31, 27, 22, 0.96) !important;
+}
+
+[data-theme='light'] .bg-slate-900\/95.px-4.py-3 {
+  color: var(--lt-text) !important;
+  box-shadow: 0 24px 60px rgba(163, 104, 60, 0.18) !important;
+}
+[data-theme='light'] .bg-slate-900\/95.px-4.py-3 .text-white {
+  color: var(--lt-text) !important;
+}
+[data-theme='light'] .bg-slate-900\/95.px-4.py-3 .text-white\/60 {
+  color: var(--lt-muted) !important;
+}
+[data-theme='light'] .bg-slate-900\/95.px-4.py-3 .bg-slate-800 {
+  background-color: rgba(242, 233, 223, 0.92) !important;
+  color: var(--lt-muted) !important;
+}
+[data-theme='light'] .bg-slate-900\/95.px-4.py-3 img {
+  background-color: rgba(0, 0, 0, 0.08) !important;
+}
