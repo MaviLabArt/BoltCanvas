@@ -5,8 +5,8 @@ BoltCanvas is a small, opinionated shop template:
 - A clean public gallery where people can browse your products.
 - A simple admin area where you manage products, texts and orders.
 - Bitcoin-only payments in **sats** (Blink or LND), with the option to let buyers pay **on-chain** while you still receive Lightning.
-- **on-chain** payments settle via lightning through BOLTZ. But once set up, neither you nor your 
-- **extremely** lightweight.
+- on-chain payments settle via lightning through BOLTZ. But once set up, neither you nor your users will notice it. Regardless to what user chooses, you just receive payment lightning.
+- **extreemely** lightweight.
 
 To have an idea how it look, go here: [MaviLab](https://mavilab.art)
 
