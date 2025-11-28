@@ -4,9 +4,9 @@ BoltCanvas is a small, opinionated shop template:
 
 - A clean public gallery where people can browse your products.
 - A simple admin area where you manage products, texts and orders.
-- Bitcoin-only payments in **sats** (Blink or LND), with the option to let buyers pay **on-chain** while you still receive Lightning.
-- on-chain payments settle via lightning through BOLTZ. But once set up, neither you nor your users will notice it. Regardless to what user chooses, you just receive payment lightning.
-- **extreemely** lightweight.
+- Bitcoin-only payments in **sats** (Blink, LND, or BTCPay Server), with the option to let buyers pay **on-chain** while you still receive Lightning.
+- **on-chain** payments settle via lightning through BOLTZ. But once set up, neither you nor your users will even notice... Unless BTCPayserver is set and in that case they will settle onchain normally.
+- **extremely** lightweight.
 
 To have an idea how it look, go here: [MaviLab](https://mavilab.art)
 
@@ -16,7 +16,7 @@ To have an idea how it look, go here: [MaviLab](https://mavilab.art)
 
 ### Storefront
 
-The homepage is a simple grid of items with large images and clear prices.
+The homepage is a simple grid of artworks with large images and clear prices.
 
 ![Storefront](images/storefront.png)
 
@@ -35,7 +35,7 @@ The “About” page is fully editable from the admin: photo, text, contact note
 At checkout, buyers choose how to pay:
 
 - **Lightning** – QR + BOLT11 invoice, with live status until paid or expired.
-- **On-chain (Boltz)** – a single Bitcoin address and amount; as soon as the transaction appears in mempool and confirms, the Lightning invoice is paid in the background and the order is marked as paid.
+- **On-chain** – a single Bitcoin address and amount; as soon as the transaction appears in mempool and confirms, the Lightning invoice is paid in the background and the order is marked as paid.
 
 ![Pay with Lightning](images/paywithlightning.png)
 
@@ -49,7 +49,7 @@ Both paths end in the same “Payment received” page and the admin sees the or
 
 The admin lives at `/admin` and is protected by a simple PIN.
 
-- Add and edit items with multiple photos, prices and shipping presets.
+- Add and edit artworks with multiple photos, prices and shipping presets.
 - Reorder products with drag & drop.
 
 ![Add and edit products](images/addandeditproducts.png)
@@ -72,7 +72,7 @@ If you use Nostr, you can:
 
 - Show your npub and NIP-05 on the About page.
 - Log buyers in with Nostr so their carts and order history follow them.
-- Create and publish simple teaser posts for each item with one click.
+- Create and publish simple teaser posts for each artwork with one click.
 
 ![Nostr teaser helper](images/NOSTR-teaser.png)
 
@@ -82,17 +82,13 @@ All the Nostr parts are optional; if you don’t configure them, the shop still 
 
 ## How payments work
 
-- **Lightning (Blink or LND)**  
+- **Lightning (Blink, LND, or BTCPay Server)**  
   When a buyer checks out, the server creates a Lightning invoice in sats.  
   The checkout page shows a QR and tracks the invoice until it is paid or expires.
 
-- **On-chain via Boltz (Submarine swap)**  
-  For buyers who prefer on-chain:
-  1. The shop still creates a normal Lightning invoice in the background.
-  2. A Boltz “Submarine swap” turns that invoice into a one-time Bitcoin address and amount.
-  3. The buyer sends a single on-chain payment to that address.
-  4. As soon as the transaction hits mempool and then confirms, Boltz pays your Lightning invoice.
-  5. The order flips to PAID, the item is marked SOLD, and your “Payment received” page appears.
+- **On-chain**  
+  - **BTCPay Server:** creates a native on-chain invoice (BIP21) and tracks mempool → confirmation directly in BTCPay.  
+  - **Blink/LND:** uses Boltz “Submarine swaps” to turn the Lightning invoice into a one-time Bitcoin address/amount. Boltz pays your Lightning invoice once the on-chain tx confirms.
 
 From the buyer’s point of view: Lightning is instant; on-chain shows a mempool/confirmation progress and then the same receipt.
 
@@ -104,6 +100,8 @@ From the buyer’s point of view: Lightning is instant; on-chain shows a mempool
 - One of:
   - A **Blink** account (recommended): API key can be generated here [Create a Blink API key](https://dashboard.blink.sv/api-keys) . 
   - Your own **LND** node: REST URL + macaroon + TLS details (for expert and self sovreign users 💪).
+  - A **BTCPay Server** store: Greenfield API key, Store ID, and a webhook secret.
+  - If you change the webhook path, set `BTCPAY_WEBHOOK_PATH` (default is `/api/webhooks/btcpay`).
 - Optional:
   - SMTP/IMAP for email updates.
   - Nostr keys if you want Nostr features.

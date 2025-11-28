@@ -23,9 +23,11 @@ import {
   subscribeBoltzSwapStatus,
   boltzSwapStatus,
   startPaymentWatcher,
-  PAYMENT_PROVIDER
+  PAYMENT_PROVIDER,
+  emitBtcpayStatus
 } from "./pay.js";
 import * as boltz from "./boltz.js";
+import * as btcpay from "./btcpay.js";
 
 // NEW: Nostr helpers
 import {
@@ -63,6 +65,16 @@ const BLINK_WS_URL = process.env.BLINK_WS_URL || "wss://ws.blink.sv/graphql";
 const BLINK_API_KEY = process.env.BLINK_API_KEY;
 const BLINK_BTC_WALLET_ID = process.env.BLINK_BTC_WALLET_ID || "";
 
+// BTCPay-specific env (used when PAYMENT_PROVIDER === "btcpay")
+const BTCPAY_URL = (process.env.BTCPAY_URL || "").replace(/\/+$/, "");
+const BTCPAY_API_KEY = process.env.BTCPAY_API_KEY || "";
+const BTCPAY_STORE_ID = process.env.BTCPAY_STORE_ID || "";
+const BTCPAY_WEBHOOK_SECRET = process.env.BTCPAY_WEBHOOK_SECRET || "";
+const BTCPAY_WEBHOOK_PATH = (() => {
+  const raw = process.env.BTCPAY_WEBHOOK_PATH || "/api/webhooks/btcpay";
+  return raw.startsWith("/") ? raw : `/${raw}`;
+})();
+
 // On-chain toggle + thresholds
 const ONCHAIN_ENABLED = String(process.env.ONCHAIN_ENABLED || "true").toLowerCase() === "true";
 const ONCHAIN_MIN_SATS = Math.max(0, Number(process.env.ONCHAIN_MIN_SATS || 0));
@@ -95,6 +107,23 @@ const NTFY_TITLE_PREFIX = process.env.NTFY_TITLE_PREFIX || "";
 
 // A small in-memory guard to avoid duplicate notifies for the same payment
 const notifiedHashes = new Set();
+
+function verifyBtcpaySignature(rawBody, sigHeader, secret) {
+  if (!sigHeader || !secret) return false;
+  const prefix = "sha256=";
+  if (!sigHeader.startsWith(prefix)) return false;
+  const provided = sigHeader.slice(prefix.length);
+  const hmac = crypto.createHmac("sha256", secret);
+  hmac.update(rawBody || "", "utf8");
+  const expected = hmac.digest("hex");
+  try {
+    const a = Buffer.from(provided, "hex");
+    const b = Buffer.from(expected, "hex");
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
 
 function normalizeShippingZones(zones) {
   const arr = Array.isArray(zones) ? zones : [];
@@ -129,6 +158,9 @@ function resolveZonePriceForProduct(zone, product) {
 
 if (PAYMENT_PROVIDER === "blink" && !BLINK_API_KEY) {
   console.warn("[WARN] BLINK_API_KEY is empty. Set it in server/.env (or switch PAYMENT_PROVIDER).");
+}
+if (PAYMENT_PROVIDER === "btcpay" && (!BTCPAY_API_KEY || !BTCPAY_URL || !BTCPAY_STORE_ID)) {
+  console.warn("[WARN] BTCPAY_URL/BTCPAY_API_KEY/BTCPAY_STORE_ID missing. Set them in server/.env.");
 }
 
 // ---------------------------------------------------------------------
@@ -677,8 +709,13 @@ app.get("/api/health", (req, res) => res.json({ ok: true }));
 app.get("/api/public-settings", (req, res) => res.json(Settings.getPublic()));
 app.get("/api/payments/config", (req, res) => {
   res.json({
+    provider: PAYMENT_PROVIDER,
     onchainEnabled: ONCHAIN_ENABLED,
     onchainMinSats: ONCHAIN_MIN_SATS,
+    btcpayModalUrl:
+      PAYMENT_PROVIDER === "btcpay" && BTCPAY_URL
+        ? `${BTCPAY_URL}/modal/btcpay.js`
+        : "",
     boltz: {
       rest: BOLTZ_REST_URL,
       ws: BOLTZ_WS_URL,
@@ -1359,6 +1396,12 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
             apiKey: BLINK_API_KEY,
             explicitWalletId: BLINK_BTC_WALLET_ID || undefined
           }
+        : PAYMENT_PROVIDER === "btcpay"
+          ? {
+              url: BTCPAY_URL,
+              apiKey: BTCPAY_API_KEY,
+              explicitStoreId: BTCPAY_STORE_ID || undefined
+            }
         : {}
     );
 
@@ -1366,6 +1409,7 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
     const { storeName } = Settings.getAll();
     const firstTitle = loaded[0]?.title || "";
     const memo = `Order ${storeName || "Lightning Art"} ${firstTitle}`.trim();
+    const orderRef = memo;
 
     let inv;
     if (paymentMethod === "onchain") {
@@ -1378,6 +1422,16 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
               amount: total,
               memo,
               webhookUrl: BOLTZ_WEBHOOK_URL || undefined,
+              expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
+            }
+          : PAYMENT_PROVIDER === "btcpay"
+            ? {
+                url: BTCPAY_URL,
+                apiKey: BTCPAY_API_KEY,
+              walletId,
+              amount: total,
+              memo,
+              orderRef,
               expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
             }
           : {
@@ -1397,6 +1451,15 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
               walletId,
               amount: total,
               memo
+            }
+          : PAYMENT_PROVIDER === "btcpay"
+            ? {
+                url: BTCPAY_URL,
+                apiKey: BTCPAY_API_KEY,
+              walletId,
+              amount: total,
+              memo,
+              orderRef
             }
           : {
               amount: total,
@@ -1451,7 +1514,9 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
       onchainAddress: inv.onchainAddress || "",
       onchainAmountSats: inv.onchainAmountSats || 0,
       onchainBip21: inv.bip21 || "",
-      onchainTimeoutBlockHeight: inv.timeoutBlockHeight || 0
+      onchainTimeoutBlockHeight: inv.timeoutBlockHeight || 0,
+      checkoutLink: inv.checkoutLink || "",
+      invoiceId: inv.invoiceId || ""
     });
   } catch (e) {
     console.error("create-invoice error:", e?.message || e);
@@ -1477,6 +1542,12 @@ app.post("/api/zaps/create-invoice", async (req, res) => {
             apiKey: BLINK_API_KEY,
             explicitWalletId: BLINK_BTC_WALLET_ID || undefined
           }
+        : PAYMENT_PROVIDER === "btcpay"
+          ? {
+              url: BTCPAY_URL,
+              apiKey: BTCPAY_API_KEY,
+              explicitStoreId: BTCPAY_STORE_ID || undefined
+            }
         : {}
     );
 
@@ -1495,10 +1566,19 @@ app.post("/api/zaps/create-invoice", async (req, res) => {
             amount: sats,
             memo
           }
-        : {
-            amount: sats,
-            memo
-          }
+        : PAYMENT_PROVIDER === "btcpay"
+          ? {
+              url: BTCPAY_URL,
+              apiKey: BTCPAY_API_KEY,
+              walletId,
+              amount: sats,
+              memo,
+              orderRef: firstTitle || undefined
+            }
+          : {
+              amount: sats,
+              memo
+            }
     );
 
     res.json({
@@ -1555,6 +1635,8 @@ app.get("/api/invoices/:hash/status", async (req, res) => {
     const args =
       PAYMENT_PROVIDER === "blink"
         ? { url: BLINK_GRAPHQL_URL, apiKey: BLINK_API_KEY, paymentHash: req.params.hash }
+        : PAYMENT_PROVIDER === "btcpay"
+          ? { url: BTCPAY_URL, apiKey: BTCPAY_API_KEY, paymentHash: req.params.hash, walletId: { storeId: BTCPAY_STORE_ID } }
         : { paymentHash: req.params.hash };
 
     const status = await invoiceStatus(args);
@@ -1597,6 +1679,43 @@ app.get("/api/onchain/:swapId/status", async (req, res) => {
       return res.json({
         status: "PAID",
         rawStatus: order.boltzStatus || "invoice.paid",
+        onchainAddress: order.boltzAddress || "",
+        onchainAmountSats: order.boltzExpectedAmountSats || 0,
+        timeoutBlockHeight: order.boltzTimeoutBlockHeight || 0
+      });
+    }
+
+    if (PAYMENT_PROVIDER === "btcpay") {
+      const inv = await btcpay.getInvoice({
+        url: BTCPAY_URL,
+        apiKey: BTCPAY_API_KEY,
+        storeId: BTCPAY_STORE_ID,
+        invoiceId: swapId
+      });
+      const raw = String(inv?.status || "");
+      const mapped = (() => {
+        const st = raw.toLowerCase();
+        if (st === "settled") return "CONFIRMED";
+        if (st === "processing") return "MEMPOOL";
+        if (st === "expired" || st === "invalid") return "EXPIRED";
+        return "PENDING";
+      })();
+
+      if (mapped === "CONFIRMED") {
+        const updated = Orders.markPaidByHash(order.paymentHash);
+        if (updated?.items?.length) {
+          for (const it of updated.items) Products.markSold(it.productId);
+        }
+        notifyPaidOnce(updated);
+        try { await dmOrderUpdate(updated, "PAID"); } catch {}
+        try { await sendOrderStatusEmail(updated, "PAID"); } catch {}
+      } else if (mapped === "EXPIRED" && order.status === "PENDING") {
+        Orders.remove(order.id);
+      }
+
+      return res.json({
+        status: mapped,
+        rawStatus: raw,
         onchainAddress: order.boltzAddress || "",
         onchainAmountSats: order.boltzExpectedAmountSats || 0,
         timeoutBlockHeight: order.boltzTimeoutBlockHeight || 0
@@ -1703,7 +1822,10 @@ app.get("/api/onchain/:swapId/stream", async (req, res) => {
     if (closed) return;
     closed = true;
     clearInterval(hb);
-    try { unsub?.(); } catch {}
+    try {
+      if (typeof unsub === "function") unsub();
+      else if (unsub) clearInterval(unsub);
+    } catch {}
     try { res.end(); } catch {}
   };
 
@@ -1717,15 +1839,43 @@ app.get("/api/onchain/:swapId/stream", async (req, res) => {
       timeoutBlockHeight: swapPayload?.timeoutBlockHeight ?? freshOrder.boltzTimeoutBlockHeight
     };
     send(payload);
-    await handleBoltzStatusSideEffects({ swapId, mappedStatus, rawStatus });
+    if (PAYMENT_PROVIDER !== "btcpay") {
+      await handleBoltzStatusSideEffects({ swapId, mappedStatus, rawStatus });
+    } else {
+      if (mappedStatus === "CONFIRMED") {
+        const updated = Orders.markPaidByHash(freshOrder.paymentHash);
+        if (updated?.items?.length) {
+          for (const it of updated.items) Products.markSold(it.productId);
+        }
+        notifyPaidOnce(updated);
+        try { await dmOrderUpdate(updated, "PAID"); } catch {}
+        try { await sendOrderStatusEmail(updated, "PAID"); } catch {}
+      }
+      if (mappedStatus === "EXPIRED") {
+        const pending = Orders.bySwapId(swapId);
+        if (pending && pending.status === "PENDING") {
+          Orders.remove(pending.id);
+        }
+      }
+    }
 
     const latest = Orders.bySwapId(swapId) || freshOrder;
-    if (BOLTZ_FINAL_STATUSES.has(mappedStatus) || String(latest.status || "").toUpperCase() === "PAID") {
-      // Ensure final PAID is sent before closing
-      if (String(latest.status || "").toUpperCase() === "PAID" && mappedStatus !== "PAID") {
-        send({ ...payload, status: "PAID", rawStatus: rawStatus || "invoice.paid" });
+    const alreadyPaid = String(latest.status || "").toUpperCase() === "PAID";
+    if (PAYMENT_PROVIDER === "btcpay") {
+      if (mappedStatus === "CONFIRMED" || mappedStatus === "EXPIRED" || alreadyPaid) {
+        if (alreadyPaid && mappedStatus !== "CONFIRMED") {
+          send({ ...payload, status: "CONFIRMED", rawStatus: rawStatus || "invoice.paid" });
+        }
+        closeAll();
       }
-      closeAll();
+    } else {
+      if (BOLTZ_FINAL_STATUSES.has(mappedStatus) || alreadyPaid) {
+        // Ensure final PAID is sent before closing
+        if (alreadyPaid && mappedStatus !== "PAID") {
+          send({ ...payload, status: "PAID", rawStatus: rawStatus || "invoice.paid" });
+        }
+        closeAll();
+      }
     }
   };
 
@@ -1742,44 +1892,104 @@ app.get("/api/onchain/:swapId/stream", async (req, res) => {
       return closeAll();
     }
 
-    const prime = await boltzSwapStatus({ swapId });
-    await emitAndHandle({
-      mappedStatus: prime.mappedStatus,
-      rawStatus: prime.swap?.status || "",
-      swapPayload: {
-        onchainAddress: prime.onchainAddress,
-        onchainAmountSats: prime.onchainAmountSats,
-        timeoutBlockHeight: prime.timeoutBlockHeight
-      }
-    });
-    if (BOLTZ_FINAL_STATUSES.has(prime.mappedStatus)) return;
+    if (PAYMENT_PROVIDER === "btcpay") {
+      const inv = await btcpay.getInvoice({
+        url: BTCPAY_URL,
+        apiKey: BTCPAY_API_KEY,
+        storeId: BTCPAY_STORE_ID,
+        invoiceId: swapId
+      });
+      const raw = String(inv?.status || "");
+      const mapped = (() => {
+        const st = raw.toLowerCase();
+        if (st === "settled") return "CONFIRMED";
+        if (st === "processing") return "MEMPOOL";
+        if (st === "expired" || st === "invalid") return "EXPIRED";
+        return "PENDING";
+      })();
+      await emitAndHandle({
+        mappedStatus: mapped,
+        rawStatus: raw,
+        swapPayload: {
+          onchainAddress: order.boltzAddress,
+          onchainAmountSats: order.boltzExpectedAmountSats,
+          timeoutBlockHeight: order.boltzTimeoutBlockHeight
+        }
+      });
+      if (mapped === "CONFIRMED" || mapped === "EXPIRED") return;
+    } else {
+      const prime = await boltzSwapStatus({ swapId });
+      await emitAndHandle({
+        mappedStatus: prime.mappedStatus,
+        rawStatus: prime.swap?.status || "",
+        swapPayload: {
+          onchainAddress: prime.onchainAddress,
+          onchainAmountSats: prime.onchainAmountSats,
+          timeoutBlockHeight: prime.timeoutBlockHeight
+        }
+      });
+      if (BOLTZ_FINAL_STATUSES.has(prime.mappedStatus)) return;
+    }
   } catch {
     // ignore prime failure; SSE will still start
   }
 
-  unsub = subscribeBoltzSwapStatus({
-    swapId,
-    onUpdate: async ({ swap, rawStatus, mappedStatus }) => {
-      const { onchainAddress, onchainAmountSats, timeoutBlockHeight } = (() => {
-        const addr = swap?.lockupAddress || swap?.address || order.boltzAddress || "";
-        const amt = Math.max(
-          0,
-          Math.floor(Number((swap?.expectedAmount ?? swap?.expected ?? order.boltzExpectedAmountSats ?? 0)))
-        );
-        const timeout = Math.max(
-          0,
-          Math.floor(Number((swap?.timeoutBlockHeight ?? swap?.lockupTimeoutBlock ?? order.boltzTimeoutBlockHeight ?? 0)))
-        );
-        return { onchainAddress: addr, onchainAmountSats: amt, timeoutBlockHeight: timeout };
-      })();
+  if (PAYMENT_PROVIDER === "btcpay") {
+    // simple polling fallback for BTCPay on-chain status
+    unsub = setInterval(async () => {
+      try {
+        const inv = await btcpay.getInvoice({
+          url: BTCPAY_URL,
+          apiKey: BTCPAY_API_KEY,
+          storeId: BTCPAY_STORE_ID,
+          invoiceId: swapId
+        });
+        const raw = String(inv?.status || "");
+        const mapped = (() => {
+          const st = raw.toLowerCase();
+          if (st === "settled") return "CONFIRMED";
+          if (st === "processing") return "MEMPOOL";
+          if (st === "expired" || st === "invalid") return "EXPIRED";
+          return "PENDING";
+        })();
+        await emitAndHandle({
+          mappedStatus: mapped,
+          rawStatus: raw,
+          swapPayload: {
+            onchainAddress: order.boltzAddress,
+            onchainAmountSats: order.boltzExpectedAmountSats,
+            timeoutBlockHeight: order.boltzTimeoutBlockHeight
+          }
+        });
+      } catch {
+        // ignore and continue
+      }
+    }, 5000);
+  } else {
+    unsub = subscribeBoltzSwapStatus({
+      swapId,
+      onUpdate: async ({ swap, rawStatus, mappedStatus }) => {
+        const { onchainAddress, onchainAmountSats, timeoutBlockHeight } = (() => {
+          const addr = swap?.lockupAddress || swap?.address || order.boltzAddress || "";
+          const amt = Math.max(
+            0,
+            Math.floor(Number((swap?.expectedAmount ?? swap?.expected ?? order.boltzExpectedAmountSats ?? 0)))
+          );
+          const timeout = Math.max(
+            0,
+            Math.floor(Number((swap?.timeoutBlockHeight ?? swap?.lockupTimeoutBlock ?? order.boltzTimeoutBlockHeight ?? 0)))
+          );
+          return { onchainAddress: addr, onchainAmountSats: amt, timeoutBlockHeight: timeout };
+        })();
 
-      await emitAndHandle({
-        mappedStatus,
-        rawStatus,
-        swapPayload: { onchainAddress, onchainAmountSats, timeoutBlockHeight }
-      });
-    }
-  });
+        await emitAndHandle({
+          mappedStatus,
+          rawStatus,
+          swapPayload: { onchainAddress, onchainAmountSats, timeoutBlockHeight }
+        });
+      }
+    });
+  }
 
   req.on("close", () => closeAll());
 });
@@ -1812,6 +2022,61 @@ app.post("/api/webhooks/boltz", async (req, res) => {
     console.warn("[boltz webhook] error:", e?.message || e);
   }
   res.status(204).end();
+});
+
+// ---------------------------------------------------------------------
+// BTCPay webhook (Lightning + on-chain)
+// ---------------------------------------------------------------------
+app.post(BTCPAY_WEBHOOK_PATH, async (req, res) => {
+  try {
+    if (PAYMENT_PROVIDER !== "btcpay") {
+      return res.status(503).json({ error: "PAYMENT_PROVIDER is not btcpay" });
+    }
+    if (!BTCPAY_WEBHOOK_SECRET) {
+      return res.status(503).json({ error: "BTCPAY_WEBHOOK_SECRET not configured" });
+    }
+    const rawBody = req.rawBody;
+    const sig = req.headers?.["btcpay-sig"] || req.headers?.["BTCPay-Sig"];
+    if (!rawBody) {
+      return res.status(400).json({ error: "Missing raw body" });
+    }
+    if (!verifyBtcpaySignature(rawBody, sig, BTCPAY_WEBHOOK_SECRET)) {
+      return res.status(400).json({ error: "Invalid signature" });
+    }
+
+    const evt = req.body || {};
+    const type = evt?.type || "";
+    const invoiceId = evt?.invoiceId || evt?.data?.invoiceId || "";
+    if (!invoiceId) {
+      return res.status(400).json({ error: "Missing invoiceId" });
+    }
+
+    let mapped = btcpay.statusFromEventType(type);
+    if (type === "InvoiceProcessing" && evt?.paymentMethodId === "BTC-CHAIN") mapped = "MEMPOOL";
+    if (type === "InvoiceSettled" && evt?.paymentMethodId === "BTC-CHAIN") mapped = "CONFIRMED";
+
+    emitBtcpayStatus(invoiceId, mapped);
+
+    if (mapped === "PAID" || mapped === "CONFIRMED") {
+      const order = Orders.markPaidByHash(invoiceId);
+      if (order?.items?.length) {
+        for (const it of order.items) Products.markSold(it.productId);
+      }
+      notifyPaidOnce(order);
+      try { await dmOrderUpdate(order, "PAID"); } catch {}
+      try { await sendOrderStatusEmail(order, "PAID"); } catch {}
+    } else if (mapped === "EXPIRED") {
+      const order = Orders.byPaymentHash(invoiceId);
+      if (order && order.status === "PENDING") {
+        Orders.remove(order.id);
+      }
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.warn("[btcpay webhook] error:", e?.message || e);
+    res.status(400).json({ error: String(e?.message || e) });
+  }
 });
 
 // ────────────────────────────────────────────────────────────────────
@@ -1941,6 +2206,9 @@ if (spaProxy) server.on("upgrade", spaProxy.upgrade);
     console.warn("[PaymentWatcher] Skipped: BLINK_API_KEY missing while PAYMENT_PROVIDER=blink");
     return;
   }
+  if (PAYMENT_PROVIDER === "btcpay" && !BTCPAY_WEBHOOK_SECRET) {
+    console.warn("[PaymentWatcher] BTCPAY_WEBHOOK_SECRET missing; configure it so webhooks can mark invoices paid.");
+  }
   startPaymentWatcher({
     onPaid: async (hash) => {
       const order = Orders.markPaidByHash(hash);
@@ -1984,6 +2252,8 @@ if (spaProxy) server.on("upgrade", spaProxy.upgrade);
           const args =
             PAYMENT_PROVIDER === "blink"
               ? { url: BLINK_GRAPHQL_URL, apiKey: BLINK_API_KEY, paymentHash: o.paymentHash }
+              : PAYMENT_PROVIDER === "btcpay"
+                ? { url: BTCPAY_URL, apiKey: BTCPAY_API_KEY, paymentHash: o.paymentHash, walletId: { storeId: BTCPAY_STORE_ID } }
               : { paymentHash: o.paymentHash };
 
           const st = await invoiceStatus(args);
