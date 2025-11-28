@@ -100,8 +100,13 @@ From the buyer’s point of view: Lightning is instant; on-chain shows a mempool
 - One of:
   - A **Blink** account (recommended): API key can be generated here [Create a Blink API key](https://dashboard.blink.sv/api-keys) . 
   - Your own **LND** node: REST URL + macaroon + TLS details (for expert and self sovreign users 💪).
-  - A **BTCPay Server** store: Greenfield API key, Store ID, and a webhook secret.
-  - If you change the webhook path, set `BTCPAY_WEBHOOK_PATH` (default is `/api/webhooks/btcpay`).
+  - A **BTCPay Server** instance:
+  - BTCPay API key scopes (minimum recommended):
+    - `btcpay.store.canviewinvoices`
+    - `btcpay.store.cancreateinvoice`
+    - `btcpay.store.canmodifyinvoices`
+    - `btcpay.store.canviewstoresettings`
+    - also set the webhook payload url into: https://yourdomain.com/api/webhooks/btcpay
 - Optional:
   - SMTP/IMAP for email updates.
   - Nostr keys if you want Nostr features.
@@ -131,7 +136,7 @@ cd server
 cp .env.example .env
 ```
 
-Open `server/.env` and configure it to your like.
+Open the copied `server/.env` and edit it to configure it to your like and needs.
 
 ### 3. Run the server
 
