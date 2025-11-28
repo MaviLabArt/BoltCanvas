@@ -84,6 +84,7 @@ const ONCHAIN_INVOICE_EXPIRES_IN = Math.max(600, Number(process.env.ONCHAIN_INVO
 const BOLTZ_REST_URL = (process.env.BOLTZ_REST_URL || "https://api.boltz.exchange").replace(/\/+$/, "");
 const BOLTZ_WS_URL = process.env.BOLTZ_WS_URL || "wss://api.boltz.exchange/v2/ws";
 const BOLTZ_WEBHOOK_URL = process.env.BOLTZ_WEBHOOK_URL || "";
+const BOLTZ_WEBHOOK_SECRET = process.env.BOLTZ_WEBHOOK_SECRET || "";
 
 // Admin/session
 const ADMIN_PIN = process.env.ADMIN_PIN || "1234";
@@ -1168,6 +1169,11 @@ app.post("/api/admin/orders/:id/status", requireAdmin, async (req, res) => {
     }
 
     const updated = Orders.setStatus(id, status, { courier, tracking });
+    if (status === "PAID" && Array.isArray(updated?.items)) {
+      for (const it of updated.items) {
+        try { Products.markSold(it.productId); } catch {}
+      }
+    }
 
     // NOSTR DM on status change
     try { await dmOrderUpdate(updated, status); } catch {}
@@ -1556,6 +1562,7 @@ app.post("/api/zaps/create-invoice", async (req, res) => {
     const { storeName } = Settings.getAll();
     const memoBase = `${storeName || "Lightning Art"} Zap`;
     const memo = safeNote ? `${memoBase} - ${safeNote}` : memoBase;
+    const orderRef = memoBase;
 
     const invoice = await createInvoiceSats(
       PAYMENT_PROVIDER === "blink"
@@ -1573,7 +1580,7 @@ app.post("/api/zaps/create-invoice", async (req, res) => {
               walletId,
               amount: sats,
               memo,
-              orderRef: firstTitle || undefined
+              orderRef
             }
           : {
               amount: sats,
@@ -2001,13 +2008,29 @@ app.get("/api/webhooks/boltz", (req, res) => {
   if (!BOLTZ_WEBHOOK_URL) {
     return res.status(503).json({ ok: false, error: "Boltz webhook not configured" });
   }
-  return res.json({ ok: true, note: "Send POST from Boltz to this URL", configured: true });
+  return res.json({
+    ok: true,
+    note: "Send POST from Boltz to this URL with X-Boltz-Secret header",
+    configured: true,
+    requiresSecret: !!BOLTZ_WEBHOOK_SECRET
+  });
 });
 
 app.post("/api/webhooks/boltz", async (req, res) => {
   try {
     if (!BOLTZ_WEBHOOK_URL) {
       return res.status(503).json({ error: "Boltz webhook not configured" });
+    }
+    if (!BOLTZ_WEBHOOK_SECRET) {
+      return res.status(503).json({ error: "BOLTZ_WEBHOOK_SECRET not configured" });
+    }
+    const providedSecret =
+      req.headers["x-boltz-secret"] ||
+      req.headers["x-webhook-secret"] ||
+      req.query?.token ||
+      "";
+    if (String(providedSecret) !== BOLTZ_WEBHOOK_SECRET) {
+      return res.status(401).json({ error: "Invalid webhook secret" });
     }
     const payload = req.body || {};
     const data = payload.data || {};
