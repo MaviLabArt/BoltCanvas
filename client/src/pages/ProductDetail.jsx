@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api, { absoluteApiUrl } from "../services/api.js";
 import { useCart } from "../store/cart.jsx";
@@ -22,6 +22,7 @@ export default function ProductDetail() {
   const [zoomOrigin, setZoomOrigin] = useState({ x: 50, y: 50 });
   const zoomSteps = [1, 2.4, 3.4];
   const [isMobile, setIsMobile] = useState(false);
+  const [canGoBack, setCanGoBack] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -32,6 +33,13 @@ export default function ProductDetail() {
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
+
+  // Determine if we have in-app history; otherwise fallback to home on "Back"
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const idx = window.history?.state?.idx;
+    setCanGoBack(Number.isInteger(idx) && idx > 0);
+  }, [id]);
 
   // Fetch product
   useEffect(() => {
@@ -108,6 +116,13 @@ export default function ProductDetail() {
 
   // Early return is fine now - all hooks above have already run this render
   if (!p) return null;
+  const handleBack = () => {
+    if (canGoBack) {
+      nav(-1);
+    } else {
+      nav("/", { replace: true });
+    }
+  };
 
   const dimText =
     p.showDimensions === false
@@ -142,7 +157,7 @@ export default function ProductDetail() {
       <div className="mb-4">
         <button
           className="px-3 py-2 rounded-xl bg-slate-900 ring-1 ring-white/10"
-          onClick={() => nav(-1)}
+          onClick={handleBack}
         >
           ← Back
         </button>
