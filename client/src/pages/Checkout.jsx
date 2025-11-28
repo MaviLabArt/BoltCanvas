@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useRef } from "react";
+import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { useCart } from "../store/cart.jsx";
 import { useSettings } from "../store/settings.jsx";
 import { COUNTRIES } from "../constants/countries.js";
@@ -16,7 +16,7 @@ const ACTIVE_PAYMENT_KEY = "lightning-shop-active-payment";
 
 function saveActivePayment(inv) {
   try {
-    if (!inv) return;
+    if (!inv || String(inv.provider || "").toLowerCase() === "btcpay") return;
     localStorage.setItem(ACTIVE_PAYMENT_KEY, JSON.stringify({ ...inv, savedAt: Date.now() }));
   } catch {}
 }
@@ -73,6 +73,9 @@ export default function Checkout() {
   const [showPay, setShowPay] = useState(false);
   const [sseConnected, setSseConnected] = useState(false); // to show LIVE badge
   const nav = useNavigate();
+  const provider = useMemo(() => String(paymentConfig?.provider || "").toLowerCase(), [paymentConfig]);
+  const isBtcpay = provider === "btcpay";
+  const [btcpayFrameUrl, setBtcpayFrameUrl] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -95,17 +98,20 @@ export default function Checkout() {
         clearActivePayment();
         return;
       }
+      const provider = String(parsed.provider || "").toLowerCase();
+      if (provider === "btcpay") return; // don't restore BTCPay modal
+      const isBtcpay = false;
       const pm = String(parsed.paymentMethod || "").toLowerCase();
       if (pm === "onchain" && parsed.swapId && parsed.onchainAddress) {
         setPaymentMethod("onchain");
         setInv(parsed);
         setStatus("PENDING");
-        setShowPay(true);
+        setShowPay(!isBtcpay);
       } else if (pm === "lightning" && parsed.paymentHash && parsed.paymentRequest) {
         setPaymentMethod("lightning");
         setInv(parsed);
         setStatus("PENDING");
-        setShowPay(true);
+        setShowPay(!isBtcpay);
       }
     } catch {
       // ignore restore errors
@@ -165,6 +171,34 @@ export default function Checkout() {
   // NEW: hold a pending navigation to /paid/:hash if the tab is hidden when payment completes
   const pendingNavHashRef = useRef(null);
 
+  const handlePaid = useCallback((hash) => {
+    if (resolvedRef.current) return;
+    resolvedRef.current = true;
+    try {
+      clear();
+      clearActivePayment();
+    } catch {}
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      pendingNavHashRef.current = hash;
+    } else {
+      nav(`/paid/${hash}`, { replace: true });
+    }
+  }, [clear, nav]);
+
+  const handleExpired = useCallback((reason = "EXPIRED") => {
+    if (resolvedRef.current) return;
+    resolvedRef.current = true;
+    const r = String(reason || "EXPIRED").toUpperCase();
+    setStatus(r);
+    setInv(null);
+    setShowPay(false);
+    clearActivePayment();
+    const msg = r === "FAILED"
+      ? "Payment failed. You can create a new payment request."
+      : "Invoice expired. You can safely create a new one.";
+    alert(msg);
+  }, []);
+
   // Navigate to /paid/:hash as soon as tab becomes visible again
   useEffect(() => {
     function onVis() {
@@ -178,47 +212,45 @@ export default function Checkout() {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [nav]);
 
+  // BTCPay inline modal polling
+  useEffect(() => {
+    if (!isBtcpay || !btcpayFrameUrl || !inv?.paymentHash) return;
+    let timer;
+    const poll = async () => {
+      try {
+        const r = await api.get(`/invoices/${inv.paymentHash}/status`);
+        const st = String(r.data?.status || "").toUpperCase();
+        setStatus(st);
+        if (st === "PAID") {
+          setBtcpayFrameUrl("");
+          return handlePaid(inv.paymentHash);
+        }
+        if (st === "EXPIRED") {
+          setBtcpayFrameUrl("");
+          return handleExpired();
+        }
+      } catch {
+        // ignore
+      }
+      timer = setTimeout(poll, 3000);
+    };
+    poll();
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [isBtcpay, btcpayFrameUrl, inv?.paymentHash, handlePaid, handleExpired]);
+
   // Live updates via SSE (server proxies Blink GraphQL-WS) with polling fallback
   useEffect(() => {
     if (!inv?.paymentHash) return;
     const isOnchain = String(inv.paymentMethod || "").toLowerCase() === "onchain";
+    const invProvider = String(inv?.provider || "").toLowerCase();
+    if (invProvider === "btcpay") return; // BTCPay handled via inline modal + webhook
     if (isOnchain && !inv.swapId) return;
 
     resolvedRef.current = false; // reset on new invoice
     let es;
     let fallbackTimer;
-
-    const handlePaidOnce = () => {
-      if (resolvedRef.current) return;
-      resolvedRef.current = true;
-
-      const hash = inv.paymentHash;
-      try {
-        clear();
-        clearActivePayment();
-      } catch {}
-
-      // If the tab is hidden, defer navigation until the user brings it to the foreground
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-        pendingNavHashRef.current = hash;
-      } else {
-        nav(`/paid/${hash}`, { replace: true });
-      }
-    };
-
-    const handleExpiredOnce = (reason = "EXPIRED") => {
-      if (resolvedRef.current) return;
-      resolvedRef.current = true;
-      const r = String(reason || "EXPIRED").toUpperCase();
-      setStatus(r);
-      setInv(null);
-      setShowPay(false);
-      clearActivePayment();
-      const msg = r === "FAILED"
-        ? "Payment failed. You can create a new payment request."
-        : "Invoice expired. You can safely create a new one.";
-      alert(msg);
-    };
 
     const startPollingFallback = () => {
       if (resolvedRef.current) return; // don't start polling if already resolved
@@ -230,14 +262,14 @@ export default function Checkout() {
             const r = await api.get(`/onchain/${inv.swapId}/status`);
             const st = String(r.data?.status || "").toUpperCase();
             setStatus(st);
-            if (st === "PAID") return handlePaidOnce();
-            if (st === "EXPIRED" || st === "FAILED") return handleExpiredOnce(st);
+            if (st === "PAID") return handlePaid(inv.paymentHash);
+            if (st === "EXPIRED" || st === "FAILED") return handleExpired(st);
           } else {
             const r = await api.get(`/invoices/${inv.paymentHash}/status`);
             const st = String(r.data?.status || "").toUpperCase();
             setStatus(st);
-            if (st === "PAID") return handlePaidOnce();
-            if (st === "EXPIRED") return handleExpiredOnce();
+            if (st === "PAID") return handlePaid(inv.paymentHash);
+            if (st === "EXPIRED") return handleExpired();
           }
         } catch {}
         fallbackTimer = setTimeout(poll, isOnchain ? 5000 : 3000);
@@ -258,8 +290,8 @@ export default function Checkout() {
           if (!payload?.status) return;
           const st = String(payload.status || "").toUpperCase();
           setStatus(st);
-          if (st === "PAID") handlePaidOnce();
-          if (st === "EXPIRED" || st === "FAILED") handleExpiredOnce(st);
+          if (st === "PAID") handlePaid(inv.paymentHash);
+          if (st === "EXPIRED" || st === "FAILED") handleExpired(st);
         } catch {}
       };
       es.onerror = () => {
@@ -280,7 +312,7 @@ export default function Checkout() {
       } catch {}
       clearTimeout(fallbackTimer);
     };
-  }, [inv?.paymentHash, inv?.swapId, inv?.paymentMethod, clear, nav]);
+  }, [inv?.paymentHash, inv?.swapId, inv?.paymentMethod, clear, nav, handlePaid, handleExpired]);
 
   if (items.length === 0 && !inv) {
     return (
@@ -289,6 +321,29 @@ export default function Checkout() {
       </section>
     );
   }
+
+  const BtcpayModal = ({ url, onClose }) => {
+    if (!url) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="absolute inset-0" onClick={onClose} />
+        <div className="relative w-[92vw] max-w-3xl h-[80vh] bg-slate-900 ring-1 ring-white/10 rounded-2xl overflow-hidden shadow-2xl">
+          <button
+            onClick={onClose}
+            className="absolute top-3 right-3 z-10 rounded-full bg-black/60 text-white px-3 py-1 text-sm"
+          >
+            Close
+          </button>
+          <iframe
+            title="BTCPay Checkout"
+            src={url}
+            className="w-full h-full border-0 bg-black"
+            allow="payment *; clipboard-read; clipboard-write"
+          />
+        </div>
+      </div>
+    );
+  };
 
   function contactProvided() {
     const { contactEmail, contactTelegram, contactNostr } = form;
@@ -334,10 +389,18 @@ export default function Checkout() {
     try {
       const r = await api.post("/checkout/create-invoice", payload);
       const pm = r.data?.paymentMethod || paymentMethod;
-      const nextInv = { ...r.data, paymentMethod: pm };
+      const nextInv = { ...r.data, paymentMethod: pm, provider };
+      resolvedRef.current = false;
       setInv(nextInv);
       saveActivePayment(nextInv);
       setStatus("PENDING");
+      if (isBtcpay) {
+        if (r.data?.checkoutLink) {
+          setBtcpayFrameUrl(r.data.checkoutLink);
+          setShowPay(false);
+          return;
+        }
+      }
       setShowPay(true);
     } catch (e) {
       alert(e?.response?.data?.error || "Failed to create invoice");
@@ -600,6 +663,7 @@ export default function Checkout() {
           )
         )}
       </AnimatePresence>
+      <BtcpayModal url={btcpayFrameUrl} onClose={() => setBtcpayFrameUrl("")} />
     </section>
   );
 }

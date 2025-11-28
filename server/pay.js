@@ -1,5 +1,6 @@
 // server/pay.js
 import WebSocket from "ws";
+import { EventEmitter } from "events";
 
 // Choose provider: "blink" (default) or "lnd"
 export const PAYMENT_PROVIDER = String(process.env.PAYMENT_PROVIDER || "blink").toLowerCase();
@@ -10,8 +11,19 @@ import * as blink from "./blink.js";
 // LND driver
 import * as lnd from "./lnd.js";
 
+// BTCPay Server driver
+import * as btcpay from "./btcpay.js";
+
 // Boltz (on-chain → Lightning Submarine swaps)
 import * as boltz from "./boltz.js";
+
+// Shared event bus for BTCPay webhook-driven updates
+const btcpayEmitter = new EventEmitter();
+btcpayEmitter.setMaxListeners(1000);
+
+export function emitBtcpayStatus(invoiceId, status) {
+  btcpayEmitter.emit(invoiceId, status);
+}
 
 /**
  * Ensure BTC wallet id (Blink needs it; LND returns a dummy).
@@ -20,6 +32,10 @@ export async function ensureBtcWalletId(args = {}) {
   if (PAYMENT_PROVIDER === "blink") {
     const { url, apiKey, explicitWalletId } = args;
     return blink.ensureBtcWalletId({ url, apiKey, explicitWalletId });
+  }
+  if (PAYMENT_PROVIDER === "btcpay") {
+    const { url, apiKey, explicitStoreId } = args;
+    return btcpay.ensureBtcWalletId({ url, apiKey, explicitStoreId });
   }
   return "lnd-btc";
 }
@@ -33,6 +49,12 @@ export async function createInvoiceSats(args) {
     const { url, apiKey, walletId, amount, memo, expiresIn } = args || {};
     return blink.createInvoiceSats({ url, apiKey, walletId, amount, memo, expiresIn });
   }
+  if (PAYMENT_PROVIDER === "btcpay") {
+    const { url, apiKey, walletId, amount, memo, expiresIn } = args || {};
+    // walletId is actually {storeId,...} for BTCPay driver
+    const storeId = walletId?.storeId || walletId;
+    return btcpay.createInvoiceSats({ url, apiKey, storeId, amount, memo, expiresIn });
+  }
   // LND
   const { amount, memo, expiresIn } = args || {};
   return lnd.createInvoiceSats({ amount, memo, expiresIn });
@@ -45,6 +67,11 @@ export async function invoiceStatus(args) {
   if (PAYMENT_PROVIDER === "blink") {
     const { url, apiKey, paymentHash } = args || {};
     return blink.invoiceStatus({ url, apiKey, paymentHash });
+  }
+  if (PAYMENT_PROVIDER === "btcpay") {
+    const { url, apiKey, paymentHash, walletId } = args || {};
+    // In BTCPay we store invoiceId in paymentHash to avoid decoding BOLT11.
+    return btcpay.invoiceStatus({ url, apiKey, storeId: walletId?.storeId || walletId, invoiceId: paymentHash });
   }
   const { paymentHash } = args || {};
   return lnd.invoiceStatus({ paymentHash });
@@ -75,7 +102,31 @@ export async function createOnchainSwapViaBoltz(args = {}) {
   const { webhookUrl, memo } = args;
   const amount = Number(args.amount || 0);
 
-  // 1) Create standard LN invoice via chosen provider
+  // BTCPay: create native on-chain invoice, skip Boltz entirely
+  if (PAYMENT_PROVIDER === "btcpay") {
+    const invoice = await btcpay.createOnchainInvoice({
+      url: args.url,
+      apiKey: args.apiKey,
+      storeId: args.walletId?.storeId || args.walletId,
+      amount,
+      memo,
+      expiresIn: args.expiresIn
+    });
+    return {
+      ...invoice,
+      paymentMethod: "onchain",
+      boltzSwapId: invoice.invoiceId || "",
+      boltzStatus: "",
+      boltzRefundPrivKey: "",
+      boltzRefundPubKey: "",
+      onchainAddress: invoice.onchainAddress,
+      onchainAmountSats: invoice.onchainAmountSats,
+      timeoutBlockHeight: 0,
+      bip21: invoice.bip21 || ""
+    };
+  }
+
+  // Blink or LND: create standard LN invoice, then a Boltz swap
   const invoice =
     PAYMENT_PROVIDER === "blink"
       ? await blink.createInvoiceSats({
@@ -185,6 +236,53 @@ export function subscribeInvoiceStatus({ paymentHash, onStatus }) {
     return unsub;
   }
 
+  if (PAYMENT_PROVIDER === "btcpay") {
+    const BTCPAY_URL = process.env.BTCPAY_URL || "";
+    const BTCPAY_API_KEY = process.env.BTCPAY_API_KEY || "";
+    const BTCPAY_STORE_ID = process.env.BTCPAY_STORE_ID || "";
+    let stopped = false;
+    let timer;
+    const handler = (st) => {
+      if (typeof onStatus === "function") onStatus(st);
+      if (st === "PAID" || st === "EXPIRED") {
+        stopped = true;
+        clearInterval(timer);
+        btcpayEmitter.removeListener(paymentHash, handler);
+      }
+    };
+    btcpayEmitter.on(paymentHash, handler);
+
+    const poll = async () => {
+      try {
+        const status = await btcpay.invoiceStatus({
+          url: BTCPAY_URL,
+          apiKey: BTCPAY_API_KEY,
+          storeId: BTCPAY_STORE_ID,
+          invoiceId: paymentHash
+        });
+        if (typeof onStatus === "function") onStatus(status);
+        if (status === "PAID" || status === "EXPIRED") {
+          clearInterval(timer);
+          stopped = true;
+        }
+      } catch {
+        // swallow errors; keep polling
+      }
+    };
+
+    // prime + interval
+    poll();
+    timer = setInterval(() => {
+      if (!stopped) poll();
+    }, 5000);
+
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+      btcpayEmitter.removeListener(paymentHash, handler);
+    };
+  }
+
   // LND: subscribe all invoices and filter by this hash
   return lnd.subscribeInvoiceStatus({ paymentHash, onStatus });
 }
@@ -257,6 +355,11 @@ export function startPaymentWatcher({ onPaid }) {
       ws.on("close", scheduleReconnect);
     }
     connect();
+    return;
+  }
+
+  if (PAYMENT_PROVIDER === "btcpay") {
+    // We rely on webhooks and the background sweeper for BTCPay.
     return;
   }
 
