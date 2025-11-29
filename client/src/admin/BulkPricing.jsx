@@ -129,11 +129,8 @@ export default function BulkPricing() {
     () => (hasConfiguredZones ? baseFields : [...baseFields, ...legacyFields]),
     [baseFields, legacyFields, hasConfiguredZones]
   );
-  const visibleFields = useMemo(
-    () => (showShipping ? allFields : baseFields),
-    [showShipping, allFields, baseFields]
-  );
   const fieldKeys = useMemo(() => allFields.map((f) => f.key), [allFields]);
+  const inlineFields = useMemo(() => baseFields, [baseFields]);
 
   useEffect(() => {
     refresh();
@@ -262,8 +259,8 @@ export default function BulkPricing() {
       .sort((a, b) => a.priority - b.priority)
       .map(({ priority, ...rest }) => rest);
   }, [shippingZones, domesticCountry, hasCustomZones, t]);
-  const activeZoneColumns = showShipping ? zoneColumns : [];
-  const tableColumns = 2 + visibleFields.length + activeZoneColumns.length + 1;
+  const showLegacyShipping = !hasConfiguredZones;
+  const tableColumns = 2 + inlineFields.length + (showShipping ? 1 : 0) + 1;
 
   async function saveChanges() {
     if (dirtyRows.length === 0) return;
@@ -341,7 +338,7 @@ export default function BulkPricing() {
               <th className="px-4 py-3 text-left text-sm font-semibold text-white/70">
                 {t("Anteprima", "Preview")}
               </th>
-              {visibleFields.map((field) => (
+              {inlineFields.map((field) => (
                 <th
                   key={field.key}
                   className="px-4 py-3 text-left text-sm font-semibold text-white/70"
@@ -349,15 +346,11 @@ export default function BulkPricing() {
                   {field.label}
                 </th>
               ))}
-              {activeZoneColumns.map((column) => (
-                <th
-                  key={`zone-${column.id}`}
-                  className="px-4 py-3 text-left text-sm font-semibold text-white/70"
-                  title={(column.countries || []).join(", ")}
-                >
-                  {column.label}
+              {showShipping && (
+                <th className="px-4 py-3 text-left text-sm font-semibold text-white/70">
+                  {t("Spedizioni (lascia 0 per preset)", "Shipping (leave 0 for defaults)")}
                 </th>
-              ))}
+              )}
               <th className="px-4 py-3 text-left text-sm font-semibold text-white/70">
                 Stato
               </th>
@@ -400,7 +393,7 @@ export default function BulkPricing() {
                         </div>
                       )}
                     </td>
-                    {visibleFields.map((field) => (
+                    {inlineFields.map((field) => (
                       <td key={field.key} className="px-4 py-3 align-middle">
                         <input
                           type="number"
@@ -412,40 +405,61 @@ export default function BulkPricing() {
                         />
                       </td>
                     ))}
-                    {activeZoneColumns.map((column) => {
-                      const overrideValue = row.zoneOverrides?.[column.id] ?? "";
-                      const hasOverride =
-                        overrideValue !== "" && overrideValue !== null && overrideValue !== undefined;
-                      return (
-                        <td key={column.id} className="px-4 py-3 align-top">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="number"
-                                min="0"
-                                step="1"
-                                value={overrideValue}
-                                onChange={(e) => handleOverrideChange(row.id, column.id, e.target.value)}
-                                placeholder={String(column.presetPrice)}
-                                className="w-full px-3 py-2 rounded-xl bg-slate-950 ring-1 ring-white/10"
-                              />
-                              {hasOverride && (
-                                <button
-                                  type="button"
-                                  className="px-2 py-1 rounded-lg bg-slate-800 ring-1 ring-white/10 text-xs whitespace-nowrap"
-                                  onClick={() => handleOverrideChange(row.id, column.id, "")}
-                                >
-                                  {t("Reset", "Reset")}
-                                </button>
-                              )}
-                            </div>
-                            <div className="text-[10px] text-white/40">
-                              {t("Preset", "Preset")}: {column.presetPrice} sats · {t("Vuoto = preset", "Empty = preset")}
-                            </div>
+                    {showShipping && (
+                      <td className="px-4 py-3 align-top">
+                        {showLegacyShipping ? (
+                          <div className="space-y-3">
+                            {legacyFields.map((field) => (
+                              <div
+                                key={field.key}
+                                className="rounded-2xl bg-slate-900/60 ring-1 ring-white/5 p-3 space-y-2"
+                              >
+                                <div className="text-sm font-semibold text-white/80">
+                                  {field.label}
+                                </div>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  value={row[field.key]}
+                                  onChange={(e) => handleFieldChange(row.id, field.key, e.target.value)}
+                                  className="w-full px-3 py-2 rounded-xl bg-slate-950 ring-1 ring-white/10"
+                                />
+                              </div>
+                            ))}
                           </div>
-                        </td>
-                      );
-                    })}
+                        ) : (
+                          <div className="space-y-3">
+                            {zoneColumns.length === 0 ? (
+                              <div className="rounded-2xl bg-slate-900/60 ring-1 ring-white/5 p-3 text-sm text-white/60">
+                                {t("Nessuna zona di spedizione configurata", "No shipping zones configured")}
+                              </div>
+                            ) : (
+                              zoneColumns.map((column) => {
+                                const overrideValue = row.zoneOverrides?.[column.id] ?? "";
+                                return (
+                                  <div
+                                    key={column.id}
+                                    className="rounded-2xl bg-slate-900/60 ring-1 ring-white/5 p-3 space-y-2"
+                                  >
+                                    <div className="text-sm font-semibold text-white/80">{column.label}</div>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="1"
+                                      value={overrideValue}
+                                      onChange={(e) => handleOverrideChange(row.id, column.id, e.target.value)}
+                                      placeholder={String(column.presetPrice)}
+                                      className="w-full px-3 py-2 rounded-xl bg-slate-950 ring-1 ring-white/10"
+                                    />
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-sm text-white/60">
                       {dirty ? t("Modificato", "Changed") : t("Invariato", "Unchanged")}
                     </td>

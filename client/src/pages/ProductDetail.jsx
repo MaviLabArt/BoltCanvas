@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api, { absoluteApiUrl } from "../services/api.js";
 import { useCart } from "../store/cart.jsx";
@@ -6,6 +6,7 @@ import { useSettings } from "../store/settings.jsx";
 import { formatSats } from "../utils/format.js";
 import { motion, useReducedMotion, AnimatePresence } from "framer-motion";
 import { normalizeShippingZones } from "../utils/shipping.js";
+import ProductComments from "../components/ProductComments.jsx";
 
 export default function ProductDetail() {
   const { id } = useParams();
@@ -23,6 +24,15 @@ export default function ProductDetail() {
   const zoomSteps = [1, 2.4, 3.4];
   const [isMobile, setIsMobile] = useState(false);
   const [canGoBack, setCanGoBack] = useState(false);
+  const productUrl = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    try {
+      const url = new URL(`/product/${id}`, window.location.origin);
+      return url.toString();
+    } catch {
+      return "";
+    }
+  }, [id]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -151,6 +161,7 @@ export default function ProductDetail() {
     : "Free shipping on this piece";
 
   const hasImages = mainImgs.length > 0;
+  const mainImageAbsolute = hasImages ? mainImgsAbs[Math.max(0, Math.min(active, mainImgsAbs.length - 1))] || mainImgsAbs[0] : "";
 
   return (
     <section className="pt-6">
@@ -242,6 +253,8 @@ export default function ProductDetail() {
           </div>
         </div>
       </div>
+
+      <ProductComments productId={p.id} />
 
       {/* Lightbox */}
       <AnimatePresence>

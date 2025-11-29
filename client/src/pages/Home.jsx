@@ -4,6 +4,7 @@ import api from "../services/api.js";
 import { Link } from "react-router-dom";
 import { useSettings } from "../store/settings.jsx";
 import { stripMarkdown } from "../utils/markdown.js";
+import RecentCommentsStrip from "../components/RecentCommentsStrip.jsx";
 
 const DEFAULT_SETTINGS = {
   logo: "",
@@ -239,6 +240,8 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      <RecentCommentsStrip products={ordered} />
     </section>
   );
 }

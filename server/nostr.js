@@ -1,8 +1,9 @@
 // server/nostr.js
 // ESM module
 
+import WebSocket from "ws";
 import { nip19 } from "nostr-tools";
-import { Relay } from "nostr-tools/relay";
+import { Relay, useWebSocketImplementation } from "nostr-tools/relay";
 import { finalizeEvent, verifyEvent, getEventHash } from "nostr-tools/pure";
 import { encrypt } from "nostr-tools/nip04";
 import { bytesToHex } from "nostr-tools/utils";
@@ -10,6 +11,14 @@ import { schnorr } from "@noble/curves/secp256k1";
 
 // Node 18+ has global fetch
 const globalFetch = (...args) => fetch(...args);
+
+// Ensure nostr-tools uses ws in Node
+try {
+  useWebSocketImplementation(WebSocket);
+  console.info("[nostr] WebSocket implementation configured (ws)");
+} catch (err) {
+  console.warn("[nostr] Failed to configure WebSocket implementation", err?.message || err);
+}
 
 // ------------------------------
 // Small helpers
@@ -25,40 +34,80 @@ function uniq(a) {
   return Array.from(new Set(a.filter(Boolean).map((s) => s.trim()).filter(Boolean)));
 }
 
+let _loggedRelays = false;
+
 // ------------------------------
 // Server keys (from env), cached
 // ------------------------------
 let _keysCache = null;
+let _keysWarned = false;
+
+function decodeSecret(name, raw) {
+  const val = String(raw || "").trim();
+  if (!val) return null;
+
+  if (val.startsWith("nsec1")) {
+    try {
+      const dec = nip19.decode(val);
+      if (dec.type === "nsec" && dec.data) {
+        return dec.data; // Uint8Array(32)
+      }
+    } catch (err) {
+      console.warn("[nostr] failed to decode nsec", { env: name, error: err?.message || err });
+    }
+  }
+
+  if (isHex64(val)) {
+    try {
+      const buf = Buffer.from(val, "hex");
+      if (buf.length === 32) return new Uint8Array(buf);
+    } catch (err) {
+      console.warn("[nostr] failed to parse hex secret", { env: name, error: err?.message || err });
+    }
+  }
+  return null;
+}
 
 function loadServerKeysFromEnv() {
   if (_keysCache) return _keysCache;
 
-  const nsecStr =
-    process.env.SHOP_NOSTR_NSEC ||
-    process.env.NOSTR_NSEC ||
-    "";
+  const candidates = [
+    "SHOP_NOSTR_NSEC",
+    "NOSTR_NSEC",
+    "SHOP_NOSTR_SECRET_HEX",
+    "NOSTR_SECRET_HEX"
+  ];
 
-  if (!nsecStr) return null;
-
-  try {
-    const dec = nip19.decode(nsecStr);
-    if (dec.type !== "nsec") return null;
-
-    const seckeyBytes = dec.data; // Uint8Array(32)
-    // Derive x-only schnorr pubkey (32 bytes)
-    const pubkeyBytes = schnorr.getPublicKey(seckeyBytes);
-    const seckeyHex = bytesToHex(seckeyBytes);
-    const pubkeyHex = bytesToHex(pubkeyBytes);
-
-    _keysCache = { seckeyBytes, seckeyHex, pubkeyHex };
-    return _keysCache;
-  } catch {
-    return null;
+  for (const name of candidates) {
+    const raw = process.env[name];
+    const seckeyBytes = decodeSecret(name, raw);
+    if (!seckeyBytes) continue;
+    try {
+      const pubkeyBytes = schnorr.getPublicKey(seckeyBytes);
+      const seckeyHex = bytesToHex(seckeyBytes);
+      const pubkeyHex = bytesToHex(pubkeyBytes);
+      _keysCache = { seckeyBytes, seckeyHex, pubkeyHex, sourceEnv: name };
+      console.info("[nostr] server Nostr key configured", { sourceEnv: name, pubkey: pubkeyHex });
+      return _keysCache;
+    } catch (err) {
+      console.warn("[nostr] failed to derive pubkey", { env: name, error: err?.message || err });
+    }
   }
+
+  if (!_keysWarned) {
+    _keysWarned = true;
+    console.warn("[nostr] no valid Nostr server key found; DMs are DISABLED");
+  }
+  return null;
 }
 
 export function getShopKeys() {
-  return loadServerKeysFromEnv();
+  const keys = loadServerKeysFromEnv();
+  if (!keys && !_keysWarned) {
+    _keysWarned = true;
+    console.warn("[nostr] getShopKeys: no keys configured, returning null");
+  }
+  return keys;
 }
 
 // ------------------------------
@@ -76,12 +125,25 @@ export function relaysFrom(settings = {}) {
 
   const defaults = ["wss://relay.damus.io", "wss://nos.lol"];
   const list = uniq([...fromSettings, ...fromEnv, ...defaults]);
+  if (!_loggedRelays) {
+    _loggedRelays = true;
+    console.info("[nostr] relay configuration", { envCsv: process.env.NOSTR_RELAYS_CSV, settingsRelays: fromSettings, effective: list });
+  }
   return list.length ? list : defaults;
 }
 
 // ------------------------------
 // Identity resolvers
 // ------------------------------
+function isPrivateHost(host) {
+  const h = String(host || "").trim().toLowerCase();
+  if (!h) return true;
+  if (h === "localhost" || h.endsWith(".local")) return true;
+  if (/^(10\.|127\.|0\.|169\.254\.|192\.168\.)/.test(h)) return true;
+  if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(h)) return true;
+  return false;
+}
+
 async function resolveNip05(nip05) {
   // "name@domain"
   const s = String(nip05 || "").trim();
@@ -91,26 +153,39 @@ async function resolveNip05(nip05) {
   const name = s.slice(0, at).toLowerCase();
   const host = s.slice(at + 1);
   if (!name || !host) return "";
+  if (isPrivateHost(host)) return "";
 
   const url = `https://${host}/.well-known/nostr.json?name=${encodeURIComponent(name)}`;
+  const controller = new AbortController();
+  const timeout = Number(process.env.NIP05_FETCH_TIMEOUT_MS || 2000);
+  const timer = setTimeout(() => controller.abort(), timeout);
 
   try {
-    const rsp = await globalFetch(url, { headers: { accept: "application/json" } });
+    const rsp = await globalFetch(url, { headers: { accept: "application/json" }, signal: controller.signal });
     if (!rsp.ok) return "";
     const j = await rsp.json();
     const hex = j?.names?.[name];
     return isHex64(hex) ? hex.toLowerCase() : "";
   } catch {
     return "";
+  } finally {
+    clearTimeout(timer);
   }
 }
 
-export async function resolveToPubkey(identifier) {
+export async function resolveToPubkey(identifier, { allowNip05 = true } = {}) {
   const id = String(identifier || "").trim();
-  if (!id) return "";
+  if (!id) {
+    console.warn("[nostr] resolveToPubkey: missing identifier");
+    return "";
+  }
 
   // 64-hex
-  if (isHex64(id)) return id.toLowerCase();
+  if (isHex64(id)) {
+    const hex = id.toLowerCase();
+    console.info("[nostr] resolveToPubkey: detected hex", { pubkey: hex });
+    return hex;
+  }
 
   // npub / nprofile
   if (id.startsWith("npub") || id.startsWith("nprofile")) {
@@ -122,26 +197,33 @@ export async function resolveToPubkey(identifier) {
         if (typeof data === "string") return data.toLowerCase();
         if (data && data.pubkey) return String(data.pubkey).toLowerCase();
       }
-    } catch {}
+    } catch (err) {
+      console.warn("[nostr] resolveToPubkey: npub/nprofile decode failed", { identifier: id, error: err?.message || err });
+    }
   }
 
   // nip05 name@domain
-  if (id.includes("@")) {
+  if (allowNip05 && id.includes("@")) {
     const hex = await resolveNip05(id);
     if (hex) return hex;
   }
 
+  console.warn("[nostr] resolveToPubkey: unsupported identifier", { identifier: id });
   return "";
 }
 
 // ------------------------------
 // Login event verification
 // ------------------------------
-export function verifyLoginEvent(evt, expectedChallenge) {
+export function verifyLoginEvent(evt, expectedChallenge, {
+  expectedKind = 27235,
+  expectedDomain = ""
+} = {}) {
   try {
     if (!evt || typeof evt !== "object") return false;
     if (!evt.kind || !evt.pubkey || !evt.sig) return false;
     if (!isHex64(evt.pubkey)) return false;
+    if (expectedKind !== undefined && evt.kind !== expectedKind) return false;
 
     const created = Number(evt.created_at || 0);
     if (!Number.isFinite(created)) return false;
@@ -154,8 +236,15 @@ export function verifyLoginEvent(evt, expectedChallenge) {
     const hasChallengeTag = tags.some(
       (t) => Array.isArray(t) && t[0] === "challenge" && String(t[1] || "") === challenge
     );
-    const hasChallengeInContent = String(evt.content || "").includes(challenge);
-    if (challenge && !(hasChallengeTag || hasChallengeInContent)) return false;
+    if (challenge && !hasChallengeTag) return false;
+
+    const domain = String(expectedDomain || "").trim().toLowerCase();
+    if (domain) {
+      const domainTag = tags.find((t) => Array.isArray(t) && t[0] === "domain");
+      if (!domainTag || String(domainTag[1] || "").toLowerCase() !== domain) {
+        return false;
+      }
+    }
 
     // Ensure id is consistent
     const computedId = getEventHash({
@@ -184,6 +273,7 @@ export function verifyLoginEvent(evt, expectedChallenge) {
 // otherwise falls back to (toPubkey + hash(message)).
 const _dmDedup = new Map(); // key -> timestamp (ms)
 const DM_DEDUP_TTL_MS = Number(process.env.DM_DEDUP_TTL_MS || 5 * 60 * 1000);
+console.info("[nostr] DM dedup TTL (ms)", { env: process.env.DM_DEDUP_TTL_MS, effective: DM_DEDUP_TTL_MS });
 
 function _pruneDedup() {
   const now = Date.now();
@@ -227,7 +317,12 @@ function _buildDedupKey(toPubkeyHex, message) {
 function _shouldSendAndMark(toPubkeyHex, message) {
   _pruneDedup();
   const key = _buildDedupKey(toPubkeyHex, message);
-  if (_dmDedup.has(key)) return { should: false, key };
+  if (_dmDedup.has(key)) {
+    const age = Date.now() - (_dmDedup.get(key) || 0);
+    console.info("[nostr] DM dedup HIT", { key, ageMs: age, ttlMs: DM_DEDUP_TTL_MS });
+    return { should: false, key };
+  }
+  console.info("[nostr] DM dedup MISS", { key, ttlMs: DM_DEDUP_TTL_MS });
   _dmDedup.set(key, Date.now());
   return { should: true, key };
 }
@@ -269,24 +364,43 @@ async function publishAndWait(relay, event, timeoutMs = 8000) {
 
 export async function sendDM({ toPubkeyHex, message, relays }) {
   const keys = getShopKeys();
-  if (!keys) throw new Error("Server Nostr keys not configured");
+  if (!keys) {
+    console.warn("[nostr] sendDM: no server keys configured");
+    throw new Error("Server Nostr keys not configured");
+  }
 
   const to = String(toPubkeyHex || "").toLowerCase();
-  if (!isHex64(to)) throw new Error("Invalid recipient pubkey");
+  if (!isHex64(to)) {
+    console.warn("[nostr] sendDM: invalid recipient pubkey", { toPubkeyHex });
+    throw new Error("Invalid recipient pubkey");
+  }
+
+  const relayList = uniq(Array.isArray(relays) ? relays : []).filter((u) => u.startsWith("ws"));
+  if (!relayList.length) relayList.push("wss://relay.damus.io", "wss://nos.lol");
+  console.info("[nostr] sendDM: start", {
+    to,
+    relays: relayList,
+    messagePreview: String(message || "").slice(0, 120)
+  });
 
   // Idempotency: if we very recently sent the same *semantic* message
   // (same recipient, *and* same order+status when extractable),
   // do nothing and report deduped=true to caller.
   const { should, key } = _shouldSendAndMark(to, String(message || ""));
   if (!should) {
+    console.info("[nostr] sendDM: dedup prevented send", { key });
     return { ok: true, relay: null, deduped: true, key };
   }
 
-  const relayList = uniq(Array.isArray(relays) ? relays : []).filter((u) => u.startsWith("ws"));
-  if (!relayList.length) relayList.push("wss://relay.damus.io", "wss://nos.lol");
-
   // Build & sign event
-  const content = await encrypt(keys.seckeyBytes, to, String(message || ""));
+  let content;
+  try {
+    content = await encrypt(keys.seckeyBytes, to, String(message || ""));
+    console.info("[nostr] sendDM: nip04 encrypt ok", { contentPreview: String(content).slice(0, 40) });
+  } catch (err) {
+    console.error("[nostr] sendDM: nip04 encrypt failed", { error: err?.message || err });
+    throw err;
+  }
   const unsigned = {
     kind: 4,
     created_at: Math.floor(Date.now() / 1000),
@@ -295,12 +409,17 @@ export async function sendDM({ toPubkeyHex, message, relays }) {
     content,
   };
   const event = finalizeEvent(unsigned, keys.seckeyBytes);
+  const valid = verifyEvent(event);
+  console.info("[nostr] sendDM: event finalized", { id: event.id, valid });
+  if (!valid) throw new Error("DM event verification failed");
 
   // Try relays sequentially, closing each gracefully
+  const results = [];
   let lastError = null;
   for (const url of relayList) {
     let relay = null;
     try {
+      console.info("[nostr] sendDM: connecting relay", { url });
       relay = await Relay.connect(url);
       await publishAndWait(relay, event, 8000);
 
@@ -309,9 +428,13 @@ export async function sendDM({ toPubkeyHex, message, relays }) {
       try { relay.close(); } catch {}
       await sleep(20);
 
-      return { ok: true, relay: url, deduped: false, key };
+      console.info("[nostr] sendDM: publish ok", { url });
+      results.push({ relay: url, ok: true, error: "" });
+      return { ok: true, relay: url, deduped: false, key, results };
     } catch (e) {
       lastError = e;
+      console.error("[nostr] sendDM: publish failed", { url, error: e?.message || e });
+      results.push({ relay: url, ok: false, error: e?.message || "publish failed" });
       try { relay?.close(); } catch {}
       // Continue to next relay
     }
@@ -319,6 +442,7 @@ export async function sendDM({ toPubkeyHex, message, relays }) {
 
   // If we reach here, all relays failed.
   const msg = lastError?.message || "All relays failed";
+  console.error("[nostr] sendDM: failed on all relays", { msg, results });
   throw new Error(msg);
 }
 
@@ -387,10 +511,12 @@ export async function publishProductTeaser({
     tags.push(imeta);
     tags.push(["r", String(normalizedImageUrl)]);
 
-    const hasImageLine = finalContent.split(/\r?\n/).some((line) => line.trim() === normalizedImageUrl);
-    if (!hasImageLine) {
-      finalContent = finalContent ? `${finalContent}\n\n${normalizedImageUrl}` : normalizedImageUrl;
-    }
+    const linesWithoutImage = finalContent
+      .split(/\r?\n/)
+      .filter((line) => line.trim() && line.trim() !== normalizedImageUrl);
+    finalContent = linesWithoutImage.length
+      ? `${normalizedImageUrl}\n\n${linesWithoutImage.join("\n")}`
+      : normalizedImageUrl;
   }
 
   if (productUrl) {
