@@ -1494,15 +1494,19 @@ function ensureImageUrlExt(url, ext = "jpg") {
 
 function buildTeaserPreview(value = {}) {
   const base = String(value.content || "").trim();
-  let lines = base ? base.split(/\r?\n/) : [];
+  const rawLines = base ? base.split(/\r?\n/) : [];
   const imageUrl = ensureImageUrlExt(value.imageUrl || value.defaultImageUrl || "");
+  const lines = [];
+
   if (imageUrl) {
-    const hasImage = lines.some((line) => line.trim() === imageUrl);
-    if (!hasImage) {
-      if (lines.length && lines[lines.length - 1].trim() !== "") lines.push("");
-      lines.push(imageUrl);
-    }
+    lines.push(imageUrl);
+    if (rawLines.length) lines.push(""); // spacer after image
   }
+
+  rawLines
+    .filter((line) => line.trim() && line.trim() !== imageUrl)
+    .forEach((line) => lines.push(line));
+
   const productUrl = String(value.productUrl || "").trim();
   if (productUrl) {
     const productLine = `Available here 👉 ${productUrl}`;

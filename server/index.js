@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import WebSocket from "ws";
 import { createProxyMiddleware } from "http-proxy-middleware";
@@ -49,6 +50,20 @@ app.set("trust proxy", 1);
 
 const PORT = process.env.PORT || 8080;
 const DEV = process.env.NODE_ENV !== "production";
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const FALLBACK_INDEX_HTML = [
+  "<!doctype html>",
+  '<html lang="en">',
+  "<head>",
+  '  <meta charset="UTF-8">',
+  "  <title>Lightning Shop</title>",
+  "</head>",
+  '<body class="bg-slate-950 text-white">',
+  '  <div id="root"></div>',
+  "</body>",
+  "</html>"
+].join("\n");
+let cachedIndexHtml = "";
 
 // In dev, restrict to Vite origin; in prod, reflect request origin (true) to keep cookies working.
 const rawCorsOrigin = process.env.CORS_ORIGIN;
@@ -290,6 +305,18 @@ function renderTemplate(tpl, ctx) {
 }
 const fmtSats = (n) => (Number(n) || 0).toLocaleString("en-US");
 
+function primaryProductTitle(order) {
+  if (!order || !Array.isArray(order.items)) return "";
+  for (const it of order.items) {
+    if (!it) continue;
+    const direct = String(it.title || "").trim();
+    if (direct) return direct;
+    const nested = String(it?.product?.title || "").trim();
+    if (nested) return nested;
+  }
+  return "";
+}
+
 function makeNotifyContext(order, status, s) {
   const address = [
     order.address || "",
@@ -314,7 +341,8 @@ function makeNotifyContext(order, status, s) {
     customerName: order.name || "",
     address,
     createdAt,
-    paymentHash: order.paymentHash || ""
+    paymentHash: order.paymentHash || "",
+    productTitle: primaryProductTitle(order)
   };
 }
 
@@ -395,6 +423,150 @@ function extFromMime(mime, fallback = "jpg") {
   if (value.includes("avif")) return "avif";
   if (value.includes("jpeg") || value.includes("jpg")) return "jpg";
   return fallback;
+}
+
+function clampImageIndex(idx, count) {
+  if (!Number.isFinite(count) || count <= 0) return 0;
+  const n = Number(idx || 0);
+  if (n < 0) return 0;
+  if (n >= count) return count - 1;
+  return n;
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function compactMetaText(input, maxLen = 220) {
+  const clean = String(input || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!clean) return "";
+  if (clean.length <= maxLen) return clean;
+  return `${clean.slice(0, Math.max(0, maxLen - 3))}...`;
+}
+
+function absoluteUrlFromRequest(req) {
+  const host = req.get("host");
+  const protocol = req.protocol || "https";
+  const rawPath = req.originalUrl || req.url || "/";
+  const pathPart = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
+  if (!host) return pathPart;
+  return `${protocol}://${host}${pathPart}`;
+}
+
+function renderIndexWithMeta(baseHtml, meta) {
+  const html = baseHtml || FALLBACK_INDEX_HTML;
+  const safeTitle = escapeHtml(meta.title || "Lightning Shop");
+  const safeDescription = escapeHtml(compactMetaText(meta.description, 220));
+  const safeImage = escapeHtml(meta.image || "");
+  const safeUrl = escapeHtml(meta.url || "");
+  const safeSiteName = escapeHtml(meta.siteName || meta.title || "");
+  const safeOgType = escapeHtml(meta.type || "website");
+
+  const tags = [];
+  if (safeDescription) tags.push(`<meta name="description" content="${safeDescription}">`);
+  tags.push(`<meta property="og:type" content="${safeOgType}">`);
+  if (safeSiteName) tags.push(`<meta property="og:site_name" content="${safeSiteName}">`);
+  if (meta.title) {
+    tags.push(`<meta property="og:title" content="${safeTitle}">`);
+    tags.push(`<meta name="twitter:title" content="${safeTitle}">`);
+  }
+  if (safeDescription) {
+    tags.push(`<meta property="og:description" content="${safeDescription}">`);
+    tags.push(`<meta name="twitter:description" content="${safeDescription}">`);
+  }
+  if (safeImage) {
+    tags.push(`<meta property="og:image" content="${safeImage}">`);
+    tags.push(`<meta property="og:image:secure_url" content="${safeImage}">`);
+    tags.push(`<meta name="twitter:image" content="${safeImage}">`);
+  }
+  if (safeUrl) tags.push(`<meta property="og:url" content="${safeUrl}">`);
+  tags.push(`<meta name="twitter:card" content="${safeImage ? "summary_large_image" : "summary"}">`);
+
+  let withTitle = html;
+  if (/<title>.*<\/title>/i.test(withTitle)) {
+    withTitle = withTitle.replace(/<title>.*?<\/title>/i, `<title>${safeTitle}</title>`);
+  } else if (withTitle.includes("<head")) {
+    withTitle = withTitle.replace("<head>", `<head>\n  <title>${safeTitle}</title>`);
+  } else {
+    withTitle = `<title>${safeTitle}</title>\n${withTitle}`;
+  }
+
+  const injection = tags.length ? `\n  ${tags.join("\n  ")}\n` : "\n";
+  if (withTitle.includes("</head>")) {
+    return withTitle.replace("</head>", `${injection}</head>`);
+  }
+  return `${tags.join("\n")}\n${withTitle}`;
+}
+
+function productMainImageUrl(req, product) {
+  if (!product) return "";
+  const count = Math.max(0, Number(product.imageCount || 0));
+  const idx = clampImageIndex(
+    Number.isInteger(product.mainImageIndex) ? product.mainImageIndex : 0,
+    count || 1
+  );
+  let dataForMime = "";
+  let record = ProductImages.getRecord(product.id, idx);
+  if (!record?.data && idx !== 0) {
+    record = ProductImages.getRecord(product.id, 0);
+  }
+  if (!record?.data) return "";
+  if (record?.data) {
+    dataForMime = record.data;
+  }
+  const mime = extractMimeFromDataUrl(dataForMime);
+  const ext = extFromMime(mime, "jpg");
+  const versionTag = makeImageVersionQuery(product.imageVersion, idx);
+  const url = `/api/products/${product.id}/image/${idx}.${ext}${versionTag}`;
+  return ensureAbsoluteFromReq(req, url);
+}
+
+function buildProductMeta(req, product, settings) {
+  const siteName = settings?.storeName || "Lightning Shop";
+  const title = product?.title ? `${product.title} - ${siteName}` : siteName;
+  const description = product?.subtitle || product?.description || product?.longDescription || settings?.heroLine || settings?.contactNote || "";
+  return {
+    title,
+    description,
+    image: productMainImageUrl(req, product),
+    url: absoluteUrlFromRequest(req),
+    type: "product",
+    siteName
+  };
+}
+
+function buildDefaultMeta(req, settings) {
+  const siteName = settings?.storeName || "Lightning Shop";
+  const description = settings?.heroLine || settings?.contactNote || "A curated selection available for sats.";
+  return {
+    title: siteName,
+    description,
+    image: "",
+    url: absoluteUrlFromRequest(req),
+    type: "website",
+    siteName
+  };
+}
+
+function loadIndexHtml(distDir) {
+  const distIndex = path.join(distDir, "index.html");
+  try {
+    return fs.readFileSync(distIndex, "utf8");
+  } catch (err) {
+    console.warn(`[WARN] Unable to read ${distIndex}: ${err.message}`);
+  }
+  const devIndex = path.resolve(__dirname, "../client/index.html");
+  try {
+    return fs.readFileSync(devIndex, "utf8");
+  } catch {}
+  return FALLBACK_INDEX_HTML;
 }
 
 const CART_STRING_LIMIT = 2048;
@@ -2227,12 +2399,32 @@ if (DEV) {
 // ---------------------------------------------------------------------
 // PRODUCTION: serve built client
 // ---------------------------------------------------------------------
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 if (!DEV) {
   const dist = path.resolve(__dirname, "../client/dist");
+  cachedIndexHtml = loadIndexHtml(dist);
   app.use(express.static(dist));
-  // Serve SPA only for non-API paths
-  app.get(/^\/(?!api\/).*/, (_, res) => res.sendFile(path.join(dist, "index.html")));
+
+  // Serve product pages with OG/Twitter tags for social previews
+  app.get("/product/:id", (req, res) => {
+    const product = Products.get(req.params.id, { includeImages: false });
+    const settings = Settings.getPublic();
+    const meta = product && !product.hidden
+      ? buildProductMeta(req, product, settings)
+      : buildDefaultMeta(req, settings);
+    const html = renderIndexWithMeta(cachedIndexHtml, meta);
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=900");
+    res.status(200).send(html);
+  });
+
+  // Serve SPA for all other non-API paths with default metadata
+  app.get(/^\/(?!api\/).*/, (req, res) => {
+    const meta = buildDefaultMeta(req, Settings.getPublic());
+    const html = renderIndexWithMeta(cachedIndexHtml, meta);
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=180, stale-while-revalidate=600");
+    res.status(200).send(html);
+  });
 }
 
 // ---------------------------------------------------------------------

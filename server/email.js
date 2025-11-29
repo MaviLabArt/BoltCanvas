@@ -61,6 +61,18 @@ function renderTemplate(tpl, ctx) {
   return String(tpl).replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_, k) => (k in ctx ? String(ctx[k]) : ""));
 }
 
+function primaryProductTitle(order) {
+  if (!order || !Array.isArray(order.items)) return "";
+  for (const it of order.items) {
+    if (!it) continue;
+    const direct = String(it.title || "").trim();
+    if (direct) return direct;
+    const nested = String(it?.product?.title || "").trim();
+    if (nested) return nested;
+  }
+  return "";
+}
+
 function makeContext(order, status, s) {
   const address = [order.address || "", order.postalCode || "", order.country || ""]
     .filter(Boolean)
@@ -79,7 +91,8 @@ function makeContext(order, status, s) {
     customerName: order.name || "",
     address,
     createdAt,
-    paymentHash: order.paymentHash || ""
+    paymentHash: order.paymentHash || "",
+    productTitle: primaryProductTitle(order)
   };
 }
 
