@@ -26,6 +26,18 @@ function HelpBox({ children }) {
   );
 }
 
+function parseListInput(raw) {
+  return String(raw || "")
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function joinList(val) {
+  if (Array.isArray(val)) return val.join("\n");
+  return String(val || "");
+}
+
 export default function Settings() {
   const { t } = useAdminI18n();
   const [s, setS] = useState({
@@ -67,6 +79,9 @@ export default function Settings() {
     nostrNip05: "",
     nostrRelays: ["wss://relay.damus.io", "wss://nos.lol"],
     nostrDefaultHashtags: "#shop #shopping #lightning",
+    nostrCommentsEnabled: true,
+    nostrBlockedPubkeys: [],
+    nostrBlockedHashtags: [],
     lightningAddress: "",
 
     // --- NEW: Theme selector ---
@@ -295,6 +310,12 @@ async function pickLogoLightImage(e) {
         nostrRelays: Array.isArray(s.nostrRelays)
           ? s.nostrRelays
           : String(s.nostrRelays || ""),
+        nostrBlockedPubkeys: Array.isArray(s.nostrBlockedPubkeys)
+          ? s.nostrBlockedPubkeys
+          : parseListInput(s.nostrBlockedPubkeys),
+        nostrBlockedHashtags: Array.isArray(s.nostrBlockedHashtags)
+          ? s.nostrBlockedHashtags
+          : parseListInput(s.nostrBlockedHashtags),
         shippingZones: zonesToSend,
         shippingMode: "simple",
         shippingDomesticCountry: s.shippingDomesticCountry || "IT",
@@ -850,6 +871,15 @@ async function pickLogoLightImage(e) {
       <div className="mt-10 rounded-3xl p-4 bg-slate-950 ring-1 ring-white/10">
         <div className="text-lg font-semibold mb-2">{t("Nostr & Lightning", "Nostr & Lightning")}</div>
         <div className="grid gap-3">
+          <label className="inline-flex items-center gap-2 text-sm text-white/80">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-slate-700 bg-slate-900"
+              checked={!!s.nostrCommentsEnabled}
+              onChange={(e) => setS({ ...s, nostrCommentsEnabled: e.target.checked })}
+            />
+            <span>{t("Enable Nostr comments", "Enable Nostr comments")}</span>
+          </label>
           <input
             className="px-4 py-3 rounded-2xl bg-slate-900 ring-1 ring-white/10"
             placeholder="Shop npub (public identity)"
@@ -880,6 +910,24 @@ async function pickLogoLightImage(e) {
             value={s.nostrDefaultHashtags || ""}
             onChange={(e) =>
               setS({ ...s, nostrDefaultHashtags: e.target.value })
+            }
+          />
+          <textarea
+            rows={3}
+            className="px-4 py-3 rounded-2xl bg-slate-900 ring-1 ring-white/10"
+            placeholder={t("Blocca pubkey (hex o npub), una per riga", "Block pubkeys (hex or npub), one per line")}
+            value={joinList(s.nostrBlockedPubkeys)}
+            onChange={(e) =>
+              setS({ ...s, nostrBlockedPubkeys: parseListInput(e.target.value) })
+            }
+          />
+          <textarea
+            rows={2}
+            className="px-4 py-3 rounded-2xl bg-slate-900 ring-1 ring-white/10"
+            placeholder={t("Blocca hashtag, es. scam spam", "Block hashtags, e.g. scam spam")}
+            value={joinList(s.nostrBlockedHashtags)}
+            onChange={(e) =>
+              setS({ ...s, nostrBlockedHashtags: parseListInput(e.target.value) })
             }
           />
           <input

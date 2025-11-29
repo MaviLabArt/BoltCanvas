@@ -580,12 +580,24 @@ function nostrRelays() {
 async function dmOrderUpdate(order, rawStatus) {
   try {
     // Only attempt if server has shop keys
-    if (!getShopKeys()) return;
+    if (!getShopKeys()) {
+      console.info("[nostr] dmOrderUpdate: skip (no server keys)", { orderId: order?.id, status: rawStatus });
+      return;
+    }
     const ident = String(order?.contactNostr || "").trim();
-    if (!ident) return;
+    if (!ident) {
+      console.info("[nostr] dmOrderUpdate: skip (no contactNostr)", { orderId: order?.id, status: rawStatus });
+      return;
+    }
 
-    const toHex = await resolveToPubkey(ident).catch(() => null);
-    if (!toHex) return;
+    const toHex = await resolveToPubkey(ident, { allowNip05: false }).catch((err) => {
+      console.error("[nostr] dmOrderUpdate: resolveToPubkey error", { orderId: order?.id, status: rawStatus, error: err?.message || err });
+      return null;
+    });
+    if (!toHex) {
+      console.warn("[nostr] dmOrderUpdate: skip (failed to resolve contactNostr)", { orderId: order?.id, status: rawStatus, contactNostr: ident });
+      return;
+    }
 
     const s = Settings.getAll();
     const code = String(rawStatus).toUpperCase();
@@ -617,8 +629,17 @@ async function dmOrderUpdate(order, rawStatus) {
       message = lines.join("\n");
     }
 
-    await sendDM({ toPubkeyHex: toHex, message, relays: nostrRelays() });
-  } catch {}
+    const relays = nostrRelays();
+    console.info("[nostr] dmOrderUpdate: sending DM", {
+      orderId: order?.id,
+      status: code,
+      toPubkey: toHex,
+      relays
+    });
+    await sendDM({ toPubkeyHex: toHex, message, relays });
+  } catch (err) {
+    console.error("[nostr] dmOrderUpdate: sendDM failed", { orderId: order?.id, status: rawStatus, error: err?.message || err });
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -864,7 +885,8 @@ app.put("/api/admin/settings", requireAdmin, (req, res) => {
     shippingZones,
     commissionTitle, commissionBody, commissionCtaLabel, commissionCtaHref,
     // NEW Nostr/LN
-    nostrNpub, nostrNip05, nostrRelays, lightningAddress, nostrDefaultHashtags,
+    nostrNpub, nostrNip05, nostrRelays, lightningAddress, nostrDefaultHashtags, nostrCommentsEnabled,
+    nostrBlockedPubkeys, nostrBlockedHashtags,
     // NEW Theme
     themeChoice,
     // NEW Email/IMAP
@@ -884,7 +906,8 @@ app.put("/api/admin/settings", requireAdmin, (req, res) => {
       shippingTitle, shippingBullet1, shippingBullet2, shippingBullet3,
       shippingZones,
       commissionTitle, commissionBody, commissionCtaLabel, commissionCtaHref,
-      nostrNpub, nostrNip05, nostrRelays, lightningAddress, nostrDefaultHashtags,
+      nostrNpub, nostrNip05, nostrRelays, lightningAddress, nostrDefaultHashtags, nostrCommentsEnabled,
+      nostrBlockedPubkeys, nostrBlockedHashtags,
       themeChoice,
       smtpEnabled, smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass,
       smtpFromName, smtpFromAddress, smtpEnvelopeFrom, smtpReplyTo, smtpSignature, smtpSaveToSent,
@@ -2115,7 +2138,8 @@ app.post("/api/nostr/login/verify", (req, res) => {
   const { event } = req.body || {};
   const ch = req.session?.nostrChallenge || "";
   if (!ch) return res.status(400).json({ ok: false, error: "Missing challenge" });
-  if (!verifyLoginEvent(event, ch)) {
+  const domain = String(req.headers.host || "").toLowerCase();
+  if (!verifyLoginEvent(event, ch, { expectedKind: 27235, expectedDomain: domain })) {
     return res.status(400).json({ ok: false, error: "Invalid signature or challenge" });
   }
   // success: persist pubkey in session

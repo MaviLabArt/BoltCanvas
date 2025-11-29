@@ -221,6 +221,9 @@ if (!sGet.get("nostrNpub")) sSet.run("nostrNpub", "");
 if (!sGet.get("nostrNip05")) sSet.run("nostrNip05", "");
 if (!sGet.get("nostrRelays")) sSet.run("nostrRelays", JSON.stringify(["wss://relay.damus.io","wss://nos.lol"]));
 if (!sGet.get("lightningAddress")) sSet.run("lightningAddress", "");
+if (!sGet.get("nostrCommentsEnabled")) sSet.run("nostrCommentsEnabled", "true");
+if (!sGet.get("nostrBlockedPubkeys")) sSet.run("nostrBlockedPubkeys", "[]");
+if (!sGet.get("nostrBlockedHashtags")) sSet.run("nostrBlockedHashtags", "[]");
 
 // ── NEW: Theme selector (dark | light | auto) ──
 if (!sGet.get("themeChoice")) sSet.run("themeChoice", "dark");
@@ -1368,6 +1371,10 @@ export const Settings = {
   getAll() {
     const rows = db.prepare(`SELECT key, value FROM settings`).all();
     const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    const nostrCommentsEnabled = (() => {
+      const raw = String(map.nostrCommentsEnabled ?? "true").toLowerCase();
+      return !["false", "0", "off", "no"].includes(raw);
+    })();
     return {
       storeName: map.storeName || "Your Shop Name",
       contactNote: map.contactNote || "",
@@ -1410,6 +1417,9 @@ export const Settings = {
       // NEW: theme
       themeChoice: map.themeChoice || "dark",
       nostrDefaultHashtags: map.nostrDefaultHashtags || DEFAULT_TEASER_HASHTAGS,
+      nostrCommentsEnabled,
+      nostrBlockedPubkeys: safeParseJSON(map.nostrBlockedPubkeys, []),
+      nostrBlockedHashtags: safeParseJSON(map.nostrBlockedHashtags, []),
       // NEW: Notification templates
       notifyDmTemplate_PAID: map.notifyDmTemplate_PAID || "",
       notifyDmTemplate_PREPARATION: map.notifyDmTemplate_PREPARATION || "",
@@ -1429,6 +1439,12 @@ export const Settings = {
   // Public subset (safe for client)
   getPublic() {
     const full = this.getAll();
+    let nostrCommentsEnabled = !!full.nostrCommentsEnabled;
+    const envRaw = process.env.ENABLE_NOSTR_COMMENTS ?? process.env.VITE_ENABLE_NOSTR_COMMENTS;
+    if (envRaw !== undefined) {
+      const raw = String(envRaw).toLowerCase();
+      nostrCommentsEnabled = !["false", "0", "off", "no"].includes(raw);
+    }
     return {
       storeName: full.storeName,
       contactNote: full.contactNote,
@@ -1457,9 +1473,15 @@ export const Settings = {
       commissionBody: full.commissionBody,
       commissionCtaLabel: full.commissionCtaLabel,
       commissionCtaHref: full.commissionCtaHref,
+      nostrNpub: full.nostrNpub,
+      nostrNip05: full.nostrNip05,
       nostrRelays: full.nostrRelays,
       lightningAddress: full.lightningAddress,
-      themeChoice: full.themeChoice
+      themeChoice: full.themeChoice,
+      nostrDefaultHashtags: full.nostrDefaultHashtags,
+      nostrBlockedPubkeys: full.nostrBlockedPubkeys,
+      nostrBlockedHashtags: full.nostrBlockedHashtags,
+      nostrCommentsEnabled
     };
   },
   setAll({
@@ -1473,6 +1495,9 @@ export const Settings = {
     // NEW: theme
     themeChoice,
     nostrDefaultHashtags,
+    nostrCommentsEnabled,
+    nostrBlockedPubkeys,
+    nostrBlockedHashtags,
     // NEW: notification templates
     notifyDmTemplate_PAID, notifyDmTemplate_PREPARATION, notifyDmTemplate_SHIPPED,
     notifyEmailSubject_PAID, notifyEmailSubject_PREPARATION, notifyEmailSubject_SHIPPED,
@@ -1527,6 +1552,18 @@ export const Settings = {
     if (nostrRelays !== undefined) {
       const val = Array.isArray(nostrRelays) ? JSON.stringify(nostrRelays) : String(nostrRelays || "");
       sSet.run("nostrRelays", val);
+    }
+    if (nostrBlockedPubkeys !== undefined) {
+      const val = Array.isArray(nostrBlockedPubkeys) ? JSON.stringify(nostrBlockedPubkeys) : String(nostrBlockedPubkeys || "");
+      sSet.run("nostrBlockedPubkeys", val);
+    }
+    if (nostrBlockedHashtags !== undefined) {
+      const val = Array.isArray(nostrBlockedHashtags) ? JSON.stringify(nostrBlockedHashtags) : String(nostrBlockedHashtags || "");
+      sSet.run("nostrBlockedHashtags", val);
+    }
+    if (nostrCommentsEnabled !== undefined) {
+      const val = !!nostrCommentsEnabled;
+      sSet.run("nostrCommentsEnabled", val ? "true" : "false");
     }
     if (lightningAddress !== undefined) sSet.run("lightningAddress", lightningAddress || "");
     // NEW: theme
