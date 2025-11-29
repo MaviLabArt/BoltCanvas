@@ -81,7 +81,6 @@ export default function Settings() {
     nostrDefaultHashtags: "#shop #shopping #lightning",
     nostrCommentsEnabled: true,
     nostrBlockedPubkeys: [],
-    nostrBlockedHashtags: [],
     lightningAddress: "",
 
     // --- NEW: Theme selector ---
@@ -170,7 +169,8 @@ export default function Settings() {
   useEffect(() => {
     api.get("/admin/settings").then((r) => {
       const hydrated = hydrateSimplePresetFromZones(r.data || {});
-      setS((prev) => ({ ...prev, ...hydrated, shippingMode: "simple" }));
+      const { nostrBlockedHashtags: _ignoredBlockedHashtags, ...rest } = hydrated;
+      setS((prev) => ({ ...prev, ...rest, shippingMode: "simple" }));
     });
   }, []);
 
@@ -304,8 +304,9 @@ async function pickLogoLightImage(e) {
         shippingContinentPrices: normalizedContinentPrices,
         shippingOverrides: normalizedOverrides
       });
+      const { nostrBlockedHashtags: _dropBlockedHashtags, ...stateWithoutBlockedHashtags } = s;
       const payload = {
-        ...s,
+        ...stateWithoutBlockedHashtags,
         // ensure relays are serialized correctly (server accepts string/array)
         nostrRelays: Array.isArray(s.nostrRelays)
           ? s.nostrRelays
@@ -313,9 +314,6 @@ async function pickLogoLightImage(e) {
         nostrBlockedPubkeys: Array.isArray(s.nostrBlockedPubkeys)
           ? s.nostrBlockedPubkeys
           : parseListInput(s.nostrBlockedPubkeys),
-        nostrBlockedHashtags: Array.isArray(s.nostrBlockedHashtags)
-          ? s.nostrBlockedHashtags
-          : parseListInput(s.nostrBlockedHashtags),
         shippingZones: zonesToSend,
         shippingMode: "simple",
         shippingDomesticCountry: s.shippingDomesticCountry || "IT",
@@ -915,19 +913,13 @@ async function pickLogoLightImage(e) {
           <textarea
             rows={3}
             className="px-4 py-3 rounded-2xl bg-slate-900 ring-1 ring-white/10"
-            placeholder={t("Blocca pubkey (hex o npub), una per riga", "Block pubkeys (hex or npub), one per line")}
+            placeholder={t(
+              "Per evitare spam visibile nei commenti Nostr, blocca pubkey (hex o npub), una per riga",
+              "To avoid spam shown in Nostr comments, block pubkeys (hex or npub), one per line"
+            )}
             value={joinList(s.nostrBlockedPubkeys)}
             onChange={(e) =>
               setS({ ...s, nostrBlockedPubkeys: parseListInput(e.target.value) })
-            }
-          />
-          <textarea
-            rows={2}
-            className="px-4 py-3 rounded-2xl bg-slate-900 ring-1 ring-white/10"
-            placeholder={t("Blocca hashtag, es. scam spam", "Block hashtags, e.g. scam spam")}
-            value={joinList(s.nostrBlockedHashtags)}
-            onChange={(e) =>
-              setS({ ...s, nostrBlockedHashtags: parseListInput(e.target.value) })
             }
           />
           <input
@@ -984,6 +976,7 @@ async function pickLogoLightImage(e) {
               <li><code>{`{{courier}}`}</code>, <code>{`{{tracking}}`}</code></li>
             </ul>
             <ul className="list-disc ml-5 space-y-1">
+              <li><code>{`{{productTitle}}`}</code></li>
               <li><code>{`{{customerName}}`}</code></li>
               <li><code>{`{{address}}`}</code></li>
               <li><code>{`{{createdAt}}`}</code></li>
