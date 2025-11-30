@@ -14,7 +14,7 @@
     "framer-motion": "^11.2.10",
     "light-bolt11-decoder": "^2.1.0",
     "nostr-login": "^1.7.11",
-    "nostr-tools": "^2.7.2",
+    "nostr-tools": "^2.18.2",
     "react": "^18.3.1",
     "react-dom": "^19.2.0",
     "react-qr-code": "^2.0.15",
