@@ -74,18 +74,29 @@ export function SettingsProvider({ children }) {
   }, [settings?.storeName]);
 
   useEffect(() => {
-    if (typeof document === "undefined" || typeof settings?.logo !== "string") {
+    if (typeof document === "undefined") {
       return;
     }
-    const href = settings.logo.trim();
-    if (!href) return;
     const rels = ["icon", "shortcut icon"];
+    const selector = rels.map((rel) => `link[rel="${rel}"][data-managed="ls-favicon"]`).join(",");
+    const clearManagedIcons = () => {
+      document.querySelectorAll(selector).forEach((el) => {
+        try { el.remove(); } catch {}
+      });
+    };
+
+    const href = typeof settings?.favicon === "string" ? settings.favicon.trim() : "";
+    if (!href) {
+      clearManagedIcons();
+      return;
+    }
 
     const ensureLink = (rel) => {
-      const existing = document.querySelector(`link[rel="${rel}"]`);
+      const existing = document.querySelector(`link[rel="${rel}"][data-managed="ls-favicon"]`);
       if (existing) return existing;
       const el = document.createElement("link");
       el.setAttribute("rel", rel);
+      el.setAttribute("data-managed", "ls-favicon");
       document.head.appendChild(el);
       return el;
     };
@@ -100,7 +111,7 @@ export function SettingsProvider({ children }) {
     } catch {
       // ignore favicon update errors
     }
-  }, [settings?.logo]);
+  }, [settings?.favicon]);
 
   const value = useMemo(
     () => ({

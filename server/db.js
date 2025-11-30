@@ -189,6 +189,7 @@ if (!sGet.get("contactNote")) sSet.run("contactNote", "For anything contact me a
 if (!sGet.get("logo")) sSet.run("logo", "");
 if (!sGet.get("logoDark")) sSet.run("logoDark", "");
 if (!sGet.get("logoLight")) sSet.run("logoLight", "");
+if (!sGet.get("favicon")) sSet.run("favicon", "");
 
 // New defaults / ensure presence
 if (!sGet.get("productsHeading")) sSet.run("productsHeading", "Featured Products");
@@ -1381,6 +1382,7 @@ export const Settings = {
       logo: map.logo || "",
       logoDark: map.logoDark || "",
       logoLight: map.logoLight || "",
+      favicon: map.favicon || "",
       productsHeading: map.productsHeading || "Featured Products",
       heroLine: map.heroLine === undefined
         ? "Quality pieces made for you and shipped with care."
@@ -1451,6 +1453,7 @@ export const Settings = {
       logo: full.logo,
       logoDark: full.logoDark,
       logoLight: full.logoLight,
+      favicon: full.favicon,
       productsHeading: full.productsHeading,
       heroLine: full.heroLine,
       radiusScale: full.radiusScale,
@@ -1485,7 +1488,7 @@ export const Settings = {
     };
   },
   setAll({
-    storeName, contactNote, logo, logoDark, logoLight, productsHeading, heroLine, radiusScale,
+    storeName, contactNote, logo, logoDark, logoLight, favicon, productsHeading, heroLine, radiusScale,
     aboutTitle, aboutBody, aboutImage, heroCtaLabel, heroCtaHref,
     shippingTitle, shippingBullet1, shippingBullet2, shippingBullet3,
     shippingZones, shippingMode, shippingDomesticCountry, shippingDomesticPriceSats, shippingContinentPrices, shippingOverrides,
@@ -1510,6 +1513,7 @@ export const Settings = {
     if (logo !== undefined) sSet.run("logo", logo || "");
     if (logoDark !== undefined) sSet.run("logoDark", logoDark || "");
     if (logoLight !== undefined) sSet.run("logoLight", logoLight || "");
+    if (favicon !== undefined) sSet.run("favicon", favicon || "");
     if (productsHeading !== undefined) sSet.run("productsHeading", productsHeading || "");
     if (heroLine !== undefined) sSet.run("heroLine", heroLine || "");
     if (radiusScale !== undefined) sSet.run("radiusScale", radiusScale || "3xl");

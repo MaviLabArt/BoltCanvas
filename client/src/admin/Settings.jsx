@@ -46,6 +46,7 @@ export default function Settings() {
     logo: "",
     logoDark: "",
     logoLight: "",
+    favicon: "",
     // New/extended fields
     heroLine: "Quality pieces made for you and shipped with care.",
     productsHeading: "Featured Products",
@@ -257,26 +258,33 @@ export default function Settings() {
     return zonesOut;
   };
 
-async function pickAboutImage(e) {
-  const f = e.target.files?.[0];
-  if (!f) return;
-  const dataUrl = await fileToDataUrl(f);
-  setS((prev) => ({ ...prev, aboutImage: dataUrl }));
-}
+  async function pickAboutImage(e) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const dataUrl = await fileToDataUrl(f);
+    setS((prev) => ({ ...prev, aboutImage: dataUrl }));
+  }
 
-async function pickLogoImage(e) {
-  const f = e.target.files?.[0];
-  if (!f) return;
-  const dataUrl = await fileToDataUrl(f);
-  setS((prev) => ({ ...prev, logo: dataUrl, logoDark: dataUrl }));
-}
+  async function pickLogoImage(e) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const dataUrl = await fileToDataUrl(f);
+    setS((prev) => ({ ...prev, logo: dataUrl, logoDark: dataUrl }));
+  }
 
-async function pickLogoLightImage(e) {
-  const f = e.target.files?.[0];
-  if (!f) return;
-  const dataUrl = await fileToDataUrl(f);
-  setS((prev) => ({ ...prev, logoLight: dataUrl }));
-}
+  async function pickLogoLightImage(e) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const dataUrl = await fileToDataUrl(f);
+    setS((prev) => ({ ...prev, logoLight: dataUrl }));
+  }
+
+  async function pickFaviconImage(e) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const dataUrl = await fileToDataUrl(f);
+    setS((prev) => ({ ...prev, favicon: dataUrl }));
+  }
 
   async function save() {
     if (validation.hasErrors) {
@@ -478,6 +486,39 @@ async function pickLogoLightImage(e) {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Favicon */}
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <label className="px-3 py-2 rounded-2xl bg-slate-950 ring-1 ring-white/10 cursor-pointer">
+          {t("Carica favicon", "Upload favicon")}
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={pickFaviconImage}
+          />
+        </label>
+        {s.favicon ? (
+          <>
+            <img
+              src={s.favicon}
+              alt="Favicon preview"
+              className="h-8 w-8 rounded-lg object-contain ring-1 ring-white/10 bg-black/20"
+            />
+            <button
+              type="button"
+              className="px-3 py-2 rounded-2xl bg-slate-950 ring-1 ring-white/10"
+              onClick={() => setS((prev) => ({ ...prev, favicon: "" }))}
+            >
+              {t("Rimuovi", "Remove")}
+            </button>
+          </>
+        ) : (
+          <div className="text-xs text-white/50">
+            {t("Consigliato: PNG quadrato (32–64px). Il logo non verrà usato come favicon.", "Recommended: square PNG (32–64px). Logo will not be used as favicon.")}
+          </div>
+        )}
       </div>
 
       {/* --- HERO CTA --- */}
