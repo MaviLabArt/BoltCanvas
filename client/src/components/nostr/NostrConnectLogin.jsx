@@ -63,7 +63,9 @@ export default function NostrConnectLogin({ onBack, onClose }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-col items-center gap-3 rounded-2xl bg-slate-900 ring-1 ring-white/10 p-4">
-        <QRCode value={connectionString} size={200} />
+        <div className="p-4 rounded-2xl bg-white shadow-lg ring-1 ring-black/5">
+          <QRCode value={connectionString} size={360} bgColor="#ffffff" fgColor="#000000" level="M" />
+        </div>
         <div className="flex gap-2">
           <button
             type="button"
@@ -84,12 +86,12 @@ export default function NostrConnectLogin({ onBack, onClose }) {
 
       <div className="space-y-2">
         <label className="text-xs text-white/60">
-          Or paste a Nostr Connect / bunker URI
+          Or paste bunker URI
           <input
             value={customUri}
             onChange={(e) => setCustomUri(e.target.value)}
             className="mt-2 w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 focus:border-indigo-400 outline-none text-sm"
-            placeholder="nostrconnect://... or bunker://..."
+            placeholder="bunker://..."
           />
         </label>
       </div>
