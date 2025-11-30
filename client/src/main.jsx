@@ -5,28 +5,31 @@ import "./index.css";
 import App from "./App.jsx";
 import { CartProvider } from "./store/cart.jsx";
 import { SettingsProvider } from "./store/settings.jsx";
+import { NostrProvider } from "./providers/NostrProvider.jsx";
 
 const AdminApp = React.lazy(() => import("./admin/AdminApp.jsx"));
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
-      <SettingsProvider>
-        <CartProvider>
-          <Routes>
-            <Route path="/*" element={<App />} />
-            <Route
-              path="/admin/*"
-              element={
-                <Suspense fallback={<div className="p-6 text-center text-white/70">Caricamento...</div>}>
-                  <AdminApp />
-                </Suspense>
-              }
-            />
-            <Route path="*" element={<Navigate to="/" />} />
-          </Routes>
-        </CartProvider>
-      </SettingsProvider>
+      <NostrProvider>
+        <SettingsProvider>
+          <CartProvider>
+            <Routes>
+              <Route path="/*" element={<App />} />
+              <Route
+                path="/admin/*"
+                element={
+                  <Suspense fallback={<div className="p-6 text-center text-white/70">Caricamento...</div>}>
+                    <AdminApp />
+                  </Suspense>
+                }
+              />
+              <Route path="*" element={<Navigate to="/" />} />
+            </Routes>
+          </CartProvider>
+        </SettingsProvider>
+      </NostrProvider>
     </BrowserRouter>
   </React.StrictMode>
 );
