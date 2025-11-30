@@ -35,6 +35,8 @@ import * as btcpay from "./btcpay.js";
 import {
   getShopKeys,
   getShopPubkey,
+  npubFromHex,
+  fetchProfile,
   relaysFrom,
   resolveToPubkey,
   verifyLoginEvent,
@@ -303,7 +305,7 @@ function notifyPaidOnce(order) {
   if (hash) notifiedHashes.add(hash);
 }
 
-function ntfyNotifyComment({ event, product, productId } = {}) {
+function ntfyNotifyComment({ event, product, productId, profile } = {}) {
   try {
     if (!NTFY_TOPIC) return;
     if (!event) return;
@@ -312,9 +314,13 @@ function ntfyNotifyComment({ event, product, productId } = {}) {
     const title = `${titlePrefix}Nuovo commento Nostr`;
     const tags = "speech_balloon,nostr";
     const when = new Date((event.created_at || Date.now() / 1000) * 1000).toLocaleString("it-IT", { hour12: false });
+    const author =
+      (profile?.display_name || profile?.name || "").trim() ||
+      (profile?.nip05 || "").trim() ||
+      npubFromHex(event.pubkey || "");
     const bodyLines = [
       `Prodotto: ${product?.title || productId || "-"}`,
-      `Autore: ${event.pubkey || "-"}`,
+      `Autore: ${author || "-"}`,
       `Data: ${when}`,
       "",
       "Commento:",
@@ -2394,7 +2400,7 @@ app.get("/api/nostr/comment-proof", (req, res) => {
 });
 
 // Optional: receive comment events (after publish) and send an ntfy notification.
-app.post("/api/nostr/comment/notify", (req, res) => {
+app.post("/api/nostr/comment/notify", async (req, res) => {
   try {
     const ev = req.body?.event || {};
     if (!ev || ev.kind !== COMMENT_EVENT_KIND) {
@@ -2422,7 +2428,12 @@ app.post("/api/nostr/comment/notify", (req, res) => {
 
     let product = null;
     try { product = Products.get(productId, { includeImages: false }); } catch {}
-    ntfyNotifyComment({ event: ev, product, productId });
+    let profile = null;
+    try {
+      const relays = nostrRelays();
+      profile = await fetchProfile(ev.pubkey, relays);
+    } catch {}
+    ntfyNotifyComment({ event: ev, product, productId, profile });
     if (id) notifiedCommentIds.add(id);
     res.json({ ok: true });
   } catch (err) {
