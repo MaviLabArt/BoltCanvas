@@ -4,7 +4,12 @@ import { generateSecretKey, getPublicKey } from "nostr-tools";
 import { createNostrConnectURI } from "nostr-tools/nip46";
 import { useNostr } from "../../providers/NostrProvider.jsx";
 
-const DEFAULT_NOSTRCONNECT_RELAY = ["wss://relay.damus.io"];
+const DEFAULT_NOSTRCONNECT_RELAYS = [
+  "wss://relay.nsec.app/",
+  "wss://bucket.coracle.social/",
+  "wss://relay.primal.net/",
+  "wss://relay.damus.io/"
+];
 
 export default function NostrConnectLogin({ onBack, onClose }) {
   const { nostrConnectionLogin } = useNostr();
@@ -16,7 +21,7 @@ export default function NostrConnectLogin({ onBack, onClose }) {
   const connectionString = useMemo(() => {
     return createNostrConnectURI({
       clientPubkey: getPublicKey(clientSecretKey),
-      relays: DEFAULT_NOSTRCONNECT_RELAY,
+      relays: DEFAULT_NOSTRCONNECT_RELAYS,
       secret: Math.random().toString(36).slice(2),
       name: window.location.host,
       url: window.location.origin
