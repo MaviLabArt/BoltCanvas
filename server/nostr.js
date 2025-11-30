@@ -246,6 +246,41 @@ export function makeCommentProof({ productId, ts } = {}) {
   return proof;
 }
 
+export function verifyCommentProof({ sig, ts, storePubkey, productId } = {}) {
+  const key = String(storePubkey || "").trim().toLowerCase();
+  if (!isHex64(key)) return false;
+  const proofSig = String(sig || "");
+  const proofTs = Math.floor(Number(ts || 0));
+  if (!proofSig || !proofTs) return false;
+  const age = Math.abs(Math.floor(Date.now() / 1000) - proofTs);
+  // Allow up to 15 minutes skew for a proof to remain valid.
+  if (!Number.isFinite(age) || age > 15 * 60) return false;
+  const pid = String(productId || "").trim();
+  if (!pid) return false;
+  try {
+    const msg = commentProofMessage({ storePubkey: key, productId: pid, ts: proofTs });
+    const hash = createHash("sha256").update(msg).digest();
+    return !!schnorr.verify(proofSig, hash, key);
+  } catch {
+    return false;
+  }
+}
+
+export function extractProductIdFromTags(tags) {
+  const list = Array.isArray(tags) ? tags : [];
+  const xTag = list.find((t) => Array.isArray(t) && t[0] === "x" && typeof t[1] === "string" && t[1].includes(":product:"));
+  if (xTag?.[1]) {
+    const idx = xTag[1].lastIndexOf(":product:");
+    if (idx >= 0) {
+      const pid = xTag[1].slice(idx + ":product:".length);
+      if (pid) return pid;
+    }
+  }
+  const legacy = list.find((t) => Array.isArray(t) && t[0] === "t" && typeof t[1] === "string" && t[1].startsWith("product:"));
+  if (legacy?.[1]) return legacy[1].slice("product:".length);
+  return "";
+}
+
 // ------------------------------
 // Login event verification
 // ------------------------------
