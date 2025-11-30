@@ -511,7 +511,7 @@ export default function Checkout() {
             />
             <input
               className="sm:col-span-2 px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10"
-              placeholder="Nostr (npub…, nprofile…, hex, or name@domain)"
+              placeholder="Nostr npub"
               value={form.contactNostr}
               onChange={(e) => setForm({ ...form, contactNostr: e.target.value })}
             />

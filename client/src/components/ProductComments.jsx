@@ -3,9 +3,9 @@ import { fetchProductComments, subscribeToProductComments } from "../nostr/read-
 import { fetchProfilesForEvents } from "../nostr/profiles.js";
 import { normalizeComments } from "../nostr/normalize.js";
 import { publishProductComment } from "../nostr/publish-comment.js";
-import { useCart } from "../store/cart.jsx";
 import { useSettings } from "../store/settings.jsx";
 import { isEventBlocked, makeBlockedSets, nostrCommentsEnabled } from "../nostr/config.js";
+import { useNostr } from "../providers/NostrProvider.jsx";
 
 function timeAgo(ts) {
   if (!ts) return "";
@@ -91,7 +91,7 @@ function CommentCard({ comment }) {
 }
 
 export default function ProductComments({ productId }) {
-  const { nostrPubkey } = useCart();
+  const { pubkey: nostrPubkey, hasSigner } = useNostr();
   const { settings } = useSettings();
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -172,6 +172,10 @@ export default function ProductComments({ productId }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!hasSigner || !nostrPubkey) {
+      alert("Connect a Nostr signer to post");
+      return;
+    }
     try {
       await publishProductComment({
         content: input,
@@ -185,11 +189,13 @@ export default function ProductComments({ productId }) {
     }
   };
 
+  const canPost = hasSigner && !!nostrPubkey;
+
   return (
     <section className="mt-10">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-lg font-semibold">Comment through NOSTR</h3>
-        {!nostrPubkey && (
+        {!canPost && (
           <span className="text-xs text-white/60">Login with Nostr to post</span>
         )}
       </div>
@@ -200,17 +206,17 @@ export default function ProductComments({ productId }) {
             value={input}
             onChange={(e) => setInput(e.target.value.slice(0, maxLen))}
             maxLength={maxLen}
-            placeholder={nostrPubkey ? "Share your thoughts… (text only, 600 chars max)" : "Connect Nostr in the header to leave a note."}
+            placeholder={canPost ? "Share your thoughts… (text only, 600 chars max)" : "Connect Nostr in the header to leave a note."}
             className="w-full rounded-xl bg-slate-900 ring-1 ring-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 resize-y focus:outline-none focus:ring-2 focus:ring-indigo-400"
             rows={3}
-            disabled={!nostrPubkey}
+            disabled={!canPost}
           />
           <div className="flex items-center justify-end text-xs text-white/70">
             <span className="mr-3">{maxLen - input.length} chars left</span>
             <div className="flex justify-end">
               <button
                 type="submit"
-                disabled={!nostrPubkey || !input.trim()}
+                disabled={!canPost || !input.trim()}
                 className="px-3 py-2 rounded-xl bg-indigo-500/90 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium ring-1 ring-white/10 focus-visible:ring-2 focus-visible:ring-indigo-300 shadow-lg shadow-indigo-500/20"
               >
                 Post

@@ -5,13 +5,13 @@ import api from "../services/api.js";
 import { useSettings } from "../store/settings.jsx";
 import { loadNip19 } from "../utils/loadNip19.js";
 import { fetchProfilesForEvents } from "../nostr/profiles.js";
-
-let nostrLoginInitialized = false;
+import { useNostr } from "../providers/NostrProvider.jsx";
 
 export default function Header() {
   const nav = useNavigate();
   const loc = useLocation();
   const { count } = useCart();
+  const { pubkey: nostrPk, startLogin, logout } = useNostr();
 
   const { settings: rawSettings } = useSettings();
   const baseTitle = typeof document !== "undefined" ? document.title : "";
@@ -25,8 +25,6 @@ export default function Header() {
   const storeLabel = s.storeName || baseTitle || "";
   const [hasOrders, setHasOrders] = useState(false);
 
-  // Nostr session state
-  const [nostrPk, setNostrPk] = useState("");
   const [npubState, setNpubState] = useState({ npubFull: "", npubShort: "" });
   const [nostrProfile, setNostrProfile] = useState(null);
   const [mobileNostrMenuOpen, setMobileNostrMenuOpen] = useState(false);
@@ -102,19 +100,6 @@ export default function Header() {
       });
   }, []);
 
-  // Nostr: fetch session pk if present
-  useEffect(() => {
-    api.get("/nostr/me")
-      .then(r => {
-        const pk = r.data?.pubkey ? String(r.data.pubkey) : "";
-        if (pk) {
-          setNostrPk(pk);
-          try { window.dispatchEvent(new CustomEvent("nostr:session", { detail: { pubkey: pk } })); } catch {}
-        }
-      })
-      .catch(() => {});
-  }, []);
-
   useEffect(() => {
     let cancelled = false;
     if (!nostrPk) {
@@ -167,77 +152,16 @@ export default function Header() {
     return () => { cancelled = true; };
   }, [nostrPk, relays]);
 
-  // Wait briefly for a nostr provider (handles fast clicks after init)
-  async function ensureNostrProvider(timeoutMs = 3000) {
-    const started = Date.now();
-    while (!(window.nostr && typeof window.nostr.signEvent === "function")) {
-      if (Date.now() - started > timeoutMs) return false;
-      await new Promise(r => setTimeout(r, 50));
-    }
-    return true;
-  }
-
   async function signInWithNostr() {
-    try {
-      // First try: extension or nostr-login provider is ready?
-      let ok = await ensureNostrProvider(1200);
-
-      // If not, try to trigger nostr-login modal (if present)
-      if (!ok) {
-        try {
-          if (!nostrLoginInitialized) {
-            const { init } = await import("nostr-login");
-            const isLight = document.documentElement.getAttribute("data-theme") === "light";
-            init({
-              theme: "default",
-              darkMode: !isLight,
-              perms: "sign_event:1",
-              noBanner: true
-            });
-            nostrLoginInitialized = true;
-          }
-        } catch {
-          // ignore - user might rely on browser extension only
-        }
-        try { document.dispatchEvent(new CustomEvent("nlLaunch", { detail: "login" })); } catch {}
-        ok = await ensureNostrProvider(2500);
-      }
-
-      // Final fallback: classic message if no provider at all
-      if (!ok || !window.nostr?.signEvent) {
-        alert("Nostr signer not available. Install a NIP-07 extension (Alby, nos2x) or enable Nostr Login.");
-        return;
-      }
-
-      const ch = await api.get("/nostr/login/challenge").then(r => r.data.challenge);
-      const ev = {
-        kind: 27235, // "sign in" (custom; any verified event is fine)
-        created_at: Math.floor(Date.now()/1000),
-        tags: [["challenge", ch], ["domain", window.location.host]],
-        content: `Login to ${(storeLabel || "Shop")}, ${ch}`
-      };
-      const signed = await window.nostr.signEvent(ev);
-      await api.post("/nostr/login/verify", { event: signed });
-      const pk = signed.pubkey || "";
-      setNostrPk(pk);
-      try { window.dispatchEvent(new CustomEvent("nostr:session", { detail: { pubkey: pk } })); } catch {}
-      alert("Signed in with Nostr");
-    } catch {
-      alert("Nostr sign-in failed");
-    }
+    startLogin();
   }
 
   async function signOutNostr() {
     try {
-      await api.post("/nostr/logout");
-      setNostrPk("");
-      // If nostr-login is present, ask it to clear local connection as well
-      try { document.dispatchEvent(new Event("nlLogout")); } catch {}
-      try {
-        window.dispatchEvent(new Event("nostr:logout"));
-        window.dispatchEvent(new CustomEvent("nostr:session", { detail: { pubkey: "" } }));
-      } catch {}
-    } catch {}
+      await logout();
+    } catch {
+      alert("Logout failed");
+    }
   }
 
   // Render a short npub derived from the hex pubkey (or show the existing npub if provided)

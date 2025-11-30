@@ -180,6 +180,7 @@ export function CartProvider({ children }) {
   const fetchedForPkRef = useRef("");
   const readyForSyncRef = useRef(false);
   const lastSyncedRef = useRef("");
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     itemsRef.current = items;
@@ -212,21 +213,24 @@ export function CartProvider({ children }) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!nostrPk) {
-      fetchedForPkRef.current = "";
+  const syncCartFromServer = React.useCallback(
+    async ({ pubkey, force = false } = {}) => {
+      const pk = pubkey || nostrPk;
+      if (!pk) {
+        fetchedForPkRef.current = "";
+        readyForSyncRef.current = false;
+        lastSyncedRef.current = "";
+        return;
+      }
+      if (!force && fetchedForPkRef.current === pk) {
+        readyForSyncRef.current = true;
+        return;
+      }
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
+      fetchedForPkRef.current = pk;
       readyForSyncRef.current = false;
-      lastSyncedRef.current = "";
-      return;
-    }
-    if (fetchedForPkRef.current === nostrPk) {
-      readyForSyncRef.current = true;
-      return;
-    }
-    fetchedForPkRef.current = nostrPk;
-    readyForSyncRef.current = false;
-    let cancelled = false;
-    (async () => {
+      let cancelled = false;
       try {
         const resp = await api.get("/cart", { headers: { "cache-control": "no-cache" } });
         if (cancelled) return;
@@ -242,18 +246,37 @@ export function CartProvider({ children }) {
           const serializedLocal = serializeCartItems(itemsRef.current);
           lastSyncedRef.current = JSON.stringify(serializedLocal);
         }
-      } catch {
-        // ignore fetch errors silently
+      } catch (err) {
+        console.warn("[cart] sync failed", err?.message || err);
+        fetchedForPkRef.current = "";
       } finally {
         if (!cancelled) {
           readyForSyncRef.current = true;
         }
+        inFlightRef.current = false;
       }
-    })();
-    return () => {
-      cancelled = true;
+      return () => {
+        cancelled = true;
+      };
+    },
+    [nostrPk]
+  );
+
+  useEffect(() => {
+    syncCartFromServer();
+  }, [syncCartFromServer, nostrPk]);
+
+  useEffect(() => {
+    const handleSessionBound = (event) => {
+      const pk = event?.detail?.pubkey ? String(event.detail.pubkey) : "";
+      if (!pk || pk !== nostrPk) return;
+      syncCartFromServer({ pubkey: pk, force: true });
     };
-  }, [nostrPk]);
+    window.addEventListener("nostr:session-bound", handleSessionBound);
+    return () => {
+      window.removeEventListener("nostr:session-bound", handleSessionBound);
+    };
+  }, [nostrPk, syncCartFromServer]);
 
   useEffect(() => {
     if (!nostrPk || !readyForSyncRef.current) return;
