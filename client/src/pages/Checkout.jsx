@@ -548,11 +548,11 @@ export default function Checkout() {
 
         {!inv && (
           <AsyncButton
-            className="mt-6 bg-indigo-500/90 hover:bg-indigo-500"
+            className="mt-6 pay-now-btn"
             onClick={submit}
             busyText={paymentMethod === "onchain" ? "Creating on-chain request…" : "Creating invoice…"}
           >
-            Create Invoice
+            Pay Now
           </AsyncButton>
         )}
       </div>
