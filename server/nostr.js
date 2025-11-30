@@ -2,6 +2,7 @@
 // ESM module
 
 import WebSocket from "ws";
+import { createHash } from "crypto";
 import { nip19 } from "nostr-tools";
 import { Relay, useWebSocketImplementation } from "nostr-tools/relay";
 import { finalizeEvent, verifyEvent, getEventHash } from "nostr-tools/pure";
@@ -11,6 +12,7 @@ import { schnorr } from "@noble/curves/secp256k1";
 
 // Node 18+ has global fetch
 const globalFetch = (...args) => fetch(...args);
+const COMMENT_PROOF_TTL_MS = Math.max(5_000, Number(process.env.COMMENT_PROOF_TTL_MS || 60_000));
 
 // Ensure nostr-tools uses ws in Node
 try {
@@ -41,6 +43,7 @@ let _loggedRelays = false;
 // ------------------------------
 let _keysCache = null;
 let _keysWarned = false;
+const _proofCache = new Map(); // productId -> { storePubkey, ts, sig, _createdMs }
 
 function decodeSecret(name, raw) {
   const val = String(raw || "").trim();
@@ -108,6 +111,10 @@ export function getShopKeys() {
     console.warn("[nostr] getShopKeys: no keys configured, returning null");
   }
   return keys;
+}
+
+export function getShopPubkey() {
+  return getShopKeys()?.pubkeyHex || "";
 }
 
 // ------------------------------
@@ -210,6 +217,33 @@ export async function resolveToPubkey(identifier, { allowNip05 = true } = {}) {
 
   console.warn("[nostr] resolveToPubkey: unsupported identifier", { identifier: id });
   return "";
+}
+
+function commentProofMessage({ storePubkey, productId, ts }) {
+  const pid = String(productId || "").trim();
+  const timestamp = Math.floor(Number(ts || Date.now() / 1000));
+  return `comment-proof:${storePubkey}:${pid}:${timestamp}`;
+}
+
+export function makeCommentProof({ productId, ts } = {}) {
+  const keys = getShopKeys();
+  if (!keys) return null;
+  const storePubkey = keys.pubkeyHex;
+  const pid = String(productId || "").trim();
+  if (!pid) return null;
+  const nowMs = Date.now();
+  const cached = _proofCache.get(pid);
+  if (cached && nowMs - cached._createdMs < COMMENT_PROOF_TTL_MS) {
+    return { storePubkey: cached.storePubkey, ts: cached.ts, sig: cached.sig };
+  }
+  const timestamp = Math.floor(Number(ts || nowMs / 1000));
+  const msg = commentProofMessage({ storePubkey, productId: pid, ts: timestamp });
+  const hash = createHash("sha256").update(msg).digest();
+  const sigBytes = schnorr.sign(hash, keys.seckeyHex || keys.seckeyBytes);
+  const sig = bytesToHex(sigBytes);
+  const proof = { storePubkey, ts: timestamp, sig };
+  _proofCache.set(pid, { ...proof, _createdMs: nowMs });
+  return proof;
 }
 
 // ------------------------------

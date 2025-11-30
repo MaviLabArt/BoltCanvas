@@ -5,13 +5,15 @@ import {
 } from "./pool.js";
 
 // Use a regular custom kind (non-parameterized) so relays keep all events.
-export const PRODUCT_COMMENT_KIND = 13115;
-// Backward compatibility: read older 30315 events we already published.
-export const PRODUCT_COMMENT_KIND_COMPAT = 30315;
+export const PRODUCT_COMMENT_KIND = 43115;
 export const PRODUCT_COMMENT_VERSION = "product-comment-v1";
 
 // Canonical x-tag value for a given product, shared by publisher and filters.
-export function productXTagValue(productId) {
+export function productXTagValue(productId, storePubkey = "") {
+  const normalizedStoreKey = String(storePubkey || "").trim().toLowerCase();
+  if (normalizedStoreKey) {
+    return `shop:${normalizedStoreKey}:product:${productId}`;
+  }
   const envNs = typeof import.meta !== "undefined" && import.meta.env?.VITE_SITE_NAMESPACE;
   const ns = envNs
     ? String(envNs).trim()
@@ -19,12 +21,15 @@ export function productXTagValue(productId) {
   return `${ns.toLowerCase()}:product:${productId}`;
 }
 
-export function buildProductTags({ productId }) {
-  return [
-    ["x", productXTagValue(productId)],
+export function buildProductTags({ productId, storePubkey = "", proof = null }) {
+  const key = String(storePubkey || "").trim().toLowerCase();
+  const tags = [
+    ["x", productXTagValue(productId, key)],
     ["k", PRODUCT_COMMENT_VERSION],
     ["client", "lightning-shop"]
   ];
+  if (proof?.sig && proof?.ts) tags.push(["proof", proof.sig, String(proof.ts)]);
+  return tags;
 }
 
 export function extractProductIdFromTags(tags) {
@@ -53,38 +58,44 @@ export function dedupeAndSort(events) {
   return Array.from(map.values()).sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
 }
 
-export function productCommentsFilters({ productId, limit = 50, since, until } = {}) {
-  const xValue = productXTagValue(productId);
+export function productCommentsFilters({ productId, storePubkey, limit = 50, since, until } = {}) {
+  const key = String(storePubkey || "").trim().toLowerCase();
+  const xValue = productXTagValue(productId, key);
   const filters = [
     {
-      kinds: [PRODUCT_COMMENT_KIND, PRODUCT_COMMENT_KIND_COMPAT],
+      kinds: [PRODUCT_COMMENT_KIND],
       "#x": [xValue],
-      limit
-    },
-    {
-      kinds: [1],
-      "#t": [`product:${productId}`],
       limit
     }
   ];
+  if (!key) {
+    filters.push({
+      kinds: [1],
+      "#t": [`product:${productId}`],
+      limit
+    });
+  }
   if (since) filters.forEach((f) => { f.since = since; });
   if (until) filters.forEach((f) => { f.until = until; });
   return filters;
 }
 
-export function recentProductCommentsFilters({ limit = 10, since } = {}) {
+export function recentProductCommentsFilters({ storePubkey, limit = 10, since } = {}) {
+  const key = String(storePubkey || "").trim().toLowerCase();
   const filters = [
     {
-      kinds: [PRODUCT_COMMENT_KIND, PRODUCT_COMMENT_KIND_COMPAT],
+      kinds: [PRODUCT_COMMENT_KIND],
       "#k": [PRODUCT_COMMENT_VERSION],
-      limit
-    },
-    {
-      kinds: [1],
-      "#t": ["product"],
       limit
     }
   ];
+  if (!key) {
+    filters.push({
+      kinds: [1],
+      "#t": ["product"],
+      limit
+    });
+  }
   if (since) filters.forEach((f) => { f.since = since; });
   return filters;
 }
