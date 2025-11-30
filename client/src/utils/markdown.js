@@ -145,7 +145,8 @@ function decodeHtmlEntities(str = "") {
 }
 
 export function stripMarkdown(src = "") {
-  const html = renderMarkdown(src);
+  const withoutBullets = String(src || "").replace(/^\s*[-*+]\s+/gm, "");
+  const html = renderMarkdown(withoutBullets);
   if (!html) return "";
   const noTags = html.replace(/<[^>]+>/g, " ");
   return decodeHtmlEntities(noTags).replace(/\s+/g, " ").trim();

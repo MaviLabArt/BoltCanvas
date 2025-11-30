@@ -4,6 +4,11 @@ import { visualizer } from "rollup-plugin-visualizer";
 
 export default defineConfig(({ mode }) => {
   return {
+    resolve: {
+      alias: {
+        "lodash/isEqualWith": "lodash/isEqualWith.js"
+      }
+    },
     plugins: [
       react(),
       mode === "analyze" &&
@@ -17,6 +22,22 @@ export default defineConfig(({ mode }) => {
       host: "127.0.0.1",
       port: 5173,
       hmr: { clientPort: 8080 }
+    },
+    test: {
+      environment: "jsdom",
+      globals: true,
+      server: {
+        host: "127.0.0.1"
+      },
+      setupFiles: "./src/test/setupTests.js",
+      deps: {
+        inline: ["@testing-library/jest-dom", "lodash"],
+        optimizer: {
+          web: {
+            include: ["@testing-library/jest-dom", "lodash"]
+          }
+        }
+      }
     }
   };
 });

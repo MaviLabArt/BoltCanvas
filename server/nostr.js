@@ -616,9 +616,11 @@ export async function publishProductTeaser({
 
     const linesWithoutImage = finalContent
       .split(/\r?\n/)
-      .filter((line) => line.trim() && line.trim() !== normalizedImageUrl);
-    finalContent = linesWithoutImage.length
-      ? `${normalizedImageUrl}\n\n${linesWithoutImage.join("\n")}`
+      .filter((line) => line.trim() !== normalizedImageUrl);
+    const hasBody = linesWithoutImage.some((line) => line.trim());
+    const body = hasBody ? linesWithoutImage.join("\n") : "";
+    finalContent = body
+      ? `${normalizedImageUrl}\n\n${body}`
       : normalizedImageUrl;
   }
 

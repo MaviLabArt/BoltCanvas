@@ -1496,22 +1496,25 @@ function buildTeaserPreview(value = {}) {
   const base = String(value.content || "").trim();
   const rawLines = base ? base.split(/\r?\n/) : [];
   const imageUrl = ensureImageUrlExt(value.imageUrl || value.defaultImageUrl || "");
+  const bodyLines = rawLines.filter((line) => line.trim() !== imageUrl);
+  const hasBody = bodyLines.some((line) => line.trim());
   const lines = [];
 
   if (imageUrl) {
     lines.push(imageUrl);
-    if (rawLines.length) lines.push(""); // spacer after image
+    if (hasBody) lines.push(""); // spacer after image when body exists
   }
 
-  rawLines
-    .filter((line) => line.trim() && line.trim() !== imageUrl)
-    .forEach((line) => lines.push(line));
+  lines.push(...bodyLines);
 
   const productUrl = String(value.productUrl || "").trim();
   if (productUrl) {
     const productLine = `Available here 👉 ${productUrl}`;
-    const trimmed = lines.map((line) => line.trim());
-    if (!trimmed.includes(productLine) && !trimmed.includes(productUrl)) {
+    const hasProductLine = lines.some((line) => {
+      const trimmed = line.trim();
+      return trimmed === productLine || trimmed === productUrl;
+    });
+    if (!hasProductLine) {
       if (lines.length && lines[lines.length - 1].trim() !== "") lines.push("");
       lines.push(productLine);
     }
