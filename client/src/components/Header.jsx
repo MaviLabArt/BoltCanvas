@@ -29,6 +29,7 @@ export default function Header() {
   const [nostrPk, setNostrPk] = useState("");
   const [npubState, setNpubState] = useState({ npubFull: "", npubShort: "" });
   const [nostrProfile, setNostrProfile] = useState(null);
+  const [mobileNostrMenuOpen, setMobileNostrMenuOpen] = useState(false);
 
   // For cart “flash” animation when an item is added
   const [flashCart, setFlashCart] = useState(false);
@@ -310,9 +311,9 @@ export default function Header() {
                 )}
               </Link>
 
-              {/* Nostr auth (text updated) */}
+              {/* Nostr auth (desktop) */}
               {nostrPk ? (
-                <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 ring-1 ring-white/10">
+                <div className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 ring-1 ring-white/10">
                   <div className="h-8 w-8 rounded-full overflow-hidden bg-slate-800 ring-1 ring-white/10 flex items-center justify-center text-xs font-semibold">
                     {nostrProfile?.picture ? (
                       <img src={nostrProfile.picture} alt={nostrProfile.name || "avatar"} className="h-full w-full object-cover" loading="lazy" />
@@ -334,11 +335,84 @@ export default function Header() {
               ) : (
                 <button
                   onClick={signInWithNostr}
-                  className="inline-flex items-center px-3 py-2 rounded-xl bg-indigo-500/90 hover:bg-indigo-500 ring-1 ring-white/10 focus-visible:ring-2 focus-visible:ring-indigo-400"
+                  className="hidden sm:inline-flex items-center px-3 py-2 rounded-xl bg-indigo-500/90 hover:bg-indigo-500 ring-1 ring-white/10 focus-visible:ring-2 focus-visible:ring-indigo-400"
                   title="Login with Nostr"
                 >
                   Login with Nostr
                 </button>
+              )}
+
+              {/* Nostr auth (mobile) */}
+              {/* Mobile: when Orders exists, use compact avatar + popover; else keep default */}
+              {hasOrders ? (
+                nostrPk ? (
+                  <div className="relative sm:hidden">
+                    <button
+                      onClick={() => setMobileNostrMenuOpen((v) => !v)}
+                      className="h-10 w-10 rounded-full overflow-hidden bg-slate-900 ring-1 ring-white/10 flex items-center justify-center text-xs font-semibold"
+                      title="Account menu"
+                      aria-label="Account menu"
+                    >
+                      {nostrProfile?.picture ? (
+                        <img src={nostrProfile.picture} alt={nostrProfile.name || "avatar"} className="h-full w-full object-cover" loading="lazy" />
+                      ) : (
+                        <span>{(nostrProfile?.name || npubShort || "Hi").slice(0, 2)}</span>
+                      )}
+                    </button>
+                    {mobileNostrMenuOpen && (
+                      <div className="absolute right-0 mt-2 w-48 rounded-xl bg-slate-900 ring-1 ring-white/10 shadow-lg p-3 z-30">
+                        <div className="text-sm font-medium truncate" title={npubFull || nostrPk}>
+                          {nostrProfile?.name || npubShort || "You"}
+                        </div>
+                        <button
+                          onClick={() => { setMobileNostrMenuOpen(false); signOutNostr(); }}
+                          className="mt-2 w-full text-left text-xs px-3 py-2 rounded-lg bg-slate-800 ring-1 ring-white/10"
+                        >
+                          Sign out
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    onClick={signInWithNostr}
+                    className="sm:hidden inline-flex items-center px-3 py-2 rounded-xl bg-indigo-500/90 hover:bg-indigo-500 ring-1 ring-white/10 focus-visible:ring-2 focus-visible:ring-indigo-400 text-xs font-medium"
+                    title="Nostr Login"
+                    aria-label="Nostr Login"
+                  >
+                    Nostr Login
+                  </button>
+                )
+              ) : (
+                nostrPk ? (
+                  <div className="sm:hidden inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 ring-1 ring-white/10">
+                    <div className="h-8 w-8 rounded-full overflow-hidden bg-slate-800 ring-1 ring-white/10 flex items-center justify-center text-xs font-semibold">
+                      {nostrProfile?.picture ? (
+                        <img src={nostrProfile.picture} alt={nostrProfile.name || "avatar"} className="h-full w-full object-cover" loading="lazy" />
+                      ) : (
+                        <span>{(nostrProfile?.name || npubShort || "Hi").slice(0, 2)}</span>
+                      )}
+                    </div>
+                    <div className="text-sm" title={npubFull || nostrPk}>
+                      Hi {nostrProfile?.name || npubShort || "there"}!
+                    </div>
+                    <button
+                      onClick={signOutNostr}
+                      className="text-xs px-2 py-1 rounded-lg bg-slate-800 ring-1 ring-white/10"
+                      title="Sign out of Nostr"
+                    >
+                      Sign out
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={signInWithNostr}
+                    className="sm:hidden inline-flex items-center px-3 py-2 rounded-xl bg-indigo-500/90 hover:bg-indigo-500 ring-1 ring-white/10 focus-visible:ring-2 focus-visible:ring-indigo-400"
+                    title="Nostr Login"
+                  >
+                    Nostr Login
+                  </button>
+                )
               )}
               {/* No admin link here on purpose */}
             </div>

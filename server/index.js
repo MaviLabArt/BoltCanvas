@@ -51,6 +51,7 @@ import { sendOrderStatusEmail, label as statusLabel } from "./email.js";
 import { verifySvixSignature } from "./svix.js";
 
 const app = express();
+const TEST_MODE = process.env.NODE_ENV === "test";
 
 // Trust reverse proxy (needed for secure cookies over HTTPS/CDN/reverse-proxy)
 app.set("trust proxy", 1);
@@ -2514,7 +2515,7 @@ if (DEV) {
 if (!DEV) {
   const dist = path.resolve(__dirname, "../client/dist");
   cachedIndexHtml = loadIndexHtml(dist);
-  app.use(express.static(dist));
+  app.use(express.static(dist, { index: false }));
 
   // Serve product pages with OG/Twitter tags for social previews
   app.get("/product/:id", (req, res) => {
@@ -2542,17 +2543,20 @@ if (!DEV) {
 // ---------------------------------------------------------------------
 // Start server (bind 0.0.0.0 for LAN access) + WS upgrade for HMR
 // ---------------------------------------------------------------------
-const server = app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server listening on http://0.0.0.0:${PORT}`);
-});
-if (spaProxy) server.on("upgrade", spaProxy.upgrade);
+let server = null;
+if (!TEST_MODE) {
+  server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server listening on http://0.0.0.0:${PORT}`);
+  });
+  if (spaProxy) server.on("upgrade", spaProxy.upgrade);
+}
 
 // ---------------------------------------------------------------------
 // 🔌 Always-on payment watcher (Blink or LND)
 // Marks orders PAID even if buyers close their browser, and notifies ntfy.
 // Also DMs buyer (if Nostr contact present).
 // ---------------------------------------------------------------------
-(function startPaymentUpdatesWatcher() {
+if (!TEST_MODE) (function startPaymentUpdatesWatcher() {
   if (PAYMENT_PROVIDER === "blink" && !BLINK_API_KEY) {
     console.warn("[PaymentWatcher] Skipped: BLINK_API_KEY missing while PAYMENT_PROVIDER=blink");
     return;
@@ -2577,7 +2581,7 @@ if (spaProxy) server.on("upgrade", spaProxy.upgrade);
 // NEW: Background sweeper - keeps PENDING while valid; cancels on EXPIRED
 // Runs periodically so orders are cancelled even if the buyer closes the browser
 // ---------------------------------------------------------------------
-(function startPendingInvoiceSweeper() {
+if (!TEST_MODE) (function startPendingInvoiceSweeper() {
   async function sweepPendingInvoices() {
     try {
       const all = Orders.all();
@@ -2682,3 +2686,6 @@ if (ENABLE_WEBHOOKS) {
     res.status(204).end();
   });
 }
+
+export { app, server };
+export default app;
