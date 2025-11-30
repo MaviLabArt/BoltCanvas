@@ -516,7 +516,7 @@ export default function Settings() {
           </>
         ) : (
           <div className="text-xs text-white/50">
-            {t("Consigliato: PNG quadrato (32–64px). Il logo non verrà usato come favicon.", "Recommended: square PNG (32–64px). Logo will not be used as favicon.")}
+            {t("Consigliato: PNG quadrato (32–64px).", "Recommended: square PNG (32–64px).")}
           </div>
         )}
       </div>

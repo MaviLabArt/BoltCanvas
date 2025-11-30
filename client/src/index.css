@@ -46,6 +46,51 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
 .rounded-3xl{}
 
 /* -------------------------------------------------------------------
+   Checkout primary call-to-action (Pay Now) - theme aware
+   ------------------------------------------------------------------- */
+.pay-now-btn {
+  color: #f6f7fb !important;
+  background: linear-gradient(135deg, #5e68cc, #4d56b5);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 0.75rem 1.25rem;
+  font-weight: 600;
+  transition: transform 120ms ease, box-shadow 160ms ease, opacity 120ms ease;
+  box-shadow: none;
+}
+.pay-now-btn:hover {
+  background: linear-gradient(135deg, #5660c3, #4651ac);
+  box-shadow: none;
+}
+.pay-now-btn:active {
+  transform: translateY(1px);
+}
+.pay-now-btn:focus-visible {
+  outline: 2px solid rgba(95, 108, 245, 0.5);
+  outline-offset: 2px;
+}
+
+[data-theme='ember'] .pay-now-btn {
+  background: linear-gradient(135deg, #f5b04c, #e98a1c);
+  box-shadow: none;
+  border-color: rgba(233, 138, 28, 0.22);
+  color: #0c111b !important;
+}
+[data-theme='ember'] .pay-now-btn:hover {
+  background: linear-gradient(135deg, #f6bf64, #ed9b3a);
+}
+
+[data-theme='light'] .pay-now-btn {
+  background: linear-gradient(135deg, #a06a45, #845437);
+  color: #fff !important;
+  border-color: rgba(202, 184, 168, 0.8);
+  box-shadow: none;
+}
+[data-theme='light'] .pay-now-btn:hover {
+  background: linear-gradient(135deg, #965f3d, #7a4c32);
+}
+
+/* -------------------------------------------------------------------
    Free shipping pill - theme aware
    ------------------------------------------------------------------- */
 .free-shipping-pill {

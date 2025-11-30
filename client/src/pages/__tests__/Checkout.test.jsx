@@ -93,7 +93,7 @@ describe("Checkout page", () => {
       await userEvent.type(screen.getByPlaceholderText("Phone number (required for courier)"), "123");
       await userEvent.type(screen.getByPlaceholderText("Email"), "a@b.com");
       await userEvent.type(screen.getByPlaceholderText("Telegram (e.g. @nickname)"), "@me");
-      await userEvent.click(screen.getByText("Create Invoice"));
+      await userEvent.click(screen.getByText("Pay Now"));
     });
 
     await waitFor(() => expect(apiPost).toHaveBeenCalledWith("/checkout/create-invoice", expect.any(Object)));
