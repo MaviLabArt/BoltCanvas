@@ -14,10 +14,10 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "http-proxy-middleware": "^3.0.5",
-    "imapflow": "^1.0.164",
+    "imapflow": "^1.1.1",
     "morgan": "^1.10.0",
     "node-fetch": "^3.3.2",
-    "nodemailer": "^6.9.13",
+    "nodemailer": "^7.0.11",
     "nostr-tools": "^2.16.2",
     "sharp": "^0.33.5",
     "svix": "^1.25.0",
@@ -26,6 +26,6 @@
   "devDependencies": {
     "nodemon": "^3.1.4",
     "supertest": "^6.3.4",
-    "vitest": "^1.6.0"
+    "vitest": "^4.0.14"
   }
 }
