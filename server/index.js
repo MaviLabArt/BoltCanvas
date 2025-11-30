@@ -8,6 +8,7 @@ import { createProxyMiddleware } from "http-proxy-middleware";
 import { spawn } from "child_process";
 import crypto from "crypto";
 import sharp from "sharp";
+import { verifyEvent } from "nostr-tools/pure";
 
 import { makeCors, sessions, logger, requireAdmin } from "./middleware.js";
 import { Products, Orders, Settings, ProductImages, ProductNostrPosts, NostrCarts, DEFAULT_TEASER_HASHTAGS } from "./db.js";
@@ -37,6 +38,8 @@ import {
   relaysFrom,
   resolveToPubkey,
   verifyLoginEvent,
+  verifyCommentProof,
+  extractProductIdFromTags,
   sendDM,
   publishProductTeaser,
   makeCommentProof,
@@ -122,9 +125,11 @@ const NTFY_USER = process.env.NTFY_USER || "";
 const NTFY_PASSWORD = process.env.NTFY_PASSWORD || "";
 const NTFY_PRIORITY = process.env.NTFY_PRIORITY || "high";
 const NTFY_TITLE_PREFIX = process.env.NTFY_TITLE_PREFIX || "";
+const COMMENT_EVENT_KIND = 43115;
 
 // A small in-memory guard to avoid duplicate notifies for the same payment
 const notifiedHashes = new Set();
+const notifiedCommentIds = new Set();
 
 function verifyBtcpaySignature(rawBody, sigHeader, secret) {
   if (!sigHeader || !secret) return false;
@@ -296,6 +301,50 @@ function notifyPaidOnce(order) {
   if (hash && notifiedHashes.has(hash)) return;
   ntfyNotifyPaid(order);
   if (hash) notifiedHashes.add(hash);
+}
+
+function ntfyNotifyComment({ event, product, productId } = {}) {
+  try {
+    if (!NTFY_TOPIC) return;
+    if (!event) return;
+    const url = `${NTFY_URL}/${encodeURIComponent(NTFY_TOPIC)}`;
+    const titlePrefix = NTFY_TITLE_PREFIX ? `${NTFY_TITLE_PREFIX}, ` : "";
+    const title = `${titlePrefix}Nuovo commento Nostr`;
+    const tags = "speech_balloon,nostr";
+    const when = new Date((event.created_at || Date.now() / 1000) * 1000).toLocaleString("it-IT", { hour12: false });
+    const bodyLines = [
+      `Prodotto: ${product?.title || productId || "-"}`,
+      `Autore: ${event.pubkey || "-"}`,
+      `Data: ${when}`,
+      "",
+      "Commento:",
+      String(event.content || "").slice(0, 800) || "(vuoto)",
+      "",
+      `Event ID: ${event.id || "-"}`
+    ].join("\n");
+
+    const args = [
+      "-sS",
+      "-X", "POST",
+      url,
+      "-H", `Title: ${title}`,
+      "-H", `Priority: ${NTFY_PRIORITY}`,
+      "-H", `Tags: ${tags}`,
+      "--data-binary", bodyLines
+    ];
+
+    if (NTFY_USER || NTFY_PASSWORD) {
+      args.push("-u", `${NTFY_USER}:${NTFY_PASSWORD}`);
+    }
+
+    const child = spawn("curl", args, { stdio: "ignore" });
+    child.on("error", (err) => console.warn("[ntfy] curl error:", err?.message || err));
+    child.on("close", (code) => {
+      if (code !== 0) console.warn("[ntfy] curl exited with code", code);
+    });
+  } catch (e) {
+    console.warn("[ntfy] failed to send comment notification:", e?.message || e);
+  }
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -2342,6 +2391,43 @@ app.get("/api/nostr/comment-proof", (req, res) => {
   const proof = makeCommentProof({ productId });
   if (!proof) return res.status(400).json({ ok: false, error: "Nostr server key not configured" });
   res.json({ ok: true, storePubkey: proof.storePubkey, proof: { sig: proof.sig, ts: proof.ts } });
+});
+
+// Optional: receive comment events (after publish) and send an ntfy notification.
+app.post("/api/nostr/comment/notify", (req, res) => {
+  try {
+    const ev = req.body?.event || {};
+    if (!ev || ev.kind !== COMMENT_EVENT_KIND) {
+      return res.status(400).json({ ok: false, error: "Invalid kind" });
+    }
+    if (!verifyEvent(ev)) {
+      return res.status(400).json({ ok: false, error: "Invalid signature" });
+    }
+    const productId = extractProductIdFromTags(ev.tags);
+    if (!productId) return res.status(400).json({ ok: false, error: "Missing product id" });
+
+    const proofTag = (Array.isArray(ev.tags) ? ev.tags : []).find((t) => Array.isArray(t) && t[0] === "proof");
+    const proofSig = proofTag?.[1];
+    const proofTs = proofTag?.[2];
+    const storePubkey = getShopPubkey();
+    if (!storePubkey) return res.status(400).json({ ok: false, error: "Store pubkey not configured" });
+    if (!verifyCommentProof({ sig: proofSig, ts: proofTs, storePubkey, productId })) {
+      return res.status(400).json({ ok: false, error: "Invalid proof" });
+    }
+
+    const id = String(ev.id || "");
+    if (id && notifiedCommentIds.has(id)) {
+      return res.json({ ok: true, dedup: true });
+    }
+
+    let product = null;
+    try { product = Products.get(productId, { includeImages: false }); } catch {}
+    ntfyNotifyComment({ event: ev, product, productId });
+    if (id) notifiedCommentIds.add(id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: "Notify failed" });
+  }
 });
 
 // ---------------------------------------------------------------------

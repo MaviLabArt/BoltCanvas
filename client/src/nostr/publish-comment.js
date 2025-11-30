@@ -48,5 +48,7 @@ export async function publishProductComment({
   if (!verifyEvent(signed)) throw new Error("Signature verification failed");
 
   await publishEvent(signed, relays);
+  // Fire-and-forget server notify (ntfy) if available.
+  try { api.post("/nostr/comment/notify", { event: signed }).catch(() => {}); } catch {}
   return { ok: true, eventId: signed.id };
 }
