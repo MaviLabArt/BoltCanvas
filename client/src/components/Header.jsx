@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useCart } from "../store/cart.jsx";
 import api from "../services/api.js";
 import { useSettings } from "../store/settings.jsx";
 import { loadNip19 } from "../utils/loadNip19.js";
+import { fetchProfilesForEvents } from "../nostr/profiles.js";
 
 let nostrLoginInitialized = false;
 
@@ -27,6 +28,7 @@ export default function Header() {
   // Nostr session state
   const [nostrPk, setNostrPk] = useState("");
   const [npubState, setNpubState] = useState({ npubFull: "", npubShort: "" });
+  const [nostrProfile, setNostrProfile] = useState(null);
 
   // For cart “flash” animation when an item is added
   const [flashCart, setFlashCart] = useState(false);
@@ -116,6 +118,7 @@ export default function Header() {
     let cancelled = false;
     if (!nostrPk) {
       setNpubState({ npubFull: "", npubShort: "" });
+      setNostrProfile(null);
       return () => {
         cancelled = true;
       };
@@ -136,6 +139,32 @@ export default function Header() {
       cancelled = true;
     };
   }, [nostrPk]);
+
+  const relays = useMemo(() => s?.nostrRelays, [s?.nostrRelays]);
+
+  // Fetch Nostr profile for greeting/avatar
+  useEffect(() => {
+    let cancelled = false;
+    if (!nostrPk) {
+      setNostrProfile(null);
+      return () => { cancelled = true; };
+    }
+    (async () => {
+      try {
+        const profiles = await fetchProfilesForEvents([{ pubkey: nostrPk }], relays);
+        const profile = profiles?.[nostrPk];
+        if (!cancelled) {
+          setNostrProfile(profile ? {
+            name: profile.display_name || profile.name || "",
+            picture: profile.picture || ""
+          } : null);
+        }
+      } catch {
+        if (!cancelled) setNostrProfile(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [nostrPk, relays]);
 
   // Wait briefly for a nostr provider (handles fast clicks after init)
   async function ensureNostrProvider(timeoutMs = 3000) {
@@ -216,7 +245,8 @@ export default function Header() {
     loc.pathname.startsWith("/product/") ||
     loc.pathname === "/cart" ||
     loc.pathname === "/checkout" ||
-    loc.pathname === "/orders";
+    loc.pathname === "/orders" ||
+    loc.pathname === "/";
 
   return (
     <>
@@ -229,18 +259,22 @@ export default function Header() {
             ) : (
               <button
                 onClick={() => nav("/")}
-                className="text-left flex items-center gap-3"
+                className="text-left flex items-center justify-center h-10 w-10 rounded-xl bg-slate-900 ring-1 ring-white/10 hover:ring-indigo-400/60 transition"
                 title="Home"
+                aria-label="Home"
               >
-                {/* No small logo on Home; keep it on other pages */}
-                {s.logo && loc.pathname !== "/" ? (
-                  <img
-                    src={s.logo}
-                    alt="logo"
-                    className="h-8 w-8 rounded-lg object-cover ring-1 ring-white/10"
-                  />
-                ) : null}
-                {/* Store name removed from header as requested */}
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-6 w-6 text-white/90"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M4.5 11.5 12 4l7.5 7.5" />
+                  <path d="M6.5 10.5v8a1 1 0 0 0 1 1H10a1 1 0 0 0 1-1v-4h2v4a1 1 0 0 0 1 1h2.5a1 1 0 0 0 1-1v-8" />
+                </svg>
               </button>
             )}
 
@@ -279,7 +313,16 @@ export default function Header() {
               {/* Nostr auth (text updated) */}
               {nostrPk ? (
                 <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 ring-1 ring-white/10">
-                  <span title={npubFull || nostrPk}>Signed: {npubShort}</span>
+                  <div className="h-8 w-8 rounded-full overflow-hidden bg-slate-800 ring-1 ring-white/10 flex items-center justify-center text-xs font-semibold">
+                    {nostrProfile?.picture ? (
+                      <img src={nostrProfile.picture} alt={nostrProfile.name || "avatar"} className="h-full w-full object-cover" loading="lazy" />
+                    ) : (
+                      <span>{(nostrProfile?.name || npubShort || "Hi").slice(0, 2)}</span>
+                    )}
+                  </div>
+                  <div className="text-sm" title={npubFull || nostrPk}>
+                    Hi {nostrProfile?.name || npubShort || "there"}!
+                  </div>
                   <button
                     onClick={signOutNostr}
                     className="text-xs px-2 py-1 rounded-lg bg-slate-800 ring-1 ring-white/10"

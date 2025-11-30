@@ -9,7 +9,8 @@ import { isEventBlocked, makeBlockedSets, nostrCommentsEnabled } from "../nostr/
 export default function RecentCommentsStrip({ products }) {
   const { settings } = useSettings();
   const relays = useMemo(() => settings?.nostrRelays, [settings]);
-  const enabled = nostrCommentsEnabled(settings);
+  const storePubkey = useMemo(() => String(settings?.nostrShopPubkey || "").toLowerCase(), [settings]);
+  const enabled = nostrCommentsEnabled(settings) && !!storePubkey;
   const [comments, setComments] = useState([]);
   const blocked = useMemo(() => makeBlockedSets(settings), [settings]);
 
@@ -26,7 +27,7 @@ export default function RecentCommentsStrip({ products }) {
     }
     async function load() {
       try {
-        const events = await fetchRecentProductComments({ relays, limit: 12 });
+        const events = await fetchRecentProductComments({ relays, storePubkey, limit: 12 });
         const filtered = events.filter((ev) => !isEventBlocked(ev, blocked));
         const profiles = await fetchProfilesForEvents(filtered, relays);
         const normalized = normalizeComments(filtered, profiles).filter((c) => c.productId);
@@ -37,7 +38,7 @@ export default function RecentCommentsStrip({ products }) {
     }
     load();
     return () => { cancelled = true; };
-  }, [relays, enabled, blocked, settings]);
+  }, [relays, storePubkey, enabled, blocked, settings]);
 
   const productMap = useMemo(() => {
     const map = new Map();

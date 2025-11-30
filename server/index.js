@@ -33,11 +33,13 @@ import * as btcpay from "./btcpay.js";
 // NEW: Nostr helpers
 import {
   getShopKeys,
+  getShopPubkey,
   relaysFrom,
   resolveToPubkey,
   verifyLoginEvent,
   sendDM,
   publishProductTeaser,
+  makeCommentProof,
 } from "./nostr.js";
 
 import { sendOrderStatusEmail, label as statusLabel } from "./email.js";
@@ -545,10 +547,11 @@ function buildProductMeta(req, product, settings) {
 function buildDefaultMeta(req, settings) {
   const siteName = settings?.storeName || "Lightning Shop";
   const description = settings?.heroLine || settings?.contactNote || "A curated selection available for sats.";
+  const logo = settings?.logoLight || settings?.logo || settings?.logoDark || "";
   return {
     title: siteName,
     description,
-    image: "",
+    image: logo ? ensureAbsoluteFromReq(req, logo) : "",
     url: absoluteUrlFromRequest(req),
     type: "website",
     siteName
@@ -900,7 +903,10 @@ function imageHandler({ thumb }) {
 // Public API
 // ---------------------------------------------------------------------
 app.get("/api/health", (req, res) => res.json({ ok: true }));
-app.get("/api/public-settings", (req, res) => res.json(Settings.getPublic()));
+app.get("/api/public-settings", (req, res) => {
+  const nostrShopPubkey = getShopPubkey();
+  res.json({ ...Settings.getPublic(), nostrShopPubkey });
+});
 app.get("/api/payments/config", (req, res) => {
   res.json({
     provider: PAYMENT_PROVIDER,
@@ -1038,7 +1044,7 @@ app.get("/api/admin/config", (req, res) => res.json({ lang: ADMIN_LANG }));
 // ---------------------------------------------------------------------
 // Admin: settings / products / orders
 // ---------------------------------------------------------------------
-app.get("/api/admin/settings", requireAdmin, (req, res) => res.json(Settings.getAll()));
+app.get("/api/admin/settings", requireAdmin, (req, res) => res.json({ ...Settings.getAll(), nostrShopPubkey: getShopPubkey() }));
 app.put("/api/admin/settings", requireAdmin, (req, res) => {
   // Persist all editable settings (incl. Nostr keys / relays / lightning address)
   const {
@@ -2327,6 +2333,15 @@ app.get("/api/nostr/me", (req, res) => {
 app.post("/api/nostr/logout", (req, res) => {
   req.session.nostrPubkey = null;
   res.json({ ok: true });
+});
+
+// Issue a short-lived, per-product proof signed with the shop Nostr key.
+app.get("/api/nostr/comment-proof", (req, res) => {
+  const productId = String(req.query.productId || "").trim();
+  if (!productId) return res.status(400).json({ ok: false, error: "Missing productId" });
+  const proof = makeCommentProof({ productId });
+  if (!proof) return res.status(400).json({ ok: false, error: "Nostr server key not configured" });
+  res.json({ ok: true, storePubkey: proof.storePubkey, proof: { sig: proof.sig, ts: proof.ts } });
 });
 
 // ---------------------------------------------------------------------

@@ -98,7 +98,8 @@ export default function ProductComments({ productId }) {
   const maxLen = 600;
   const [input, setInput] = useState("");
   const relays = useMemo(() => settings?.nostrRelays, [settings]);
-  const enabled = nostrCommentsEnabled(settings);
+  const storePubkey = useMemo(() => String(settings?.nostrShopPubkey || "").toLowerCase(), [settings]);
+  const enabled = nostrCommentsEnabled(settings) && !!storePubkey;
   const blocked = useMemo(() => makeBlockedSets(settings), [settings]);
 
   useEffect(() => {
@@ -116,7 +117,7 @@ export default function ProductComments({ productId }) {
       }
       setLoading(true);
       try {
-        const events = await fetchProductComments({ productId, relays, limit: 40 });
+        const events = await fetchProductComments({ productId, relays, storePubkey, limit: 40 });
         const filtered = events.filter((ev) => !isEventBlocked(ev, blocked));
         const profiles = await fetchProfilesForEvents(filtered, relays);
         const normalized = normalizeComments(filtered, profiles);
@@ -130,6 +131,7 @@ export default function ProductComments({ productId }) {
       unsubscribe = subscribeToProductComments({
         productId,
         relays,
+        storePubkey,
         since: Math.floor(Date.now() / 1000),
         onEvent: (ev) => {
           if (isEventBlocked(ev, blocked)) return;
@@ -147,7 +149,7 @@ export default function ProductComments({ productId }) {
       cancelled = true;
       if (unsubscribe) unsubscribe();
     };
-  }, [productId, relays, enabled, blocked, settings]);
+  }, [productId, relays, storePubkey, enabled, blocked, settings]);
 
   if (!enabled) return null;
 
@@ -157,7 +159,8 @@ export default function ProductComments({ productId }) {
       await publishProductComment({
         content: input,
         productId,
-        relays
+        relays,
+        storePubkey
       });
       setInput("");
     } catch (err) {

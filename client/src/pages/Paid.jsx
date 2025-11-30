@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import api, { absoluteApiUrl } from "../services/api.js";
 import { formatSats } from "../utils/format.js";
+import QR from "../components/QR.jsx";
 
 /**
  * Paid page:
@@ -22,6 +23,35 @@ export default function Paid() {
   const [loading, setLoading] = useState(true);
   const [prodCache, setProdCache] = useState({}); // productId -> product detail (with thumbUrls)
   const [copying, setCopying] = useState({ id: false });
+
+  const statusUpper = useMemo(() => String(order?.status || "PAID").toUpperCase(), [order?.status]);
+  const paymentMethod = useMemo(
+    () => String(order?.paymentMethod || "lightning").toLowerCase(),
+    [order?.paymentMethod]
+  );
+  const isLightning = paymentMethod === "lightning";
+  const isOnchain = paymentMethod === "onchain";
+  const isPendingLike = statusUpper === "PENDING" || statusUpper === "MEMPOOL" || statusUpper === "CONFIRMED";
+  const paymentInFlight = statusUpper === "MEMPOOL" || statusUpper === "CONFIRMED";
+  const isShipped = statusUpper === "SHIPPED";
+  const isPrep = statusUpper === "PREPARATION" || isShipped;
+  const isPaid = statusUpper === "PAID" || isPrep || paymentInFlight;
+  const invoiceSats = Math.max(0, Number(order?.totalSats || 0));
+  const onchainAmountSats = Math.max(0, Number(order?.boltzExpectedAmountSats || invoiceSats));
+  const lightningUri = useMemo(
+    () => (order?.paymentRequest ? `lightning:${order.paymentRequest}` : ""),
+    [order?.paymentRequest]
+  );
+  const bip21 = useMemo(() => {
+    if (!order?.boltzAddress) return "";
+    const btc = onchainAmountSats > 0
+      ? (onchainAmountSats / 1e8).toFixed(8).replace(/0+$/, "").replace(/\.$/, "")
+      : "";
+    return `bitcoin:${order.boltzAddress}${btc ? `?amount=${btc}` : ""}`;
+  }, [order?.boltzAddress, onchainAmountSats]);
+  const canResumePayment =
+    isPendingLike &&
+    ((isLightning && !!order?.paymentRequest) || (isOnchain && !!order?.boltzAddress));
 
   // load /api/orders/mine and pick the order by paymentHash
   useEffect(() => {
@@ -70,25 +100,68 @@ export default function Paid() {
     return () => { cancelled = true; };
   }, [hash]);
 
+  useEffect(() => {
+    const hashRef = order?.paymentHash;
+    const swapRef = order?.boltzSwapId;
+    if (!order || !isPendingLike) return;
+    if (isOnchain && !swapRef) return;
+    if (!isOnchain && !hashRef) return;
+    let cancelled = false;
+    let timer;
+
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        let st = "";
+        if (isOnchain && swapRef) {
+          const r = await api.get(`/onchain/${swapRef}/status`);
+          st = String(r.data?.status || "").toUpperCase();
+        } else if (hashRef) {
+          const r = await api.get(`/invoices/${hashRef}/status`);
+          st = String(r.data?.status || "").toUpperCase();
+        }
+        if (st && st !== statusUpper) {
+          setOrder((prev) => (prev && prev.id === order.id ? { ...prev, status: st } : prev));
+        }
+        if (st === "PAID" || st === "EXPIRED" || st === "FAILED") return;
+      } catch {}
+      timer = setTimeout(poll, isOnchain ? 5000 : 3000);
+    };
+
+    poll();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [order?.id, order?.paymentHash, order?.boltzSwapId, isOnchain, isPendingLike, statusUpper]);
+
   const storeDate = useMemo(() => {
     if (!order?.createdAt) return "";
     try { return new Date(order.createdAt).toLocaleString(); } catch { return ""; }
   }, [order?.createdAt]);
 
   const statusLabel = useMemo(() => {
-    const s = String(order?.status || "PAID").toUpperCase();
-    if (s === "PENDING") return "PENDING";
-    if (s === "PAID") return "PAID";
-    if (s === "PREPARATION") return "IN PREPARATION";
-    if (s === "SHIPPED") return "SHIPPED";
-    return s;
-  }, [order?.status]);
+    if (statusUpper === "PENDING") return "PENDING";
+    if (statusUpper === "MEMPOOL") return "MEMPOOL";
+    if (statusUpper === "CONFIRMED") return "CONFIRMED";
+    if (statusUpper === "PAID") return "PAID";
+    if (statusUpper === "PREPARATION") return "IN PREPARATION";
+    if (statusUpper === "SHIPPED") return "SHIPPED";
+    if (statusUpper === "EXPIRED") return "EXPIRED";
+    if (statusUpper === "FAILED") return "FAILED";
+    return statusUpper;
+  }, [statusUpper]);
 
   function statusBadgeClasses(s) {
     switch (String(s || "").toUpperCase()) {
+      case "PENDING": return "bg-amber-600/30 text-amber-200 ring-amber-400/30";
+      case "MEMPOOL":
+      case "CONFIRMED": return "bg-blue-600/30 text-blue-200 ring-blue-400/30";
       case "PAID": return "bg-emerald-600/30 text-emerald-200 ring-emerald-400/30";
       case "PREPARATION": return "bg-amber-600/30 text-amber-200 ring-amber-400/30";
       case "SHIPPED": return "bg-blue-600/30 text-blue-200 ring-blue-400/30";
+      case "EXPIRED":
+      case "FAILED": return "bg-rose-600/30 text-rose-200 ring-rose-400/30";
       default: return "bg-white/10 text-white/80 ring-white/20";
     }
   }
@@ -120,12 +193,34 @@ export default function Paid() {
       ? "border-emerald-400/60 text-white"
       : "border-white/15 text-white/70";
   }
+  const isFailed = statusUpper === "FAILED" || statusUpper === "EXPIRED";
 
-  // simple logic for the three steps
-  const statusUpper = String(order?.status || "PAID").toUpperCase();
-  const isPaid = statusUpper === "PAID" || statusUpper === "PREPARATION" || statusUpper === "SHIPPED";
-  const isPrep = statusUpper === "PREPARATION" || statusUpper === "SHIPPED";
-  const isShipped = statusUpper === "SHIPPED";
+  const firstStepLabel = isFailed
+    ? "Payment not completed"
+    : isPendingLike
+      ? "Awaiting payment"
+      : "Payment received";
+  const firstStepCopy = isFailed
+    ? "This invoice was not completed. Create a new one from checkout."
+    : isPendingLike
+      ? "Pay the invoice to confirm your order."
+      : "We’re verifying and tagging your order.";
+
+  const heroTitle = (() => {
+    if (isShipped) return <>🎉 Great news, your order has shipped! 🚚</>;
+    if (paymentInFlight) return <>We detected your payment</>;
+    if (isPendingLike) return <>Awaiting your payment</>;
+    if (isFailed) return <>Payment not completed</>;
+    return <>Payment received <span role="img" aria-label="party">🎉</span></>;
+  })();
+
+  const heroSubtitle = (() => {
+    if (isShipped) return "Below are your shipment details and your receipt.";
+    if (paymentInFlight) return "We saw your transaction and will mark the order paid as soon as it finalizes.";
+    if (isPendingLike) return "Finish the invoice below if you lost it after reloading the page.";
+    if (isFailed) return "This invoice was not completed. You can restart checkout if you still want the order.";
+    return <>Thank you! We’ll contact you within <span className="font-semibold">24 hours</span> to confirm shipping details.</>;
+  })();
 
   return (
     <section className="pt-8 md:pt-12">
@@ -139,15 +234,11 @@ export default function Paid() {
 
           <div className="relative">
             <div className="text-3xl md:text-4xl font-semibold">
-              {isShipped
-                ? <>🎉 Great news, your order has shipped! 🚚</>
-                : <>Payment received <span role="img" aria-label="party">🎉</span></>}
+              {heroTitle}
             </div>
 
             <div className="mt-2 text-white/80">
-              {isShipped
-                ? "Below are your shipment details and your receipt."
-                : <>Thank you! We’ll contact you within <span className="font-semibold">24 hours</span> to confirm shipping details.</>}
+              {heroSubtitle}
             </div>
 
             {/* Status + date + prominent Order ID */}
@@ -193,6 +284,132 @@ export default function Paid() {
             )}
           </div>
         </div>
+
+        {isPendingLike && (
+          <div className="rounded-3xl p-6 md:p-7 bg-slate-900 ring-1 ring-white/10">
+            <div className="flex flex-wrap items-start gap-3">
+              <div className="flex-1 min-w-[240px]">
+                <div className="text-lg font-semibold">
+                  {paymentInFlight ? "Payment in progress" : "Complete your payment"}
+                </div>
+                <div className="mt-1 text-white/70">
+                  {paymentInFlight
+                    ? "We detected your transaction and will confirm it automatically."
+                    : "If you reloaded the page, you can pay the same invoice again below."}
+                </div>
+              </div>
+              <span className={`inline-flex items-center gap-2 px-2 py-1 rounded-xl text-xs ring-1 ${statusBadgeClasses(statusUpper)}`}>
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-current/80" />
+                {statusLabel}
+              </span>
+            </div>
+
+            {canResumePayment ? (
+              <div className="mt-4 grid md:grid-cols-[260px,1fr] gap-4 items-start">
+                <div className="p-3 rounded-2xl bg-slate-950 ring-1 ring-white/10 grid place-items-center">
+                  {isLightning ? (
+                    lightningUri || order?.paymentRequest ? (
+                      <QR
+                        value={lightningUri || order?.paymentRequest}
+                        href={lightningUri || undefined}
+                        asLink
+                        className="rounded-xl"
+                      />
+                    ) : (
+                      <div className="w-40 h-40 rounded-xl bg-slate-800 ring-1 ring-white/10 grid place-items-center text-white/60">
+                        Missing invoice
+                      </div>
+                    )
+                  ) : (
+                    bip21 || order?.boltzAddress ? (
+                      <QR
+                        value={bip21 || order?.boltzAddress}
+                        href={bip21 || undefined}
+                        asLink
+                        className="rounded-xl"
+                      />
+                    ) : (
+                      <div className="w-40 h-40 rounded-xl bg-slate-800 ring-1 ring-white/10 grid place-items-center text-white/60">
+                        Missing address
+                      </div>
+                    )
+                  )}
+                  <div className="mt-2 text-xs text-white/60 text-center px-2">
+                    {isLightning ? "Scan to pay the Lightning invoice." : "Scan to pay on-chain."}
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div className="text-sm text-white/70">
+                    Amount: <span className="font-semibold">{formatSats(isOnchain ? onchainAmountSats : invoiceSats)} sats</span>
+                    {isOnchain && onchainAmountSats !== invoiceSats ? (
+                      <span className="text-xs text-white/60 ml-2">(includes swap fee)</span>
+                    ) : null}
+                  </div>
+                  {isLightning ? (
+                    <>
+                      <div className="px-3 py-2 rounded-xl bg-slate-950 ring-1 ring-white/10 font-mono text-xs break-all">
+                        {order?.paymentRequest || "Missing invoice"}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => copy(order?.paymentRequest, "invoice")}
+                          className="px-3 py-2 rounded-xl bg-slate-800 ring-1 ring-white/10"
+                        >
+                          {copying.invoice ? "Copied!" : "Copy invoice"}
+                        </button>
+                        {lightningUri ? (
+                          <a
+                            href={lightningUri}
+                            className="px-3 py-2 rounded-xl bg-indigo-500/90 hover:bg-indigo-500 ring-1 ring-white/10"
+                          >
+                            Open wallet
+                          </a>
+                        ) : null}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="px-3 py-2 rounded-xl bg-slate-950 ring-1 ring-white/10 font-mono text-xs break-all">
+                        {order?.boltzAddress || "Missing address"}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => copy(order?.boltzAddress, "address")}
+                          className="px-3 py-2 rounded-xl bg-slate-800 ring-1 ring-white/10"
+                        >
+                          {copying.address ? "Copied!" : "Copy address"}
+                        </button>
+                        {bip21 ? (
+                          <button
+                            onClick={() => copy(bip21, "bip21")}
+                            className="px-3 py-2 rounded-xl bg-slate-800 ring-1 ring-white/10"
+                          >
+                            {copying.bip21 ? "Copied!" : "Copy BIP21"}
+                          </button>
+                        ) : null}
+                        {bip21 ? (
+                          <a
+                            href={bip21}
+                            className="px-3 py-2 rounded-xl bg-indigo-500/90 hover:bg-indigo-500 ring-1 ring-white/10"
+                          >
+                            Open wallet
+                          </a>
+                        ) : null}
+                      </div>
+                    </>
+                  )}
+                  <div className="text-xs text-white/60">
+                    Status: <span className="font-semibold text-white">{statusLabel}</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-3 text-sm text-white/70">
+                We couldn’t load your invoice details. Please restart checkout to generate a new one.
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Receipt / summary */}
         <div className="rounded-3xl p-6 md:p-7 bg-slate-900 ring-1 ring-white/10">
@@ -260,7 +477,7 @@ export default function Paid() {
               <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10">
                   <div className="text-white/70 text-sm mb-1">Ship to</div>
-                  <div className="whitespace-pre-wrap">
+                  <div className="whitespace-pre-wrap break-words">
                     {[
                       `${(order.name || "").trim()} ${(order.surname || "").trim()}`.trim(),
                       order.address || "",
@@ -273,13 +490,13 @@ export default function Paid() {
                 </div>
                 <div className="px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10">
                   <div className="text-white/70 text-sm mb-1">Contacts</div>
-                  <div className="space-y-1">
+                  <div className="space-y-1 break-words">
                     {order.contactEmail ? (
-                      <div>Email: <a className="underline" href={`mailto:${order.contactEmail}`}>{order.contactEmail}</a></div>
+                      <div>Email: <a className="underline break-all" href={`mailto:${order.contactEmail}`}>{order.contactEmail}</a></div>
                     ) : null}
-                    {order.contactTelegram ? <div>Telegram: {order.contactTelegram}</div> : null}
-                    {order.contactNostr ? <div>Nostr: {order.contactNostr}</div> : null}
-                    {order.contactPhone ? <div>Phone: {order.contactPhone}</div> : null}
+                    {order.contactTelegram ? <div>Telegram: <span className="break-all">{order.contactTelegram}</span></div> : null}
+                    {order.contactNostr ? <div>Nostr: <span className="break-all">{order.contactNostr}</span></div> : null}
+                    {order.contactPhone ? <div>Phone: <span className="break-all">{order.contactPhone}</span></div> : null}
                     {!order.contactEmail && !order.contactTelegram && !order.contactNostr && !order.contactPhone ? (
                       <div className="text-white/50">—</div>
                     ) : null}
@@ -288,7 +505,7 @@ export default function Paid() {
                 <div className="px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10">
                   <div className="text-white/70 text-sm mb-1">Notes</div>
                   {String(order.notes || "").trim()
-                    ? <div className="whitespace-pre-wrap">{order.notes}</div>
+                    ? <div className="whitespace-pre-wrap break-words">{order.notes}</div>
                     : <div className="text-white/50">—</div>}
                 </div>
               </div>
@@ -303,9 +520,9 @@ export default function Paid() {
             <div className={`px-4 py-3 rounded-2xl ring-1 ${stepClasses(isPaid)}`}>
               <div className="font-semibold flex items-center gap-2">
                 <span className={`inline-block h-2.5 w-2.5 rounded-full ${isPaid ? "bg-emerald-400" : "bg-white/30"}`} />
-                Payment received
+                {firstStepLabel}
               </div>
-              <div className="text-sm text-white/70 mt-1">We’re verifying and tagging your order.</div>
+              <div className="text-sm text-white/70 mt-1">{firstStepCopy}</div>
             </div>
             <div className={`px-4 py-3 rounded-2xl ring-1 ${stepClasses(isPrep)}`}>
               <div className="font-semibold flex items-center gap-2">

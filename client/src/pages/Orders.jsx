@@ -56,6 +56,7 @@ export default function Orders() {
 
   function statusChipClass(s) {
     const v = String(s || "").toUpperCase();
+    if (v === "PENDING") return "bg-amber-600/30";
     if (v === "PAID") return "bg-emerald-600/30";
     if (v === "PREPARATION") return "bg-amber-600/30";
     if (v === "SHIPPED") return "bg-blue-600/30";
@@ -103,6 +104,7 @@ export default function Orders() {
         <div className="grid gap-4">
           {orders.map((o) => {
             const thumbs = thumbsForOrder(o);
+            const isPending = String(o.status || "").toUpperCase() === "PENDING";
             const href = o.paymentHash ? `/paid/${o.paymentHash}` : null; // fallback: if no hash, card is not a link
 
             const Card = ({ children }) =>
@@ -187,7 +189,7 @@ export default function Orders() {
                 {/* Inline hint when clickable */}
                 {href ? (
                   <div className="mt-3 text-xs text-white/60">
-                    Click to view details & receipt →
+                    {isPending ? "Tap to resume your payment →" : "Click to view details & receipt →"}
                   </div>
                 ) : null}
               </Card>

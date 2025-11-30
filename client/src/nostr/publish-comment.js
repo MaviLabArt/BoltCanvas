@@ -1,25 +1,42 @@
 import { buildProductTags, PRODUCT_COMMENT_KIND } from "./comments-core.js";
 import { validateEvent, verifyEvent } from "nostr-tools";
 import { publishEvent } from "./pool.js";
+import api from "../services/api.js";
 
 export async function publishProductComment({
   content,
   productId,
-  relays
+  relays,
+  storePubkey
 } = {}) {
   if (!window?.nostr) throw new Error("Login with Nostr to post");
+  if (!storePubkey) throw new Error("Store Nostr key missing; comments are disabled");
 
   const trimmed = String(content || "").trim();
   if (!trimmed) throw new Error("Comment is empty");
   const maxCommentLen = 600;
   const safeContent = trimmed.slice(0, maxCommentLen);
 
+  let proof = null;
+  let storeKey = String(storePubkey || "").trim().toLowerCase();
+  try {
+    const resp = await api.get("/nostr/comment-proof", { params: { productId } });
+    if (resp?.data?.ok && resp.data?.proof?.sig && resp.data?.proof?.ts) {
+      proof = { sig: resp.data.proof.sig, ts: resp.data.proof.ts };
+      storeKey = String(resp.data.storePubkey || storeKey || "").trim().toLowerCase();
+    } else {
+      throw new Error("No proof");
+    }
+  } catch (err) {
+    throw new Error(err?.response?.data?.error || "Unable to authorize comment for this store");
+  }
+
   const pubkey = await window.nostr.getPublicKey();
 
   const unsigned = {
     kind: PRODUCT_COMMENT_KIND,
     created_at: Math.floor(Date.now() / 1000),
-    tags: buildProductTags({ productId }),
+    tags: buildProductTags({ productId, storePubkey: storeKey, proof }),
     content: safeContent,
     pubkey
   };
