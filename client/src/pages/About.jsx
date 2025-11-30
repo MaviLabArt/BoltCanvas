@@ -1,20 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../services/api.js";
 import QR from "../components/QR.jsx";
 import { renderMarkdown } from "../utils/markdown.js";
+import { useSettings } from "../store/settings.jsx";
 
 export default function About() {
-  const [s, setS] = useState({
-    aboutTitle: "About Us",
-    aboutBody: "Use this space to introduce who you are, what you create, and how you work. Update it with your story and what customers can expect.",
-    aboutImage: "",
-    contactNote: "",
-    // NEW (for zaps / identity)
-    lightningAddress: "",
-    nostrNpub: "",
-    nostrNip05: ""
-  });
+  const { settings: remoteSettings } = useSettings();
+  const [s, setS] = useState(null);
 
   // Zap modal state
   const [zapOpen, setZapOpen] = useState(false);
@@ -27,8 +19,10 @@ export default function About() {
   const nav = useNavigate();
 
   useEffect(() => {
-    api.get("/public-settings").then(r => setS(prev => ({ ...prev, ...r.data }))).catch(()=>{});
-  }, []);
+    if (remoteSettings) {
+      setS(remoteSettings);
+    }
+  }, [remoteSettings]);
 
   function lightningHrefFromAddress(addr) {
     const a = String(addr || "").trim();
@@ -92,6 +86,10 @@ export default function About() {
     ? Number(zapInvoice?.satoshis || zapSats || 0)
     : Number(zapSats || 0);
   const invoiceNote = hasInvoice ? zapInvoice?.note : "";
+
+  if (!s) {
+    return null;
+  }
 
   return (
     <section className="pt-8">
