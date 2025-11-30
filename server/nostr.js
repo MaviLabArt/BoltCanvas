@@ -9,6 +9,7 @@ import { finalizeEvent, verifyEvent, getEventHash } from "nostr-tools/pure";
 import { encrypt } from "nostr-tools/nip04";
 import { bytesToHex } from "nostr-tools/utils";
 import { schnorr } from "@noble/curves/secp256k1";
+import { SimplePool } from "nostr-tools/pool";
 
 // Node 18+ has global fetch
 const globalFetch = (...args) => fetch(...args);
@@ -115,6 +116,39 @@ export function getShopKeys() {
 
 export function getShopPubkey() {
   return getShopKeys()?.pubkeyHex || "";
+}
+
+export function npubFromHex(hex) {
+  const pk = String(hex || "").trim();
+  if (!pk) return "";
+  try {
+    return nip19.npubEncode(pk);
+  } catch {
+    return pk;
+  }
+}
+
+export async function fetchProfile(pubkey, relays = []) {
+  const pk = String(pubkey || "").trim();
+  if (!pk) return null;
+  const urls = Array.isArray(relays) && relays.length ? relays : [];
+  if (!urls.length) return null;
+  const pool = new SimplePool({ enableReconnect: false });
+  try {
+    const events = await pool.list(urls, [{ kinds: [0], authors: [pk], limit: 1 }]);
+    if (!events || !events.length) return null;
+    const latest = events.reduce((a, b) => ((b.created_at || 0) > (a.created_at || 0) ? b : a), events[0]);
+    if (!latest?.content) return null;
+    try {
+      return JSON.parse(latest.content || "{}");
+    } catch {
+      return null;
+    }
+  } catch {
+    return null;
+  } finally {
+    try { pool.close(urls); } catch {}
+  }
 }
 
 // ------------------------------

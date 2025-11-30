@@ -101,10 +101,12 @@ export default function ProductComments({ productId }) {
   const storePubkey = useMemo(() => String(settings?.nostrShopPubkey || "").toLowerCase(), [settings]);
   const enabled = nostrCommentsEnabled(settings) && !!storePubkey;
   const blocked = useMemo(() => makeBlockedSets(settings), [settings]);
+  const cancelledRef = React.useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     let unsubscribe = null;
+    cancelledRef.current = false;
 
     async function load() {
       if (!settings) {
@@ -135,11 +137,25 @@ export default function ProductComments({ productId }) {
         since: Math.floor(Date.now() / 1000),
         onEvent: (ev) => {
           if (isEventBlocked(ev, blocked)) return;
-          setComments((prev) => {
-            if (prev.some((c) => c.id === ev.id)) return prev;
-            const normalized = normalizeComments([ev], {});
-            return [normalized[0], ...prev].slice(0, 60);
-          });
+          (async () => {
+            try {
+              const profiles = await fetchProfilesForEvents([ev], relays);
+              if (cancelledRef.current) return;
+              setComments((prev) => {
+                if (prev.some((c) => c.id === ev.id)) return prev;
+                const normalized = normalizeComments([ev], profiles);
+                return [normalized[0], ...prev].slice(0, 60);
+              });
+            } catch {
+              // ignore profile fetch errors; still add comment
+              if (cancelledRef.current) return;
+              setComments((prev) => {
+                if (prev.some((c) => c.id === ev.id)) return prev;
+                const normalized = normalizeComments([ev], {});
+                return [normalized[0], ...prev].slice(0, 60);
+              });
+            }
+          })();
         }
       });
     }
@@ -147,6 +163,7 @@ export default function ProductComments({ productId }) {
     load();
     return () => {
       cancelled = true;
+      cancelledRef.current = true;
       if (unsubscribe) unsubscribe();
     };
   }, [productId, relays, storePubkey, enabled, blocked, settings]);
