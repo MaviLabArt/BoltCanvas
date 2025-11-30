@@ -317,6 +317,16 @@ export default function Checkout() {
   if (items.length === 0 && !inv) {
     return (
       <section className="pt-8">
+        <div className="mb-4">
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 ring-1 ring-white/10 text-sm"
+            onClick={() => nav("/")}
+          >
+            <span aria-hidden="true">←</span>
+            <span>Home</span>
+          </button>
+        </div>
         <div className="rounded-3xl p-6 bg-slate-900 ring-1 ring-white/10">Your cart is empty.</div>
       </section>
     );
@@ -409,6 +419,16 @@ export default function Checkout() {
 
   return (
     <section className="pt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="lg:col-span-2 mb-2">
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 ring-1 ring-white/10 text-sm"
+          onClick={() => nav("/")}
+        >
+          <span aria-hidden="true">←</span>
+          <span>Home</span>
+        </button>
+      </div>
       {/* Shipping details */}
       <div className="rounded-3xl p-6 bg-slate-900 ring-1 ring-white/10">
         <div className="text-lg font-semibold mb-4">Shipping Details</div>
