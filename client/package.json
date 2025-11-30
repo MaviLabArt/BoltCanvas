@@ -2,6 +2,9 @@
   "name": "lightning-shop-client",
   "private": true,
   "type": "module",
+  "imports": {
+    "lodash/isEqualWith": "./node_modules/lodash/isEqualWith.js"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",

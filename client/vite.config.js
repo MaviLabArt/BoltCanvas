@@ -6,7 +6,7 @@ export default defineConfig(({ mode }) => {
   return {
     resolve: {
       alias: {
-        "lodash/isEqualWith": "lodash/isEqualWith.js"
+        "lodash/isEqualWith": "/src/test/lodash-isEqualWith.js"
       }
     },
     plugins: [
