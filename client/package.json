@@ -12,7 +12,7 @@
   "dependencies": {
     "axios": "^1.12.0",
     "framer-motion": "^11.2.10",
-    "light-bolt11-decoder": "^2.1.0",
+    "light-bolt11-decoder": "^3.2.0",
     "nostr-login": "^1.7.11",
     "nostr-tools": "^2.18.2",
     "react": "^19.2.0",
