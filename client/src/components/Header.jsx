@@ -69,6 +69,23 @@ export default function Header() {
   useEffect(() => {
     let cleanup = () => {};
     try {
+      const tokens = (() => {
+        const defaults = {
+          accent: "#6366f1",
+          accentSoft: "rgba(99, 102, 241, 0.16)",
+          surface: "#0f172a",
+          surfaceAlt: "#111827",
+          text: "#e5e7eb",
+          muted: "#94a3b8",
+          border: "rgba(255, 255, 255, 0.08)"
+        };
+        const t = s.themeTokens && typeof s.themeTokens === "object" ? s.themeTokens : {};
+        return { ...defaults, ...t };
+      })();
+      Object.entries(tokens).forEach(([k, v]) => {
+        document.documentElement.style.setProperty(`--ct-${k}`, v);
+      });
+
       const applyTheme = (choice) => {
         const resolved =
           choice === "auto"
@@ -76,7 +93,7 @@ export default function Header() {
             : (choice || "dark");
         document.documentElement.setAttribute("data-theme", resolved);
       };
-      applyTheme(s.themeChoice || "dark");
+      applyTheme(s.themeChoice === "custom" ? "custom" : (s.themeChoice || "dark"));
 
       if ((s.themeChoice || "dark") === "auto" && window.matchMedia) {
         const mq = window.matchMedia("(prefers-color-scheme: dark)");
