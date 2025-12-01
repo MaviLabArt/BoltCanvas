@@ -249,9 +249,9 @@ export default function ProductDetail() {
             {p.longDescription || p.description}
           </p>
 
-          <div className="mt-8 flex flex-col gap-3">
+          <div className="mt-8 flex flex-col gap-2">
             <button
-              className="px-4 py-3 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:opacity-50"
+              className="px-4 py-3 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:opacity-50 w-max"
               disabled={!p.available}
               onClick={() => {
                 add(p, 1);
@@ -260,7 +260,7 @@ export default function ProductDetail() {
               Add to Cart
             </button>
             {stockLabel && (
-              <div className="w-full flex justify-center">
+              <div className="w-full flex justify-start">
                 <span className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 ring-1 ring-white/10 px-3 py-1 text-xs font-semibold text-white/80 max-w-xs text-center">
                   <span className="truncate">{stockLabel}</span>
                 </span>
