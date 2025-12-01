@@ -79,7 +79,7 @@ export default function Settings() {
     nostrNpub: "",
     nostrNip05: "",
     nostrRelays: ["wss://relay.damus.io", "wss://nos.lol"],
-    nostrDefaultHashtags: "#shop #shopping #lightning",
+    nostrDefaultHashtags: "#shop #lightning #bitcoin",
     nostrCommentsEnabled: true,
     nostrBlockedPubkeys: [],
     lightningAddress: "",
@@ -372,7 +372,7 @@ export default function Settings() {
           }
         />
 
-        {/* Hero line (one-sentence artist statement + location) */}
+        {/* Hero line (short tagline under the store name) */}
         <input
           className="px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10"
           placeholder={t('Riga sotto il titolo, es. "Original oil on canvas by M. V., Milan."', 'Line under the title, e.g. "Original oil on canvas by M. V., Milan."')}
@@ -945,7 +945,7 @@ export default function Settings() {
           />
           <input
             className="px-4 py-3 rounded-2xl bg-slate-900 ring-1 ring-white/10"
-            placeholder={t("Hashtag predefiniti teaser, es. #shop #shopping #lightning", "Default teaser hashtags, e.g. #shop #shopping #lightning")}
+            placeholder={t("Hashtag predefiniti teaser, es. #shop #lightning #bitcoin", "Default teaser hashtags, e.g. #shop #lightning #bitcoin")}
             value={s.nostrDefaultHashtags || ""}
             onChange={(e) =>
               setS({ ...s, nostrDefaultHashtags: e.target.value })
