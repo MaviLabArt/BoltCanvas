@@ -387,7 +387,7 @@ function makeNotifyContext(order, status, s) {
     .join(", ");
   const createdAt = new Date(order.createdAt || Date.now()).toLocaleString();
   return {
-    storeName: s.storeName || "Lightning Art",
+    storeName: s.storeName || "Lightning Shop",
     orderId: order.id,
     status: String(status).toUpperCase(),
     statusLabel: statusLabel(status),
@@ -732,7 +732,7 @@ function makeDefaultTeaserContent(product, { productUrl = "", hashtags = "" } = 
   const lines = [];
   const title = product.title || "";
   const shortLine = product.subtitle || "";
-  lines.push(`🎨 ${title}${shortLine ? `, ${shortLine}` : ""}`);
+  lines.push(`${title}${shortLine ? `, ${shortLine}` : ""}`);
   lines.push("");
   if (product.longDescription) {
     const firstLine = String(product.longDescription).split("\n").find((l) => l.trim());
@@ -1669,10 +1669,10 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
         : {}
     );
 
-    // Memo: "Order <store name> <painting name>"
+    // Memo: "Order <store name> <product name>"
     const { storeName } = Settings.getAll();
     const firstTitle = loaded[0]?.title || "";
-    const memo = `Order ${storeName || "Lightning Art"} ${firstTitle}`.trim();
+    const memo = `Order ${storeName || "Lightning Shop"} ${firstTitle}`.trim();
     const orderRef = memo;
 
     let inv;
@@ -1818,7 +1818,7 @@ app.post("/api/zaps/create-invoice", async (req, res) => {
     const rawNote = String(req.body?.note || "");
     const safeNote = rawNote.replace(/\s+/g, " ").trim().slice(0, 120);
     const { storeName } = Settings.getAll();
-    const memoBase = `${storeName || "Lightning Art"} Zap`;
+    const memoBase = `${storeName || "Lightning Shop"} Zap`;
     const memo = safeNote ? `${memoBase} - ${safeNote}` : memoBase;
     const orderRef = memoBase;
 

@@ -529,7 +529,7 @@ export default function Paid() {
                 <span className={`inline-block h-2.5 w-2.5 rounded-full ${isPrep ? "bg-emerald-400" : "bg-white/30"}`} />
                 Preparation
               </div>
-              <div className="text-sm text-white/70 mt-1">We package your painting with care.</div>
+              <div className="text-sm text-white/70 mt-1">We pack your order with care.</div>
             </div>
             <div className={`px-4 py-3 rounded-2xl ring-1 ${stepClasses(isShipped)}`}>
               <div className="font-semibold flex items-center gap-2">

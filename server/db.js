@@ -12,7 +12,7 @@ const DB_PATH = ENV_DB_FILE
 const db = new Database(DB_PATH);
 db.pragma("foreign_keys = ON");
 
-export const DEFAULT_TEASER_HASHTAGS = "#shop #shopping #lightning";
+export const DEFAULT_TEASER_HASHTAGS = "#shop #lightning #bitcoin";
 
 function hasColumn(table, name) {
   const rows = db.prepare(`PRAGMA table_info(${table})`).all();
@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS product_nostr_posts (
   teaserLastEventId TEXT NOT NULL DEFAULT '',
   teaserLastPublishedAt INTEGER NOT NULL DEFAULT 0,
   teaserLastAck TEXT NOT NULL DEFAULT '[]',
-  teaserHashtags TEXT NOT NULL DEFAULT '#art #artstr #painting',
+  teaserHashtags TEXT NOT NULL DEFAULT '#shop #lightning #bitcoin',
   createdAt INTEGER NOT NULL DEFAULT (strftime('%s','now')),
   updatedAt INTEGER NOT NULL DEFAULT (strftime('%s','now')),
   FOREIGN KEY(productId) REFERENCES products(id) ON DELETE CASCADE
@@ -471,7 +471,7 @@ function sanitizeAckFromDb(payload) {
 }
 
 function normalizeDTag(productId, raw) {
-  const fallback = `painting:${productId}`;
+  const fallback = `product:${productId}`;
   const input = String(raw || "").trim();
   if (!input) return fallback;
   const cleaned = input.replace(/\s+/g, "-").replace(/[^A-Za-z0-9:._-]/g, "");
@@ -773,7 +773,7 @@ export const ProductNostrPosts = {
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(
         productId,
-        `painting:${productId}`,
+        `product:${productId}`,
         "",
         "",
         "",
@@ -833,7 +833,7 @@ export const ProductNostrPosts = {
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(
         productId,
-        `painting:${productId}`,
+        `product:${productId}`,
         "",
         "",
         "",

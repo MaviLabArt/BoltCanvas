@@ -189,7 +189,7 @@ export default function Products() {
 
   async function removeProduct(id) {
     if (!confirm(t(
-      "Eliminare questo quadro? L'operazione è irreversibile.",
+      "Eliminare questo prodotto? L'operazione è irreversibile.",
       "Delete this product? This action cannot be undone."
     ))) return;
     await api.delete(`/admin/products/${id}`);
@@ -290,7 +290,7 @@ export default function Products() {
           onClick={startNew}
           disabled={reordering}
         >
-          {t("+ Aggiungi quadro", "+ Add product")}
+          {t("+ Aggiungi prodotto", "+ Add product")}
         </button>
         {!reordering ? (
           <AsyncButton
@@ -331,7 +331,7 @@ export default function Products() {
       {reordering && (
         <div className="mb-4 text-sm text-white/70">
           {t(
-            "Modalità riordino attiva: usa i pulsanti sulle card per spostare i quadri e premi “Salva ordine”.",
+            "Modalità riordino attiva: usa i pulsanti sulle card per spostare i prodotti e premi “Salva ordine”.",
             "Reorder mode on: use the card buttons to move products, then press “Save order”."
           )}
         </div>
@@ -340,7 +340,7 @@ export default function Products() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
         {(!reordering && !loadingList && totalDisplay === 0) && (
           <div className="p-6 rounded-3xl bg-slate-900 ring-1 ring-white/10 text-white/70">
-            {t('Nessun quadro. Clicca “Aggiungi quadro”.', 'No products. Click “Add product”.')}
+            {t('Nessun prodotto. Clicca “Aggiungi prodotto”.', 'No products. Click “Add product”.')}
           </div>
         )}
         {reordering && !reorderLoading && totalDisplay === 0 && (
@@ -824,7 +824,7 @@ function Editor({ initial, shippingZones = [], onClose, onSaved }) {
             <span aria-hidden="true">{"\u00D7"}</span>
           </button>
           <div className="text-lg font-semibold mb-1">
-            {isNew ? t("Aggiungi quadro", "Add product") : t("Modifica quadro", "Edit product")}
+            {isNew ? t("Aggiungi prodotto", "Add product") : t("Modifica prodotto", "Edit product")}
           </div>
           <p className="text-white/80 mb-4">
             {t("Compila i campi. Foto: massimo 5.", "Fill in the fields. Photos: up to 5.")}
@@ -899,7 +899,7 @@ function Editor({ initial, shippingZones = [], onClose, onSaved }) {
                 className="w-full px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10"
                 value={longDescription}
                 onChange={(e) => setLongDescription(e.target.value)}
-                placeholder={t("Dettagli completi dell'opera", "Full details about the product")}
+                placeholder={t("Dettagli completi del prodotto", "Full details about the product")}
               />
             </div>
 
