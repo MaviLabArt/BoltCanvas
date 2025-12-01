@@ -5,6 +5,7 @@ const Ctx = createContext(null);
 
 const STORAGE_KEY = "cart_v1";
 const CART_VERSION = 4;
+const MAX_QTY = 99;
 const SHIPPING_KEYS = [
   "shippingItalySats",
   "shippingEuropeSats",
@@ -82,11 +83,18 @@ function snapshotProduct(product, { needsShippingHydrate = false } = {}) {
   }, {});
   const zoneOverrides = sanitizeZoneOverrides(product?.shippingZoneOverrides);
 
+  const quantityAvailable = (() => {
+    const num = Number(product.quantityAvailable);
+    return Number.isFinite(num) && num >= 0 ? num : null;
+  })();
+  const hasFiniteQty = Number.isFinite(quantityAvailable);
+  const derivedAvailable = !!product.available && (!hasFiniteQty || quantityAvailable > 0);
+
   const out = {
     id: product.id,
-    title: product.title || "Artwork",
+    title: product.title || "Product",
     priceSats: Number(product.priceSats || 0),
-    available: !!product.available,
+    available: derivedAvailable,
     mainImageIndex: Number.isInteger(product.mainImageIndex) ? product.mainImageIndex : 0,
     mainImageThumbAbsoluteUrl: product.mainImageThumbAbsoluteUrl || "",
     mainImageAbsoluteUrl: product.mainImageAbsoluteUrl || "",
@@ -98,11 +106,34 @@ function snapshotProduct(product, { needsShippingHydrate = false } = {}) {
     shippingItalySats: numbers.shippingItalySats,
     shippingEuropeSats: numbers.shippingEuropeSats,
     shippingWorldSats: numbers.shippingWorldSats,
-    shippingZoneOverrides: zoneOverrides
+    shippingZoneOverrides: zoneOverrides,
+    isUnique: product.isUnique !== undefined ? !!product.isUnique : true,
+    quantityAvailable,
+    maxQuantity: (() => {
+      if (product.maxQuantity !== undefined && product.maxQuantity !== null) {
+        const num = Number(product.maxQuantity);
+        if (Number.isFinite(num)) return Math.max(0, Math.min(MAX_QTY, num));
+      }
+      if (derivedAvailable === false) return 0;
+      if (product.isUnique) return 1;
+      if (hasFiniteQty && quantityAvailable !== null) return Math.max(0, Math.min(MAX_QTY, quantityAvailable));
+      return MAX_QTY;
+    })()
   };
   out.__cartVersion = CART_VERSION;
   if (needsShippingHydrate || missingShipping) out.__needsShippingHydrate = true;
   return out;
+}
+
+function clampQty(qty, product) {
+  const base = Math.max(1, Math.floor(Number(qty) || 1));
+  const max = Number(product?.maxQuantity);
+  if (Number.isFinite(max)) {
+    const capped = Math.max(0, max);
+    return Math.min(base, capped);
+  }
+  const limit = MAX_QTY;
+  return Math.min(base, limit);
 }
 
 function reviveStoredItems(rawList) {
@@ -116,7 +147,8 @@ function reviveStoredItems(rawList) {
         needsShippingHydrate: legacyMissingShipping || legacyCartVersion < CART_VERSION
       });
       if (!product) return null;
-      const qty = Math.max(1, Math.floor(Number(entry?.qty) || 1));
+      const qty = clampQty(entry?.qty, product);
+      if (qty <= 0) return null;
       return { product, qty };
     })
     .filter(Boolean);
@@ -127,7 +159,8 @@ function serializeCartItems(entries) {
     .map((entry) => {
       const product = snapshotProduct(entry?.product);
       if (!product) return null;
-      const qty = Math.max(1, Math.floor(Number(entry?.qty) || 1));
+      const qty = clampQty(entry?.qty, product);
+      if (qty <= 0) return null;
       const out = { product, qty };
       if (entry?.product?.__needsShippingHydrate) {
         out.product.__needsShippingHydrate = true;
@@ -149,11 +182,12 @@ function mergeCartState(localEntries, remoteEntries) {
       if (!product) continue;
       const pid = product.id;
       if (!pid) continue;
-      const qty = Math.max(1, Math.floor(Number(entry?.qty) || 1));
+      const qty = clampQty(entry?.qty, product);
+      if (qty <= 0) continue;
       const existing = map.get(pid);
       if (existing) {
         const mergedProduct = snapshotProduct({ ...existing.product, ...product }) || existing.product;
-        const mergedQty = Math.max(existing.qty, qty);
+        const mergedQty = clampQty(Math.max(existing.qty, qty), mergedProduct);
         map.set(pid, { product: mergedProduct, qty: mergedQty });
       } else if (order.length < MAX_CART_ITEMS) {
         order.push(pid);
@@ -378,13 +412,18 @@ export function CartProvider({ children }) {
 
       let added = null;
       setItems(prev => {
-        const exists = prev.find(it => it.product.id === snapshot.id);
-        const q = Math.max(1, Math.floor(qty || 1));
-        if (exists) {
-          safePersist(prev);
-          return prev;
+        const q = clampQty(qty, snapshot);
+        if (q <= 0) return prev;
+        const next = [...prev];
+        const idx = next.findIndex(it => it.product.id === snapshot.id);
+        if (idx >= 0) {
+          const current = next[idx];
+          const mergedProduct = snapshotProduct({ ...current.product, ...snapshot }) || current.product;
+          const mergedQty = clampQty((current.qty || 1) + q, mergedProduct);
+          next[idx] = { product: mergedProduct, qty: mergedQty };
+        } else {
+          next.push({ product: snapshot, qty: q });
         }
-        const next = [...prev, { product: snapshot, qty: q }];
         const ok = safePersist(next);
         if (!ok) return prev;
         added = snapshot;
@@ -402,6 +441,23 @@ export function CartProvider({ children }) {
       return next;
     });
   }
+  function updateQty(productId, qty) {
+    setItems(prev => {
+      const idx = prev.findIndex((it) => it.product.id === productId);
+      if (idx === -1) return prev;
+      const next = [...prev];
+      const entry = next[idx];
+      const clamped = clampQty(qty, entry.product);
+      if (clamped <= 0) {
+        const filtered = next.filter((it) => it.product.id !== productId);
+        safePersist(filtered);
+        return filtered;
+      }
+      next[idx] = { ...entry, qty: clamped };
+      safePersist(next);
+      return next;
+    });
+  }
   function clear() {
     setItems([]);
     safePersist([]);
@@ -413,9 +469,10 @@ export function CartProvider({ children }) {
     items,
     add,
     remove,
+    updateQty,
     clear,
     subtotal,
-    count: items.length,
+    count: items.reduce((sum, it) => sum + Math.max(1, Number(it.qty) || 1), 0),
     nostrPubkey: nostrPk
   }), [items, nostrPk]);
 
@@ -479,7 +536,7 @@ function CartToast({ notice, onHide }) {
         <div>
           <div className="text-xs uppercase tracking-wide text-white/60">Added to cart</div>
           <div className="font-semibold text-white">
-            {product.title || "Artwork"}
+            {product.title || "Product"}
           </div>
         </div>
       </div>

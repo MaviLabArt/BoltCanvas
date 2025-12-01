@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS products (
   description TEXT NOT NULL,
   priceSats INTEGER NOT NULL,
   images TEXT NOT NULL,
+  isUnique INTEGER NOT NULL DEFAULT 1,
+  quantityAvailable INTEGER DEFAULT 1,
   available INTEGER NOT NULL DEFAULT 1,
   hidden INTEGER NOT NULL DEFAULT 0,
   createdAt INTEGER NOT NULL,
@@ -125,6 +127,8 @@ addColumnIfMissing("products", "imageVersion TEXT DEFAULT ''");
 addColumnIfMissing("products", "imageCount INTEGER NOT NULL DEFAULT 0");
 addColumnIfMissing("products", "hidden INTEGER NOT NULL DEFAULT 0");
 addColumnIfMissing("products", "displayOrder INTEGER NOT NULL DEFAULT 0");
+addColumnIfMissing("products", "isUnique INTEGER NOT NULL DEFAULT 1");
+addColumnIfMissing("products", "quantityAvailable INTEGER DEFAULT 1");
 
 const zeroDisplayOrder = db.prepare(`SELECT COUNT(*) AS cnt FROM products WHERE displayOrder=0`).get();
 if (zeroDisplayOrder?.cnt > 0) {
@@ -946,12 +950,16 @@ export const Products = {
       const overrideTag = Array.isArray(n.shippingZoneOverrides)
         ? n.shippingZoneOverrides.map((ov) => `${ov.id}:${ov.priceSats}`).join(",")
         : "";
+      const hasFiniteQty = Number.isFinite(n.quantityAvailable);
+      const derivedAvailable = n.available && (!hasFiniteQty || n.quantityAvailable > 0);
       return {
         id: n.id,
         title: n.title,
         subtitle: n.subtitle,
         priceSats: n.priceSats,
-        available: n.available,
+        isUnique: !!n.isUnique,
+        quantityAvailable: n.quantityAvailable,
+        available: derivedAvailable,
         hidden: n.hidden,
         createdAt: n.createdAt,
         mainImageIndex: safeIdx,
@@ -961,6 +969,12 @@ export const Products = {
         widthCm: n.widthCm,
         heightCm: n.heightCm,
         depthCm: n.depthCm,
+        maxQuantity: (() => {
+          if (!derivedAvailable) return 0;
+          if (n.isUnique) return 1;
+          if (hasFiniteQty) return Math.max(0, n.quantityAvailable);
+          return null;
+        })(),
         showDimensions: !!n.showDimensions,
         shippingItalySats: n.shippingItalySats,
         shippingEuropeSats: n.shippingEuropeSats,
@@ -968,7 +982,7 @@ export const Products = {
         shippingZoneOverrides: Array.isArray(n.shippingZoneOverrides) ? n.shippingZoneOverrides : [],
         cacheTag: [
           n.id,
-          n.available ? 1 : 0,
+          derivedAvailable ? 1 : 0,
           n.hidden ? 1 : 0,
           n.createdAt || 0,
           n.displayOrder || 0,
@@ -983,7 +997,9 @@ export const Products = {
           overrideTag,
           n.shippingItalySats,
           n.shippingEuropeSats,
-          n.shippingWorldSats
+          n.shippingWorldSats,
+          n.isUnique ? "1" : "0",
+          n.quantityAvailable ?? ""
         ].join(":")
       };
     });
@@ -1011,6 +1027,8 @@ export const Products = {
     shippingEuropeSats = 0,
     shippingWorldSats = 0,
     shippingZoneOverrides = [],
+    isUnique = true,
+    quantityAvailable = undefined,
   }) {
     const normalizedImages = normalizeImageInputs(images);
     const imagePayload = prepareImagePayload(normalizedImages, { preNormalized: normalizedImages });
@@ -1019,19 +1037,24 @@ export const Products = {
     const createdAt = now();
     const displayOrder = createdAt;
     const normalizedOverrides = normalizeZoneOverridesInput(shippingZoneOverrides);
+    const uniqueFlag = !!isUnique;
+    const qtyInput = Number(quantityAvailable);
+    const qtyValue = uniqueFlag ? 1 : (Number.isFinite(qtyInput) && qtyInput >= 0 ? Math.floor(qtyInput) : null);
+    const initialAvailable = uniqueFlag ? 1 : (qtyValue === null ? 1 : (qtyValue > 0 ? 1 : 0));
     db.prepare(
       `INSERT INTO products
        (id, title, description, priceSats, images, available, hidden, createdAt, displayOrder,
         subtitle, longDescription, mainImageIndex, widthCm, heightCm, depthCm, showDimensions,
         shippingSurchargeSats, shippingItalySats, shippingEuropeSats, shippingWorldSats,
-        shippingZoneOverrides, imageVersion, imageCount)
-       VALUES (?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        shippingZoneOverrides, imageVersion, imageCount, isUnique, quantityAvailable)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       title,
       description ?? "",
       Math.floor(priceSats),
       EMPTY_IMAGES_JSON,
+      initialAvailable,
       createdAt,
       displayOrder,
       subtitle ?? "",
@@ -1047,7 +1070,9 @@ export const Products = {
       Math.max(0, shippingWorldSats | 0),
       JSON.stringify(normalizedOverrides),
       "",
-      0
+      0,
+      uniqueFlag ? 1 : 0,
+      qtyValue
     );
     ProductImages.replaceAll(id, imagePayload);
     return this.get(id);
@@ -1082,20 +1107,41 @@ export const Products = {
       ? normalizeZoneOverridesInput(patch.shippingZoneOverrides)
       : (Array.isArray(cur.shippingZoneOverrides) ? cur.shippingZoneOverrides : []);
 
+    const nextIsUnique = patch.isUnique !== undefined ? !!patch.isUnique : !!cur.isUnique;
+    let nextQuantity;
+    if (nextIsUnique) {
+      nextQuantity = 1;
+    } else if (patch.quantityAvailable !== undefined) {
+      const qtyNum = Number(patch.quantityAvailable);
+      nextQuantity = Number.isFinite(qtyNum) && qtyNum >= 0 ? Math.floor(qtyNum) : null;
+    } else {
+      nextQuantity = cur.quantityAvailable !== undefined ? cur.quantityAvailable : null;
+    }
+
+    let nextAvailable = patch.available !== undefined ? !!patch.available : !!cur.available;
+    if (nextQuantity !== null) {
+      if (nextQuantity <= 0) {
+        nextAvailable = false;
+      } else if (!nextAvailable && cur.available === false && patch.available === undefined) {
+        // Auto re-enable availability if stock is replenished and admin didn't explicitly keep it off
+        nextAvailable = true;
+      }
+    }
+
     db.prepare(
       `UPDATE products
          SET title=?, description=?, priceSats=?, images=?, available=?, hidden=?,
              subtitle=?, longDescription=?, mainImageIndex=?,
              widthCm=?, heightCm=?, depthCm=?, showDimensions=?,
              shippingSurchargeSats=?, shippingItalySats=?, shippingEuropeSats=?, shippingWorldSats=?,
-             shippingZoneOverrides=?
+             shippingZoneOverrides=?, isUnique=?, quantityAvailable=?
        WHERE id=?`
     ).run(
       patch.title ?? cur.title,
       (patch.description ?? cur.description ?? ""),
       Math.floor((patch.priceSats ?? cur.priceSats) || 0),
       EMPTY_IMAGES_JSON,
-      (patch.available ?? cur.available) ? 1 : 0,
+      nextAvailable ? 1 : 0,
       (patch.hidden ?? cur.hidden) ? 1 : 0,
       patch.subtitle ?? cur.subtitle ?? "",
       (patch.longDescription ?? cur.longDescription ?? cur.description ?? ""),
@@ -1109,6 +1155,8 @@ export const Products = {
       Math.max(0, (patch.shippingEuropeSats ?? cur.shippingEuropeSats) | 0),
       Math.max(0, (patch.shippingWorldSats ?? cur.shippingWorldSats) | 0),
       JSON.stringify(normalizedOverrides),
+      nextIsUnique ? 1 : 0,
+      nextQuantity,
       id
     );
 
@@ -1123,8 +1171,30 @@ export const Products = {
     db.prepare(`DELETE FROM products WHERE id=?`).run(id);
   },
 
+  consumeStock(id, qty = 1) {
+    const product = this.get(id, { includeImages: false });
+    if (!product) return null;
+    const decrement = Math.max(1, Math.floor(Number(qty) || 1));
+
+    // Unlimited stock (null) never decrements
+    if (!product.isUnique && (product.quantityAvailable === null || product.quantityAvailable === undefined)) {
+      return product;
+    }
+
+    const currentQty = Number.isFinite(product.quantityAvailable) ? Math.max(0, product.quantityAvailable) : (product.isUnique ? 1 : 0);
+    const nextQty = product.isUnique ? 0 : Math.max(0, currentQty - decrement);
+    const nextAvailable = product.isUnique ? 0 : (nextQty > 0 ? 1 : 0);
+
+    db.prepare(`UPDATE products SET quantityAvailable=?, available=? WHERE id=?`).run(
+      nextQty,
+      nextAvailable,
+      id
+    );
+    return this.get(id, { includeImages: false });
+  },
+
   markSold(id) {
-    db.prepare(`UPDATE products SET available=0 WHERE id=?`).run(id);
+    db.prepare(`UPDATE products SET available=0, quantityAvailable=0 WHERE id=?`).run(id);
   },
 
   reorder(orderIds = []) {
@@ -1168,12 +1238,23 @@ export const Products = {
 
 function normalizeProductRow(row, { includeImages = false } = {}) {
   if (!row) return null;
+  const isUnique = row.isUnique !== undefined ? !!row.isUnique : true;
+  const qtyRaw = row.quantityAvailable;
+  const qtyValue = Number.isFinite(qtyRaw) ? Math.max(0, Math.floor(qtyRaw)) : (isUnique ? 1 : null);
   const base = {
     id: row.id,
     title: row.title,
     description: row.description ?? "",
     priceSats: Number(row.priceSats || 0),
+    isUnique,
+    quantityAvailable: qtyValue,
     available: !!row.available,
+    maxQuantity: (() => {
+      if (!row.available) return 0;
+      if (isUnique) return 1;
+      if (qtyValue === null || qtyValue === undefined) return null;
+      return Math.max(0, qtyValue);
+    })(),
     hidden: !!row.hidden,
     createdAt: row.createdAt ?? 0,
     displayOrder: Number(row.displayOrder || 0),
@@ -1288,12 +1369,28 @@ export const Orders = {
     return this.get(id);
   },
   markPaidByHash(paymentHash) {
-    db.prepare(`UPDATE orders SET status='PAID' WHERE paymentHash=?`).run(paymentHash);
-    return this.byPaymentHash(paymentHash);
+    const current = this.byPaymentHash(paymentHash);
+    if (!current) return null;
+    const statusUpper = String(current.status || "").toUpperCase();
+    const alreadyPaid = statusUpper === "PAID" || statusUpper === "PREPARATION" || statusUpper === "SHIPPED";
+    if (!alreadyPaid) {
+      db.prepare(`UPDATE orders SET status='PAID' WHERE paymentHash=?`).run(paymentHash);
+    }
+    const next = alreadyPaid ? current : this.byPaymentHash(paymentHash);
+    if (next) next.__justPaid = !alreadyPaid;
+    return next;
   },
   markPaidBySwapId(boltzSwapId) {
-    db.prepare(`UPDATE orders SET status='PAID' WHERE boltzSwapId=?`).run(boltzSwapId);
-    return this.bySwapId(boltzSwapId);
+    const current = this.bySwapId(boltzSwapId);
+    if (!current) return null;
+    const statusUpper = String(current.status || "").toUpperCase();
+    const alreadyPaid = statusUpper === "PAID" || statusUpper === "PREPARATION" || statusUpper === "SHIPPED";
+    if (!alreadyPaid) {
+      db.prepare(`UPDATE orders SET status='PAID' WHERE boltzSwapId=?`).run(boltzSwapId);
+    }
+    const next = alreadyPaid ? current : this.bySwapId(boltzSwapId);
+    if (next) next.__justPaid = !alreadyPaid;
+    return next;
   },
   updateBoltzStatus(boltzSwapId, status) {
     if (!boltzSwapId) return null;

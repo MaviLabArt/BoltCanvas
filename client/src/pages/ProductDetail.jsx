@@ -158,7 +158,7 @@ export default function ProductDetail() {
   const showFreeShippingPill = hasFreePresetForAllZones || perProductFreeEverywhere;
   const freeShippingLabel = hasFreePresetForAllZones
     ? "Free Shipping Worldwide"
-    : "Free shipping on this piece";
+    : "Free shipping on this item";
 
   const hasImages = mainImgs.length > 0;
   const mainImageAbsolute = hasImages ? mainImgsAbs[Math.max(0, Math.min(active, mainImgsAbs.length - 1))] || mainImgsAbs[0] : "";
