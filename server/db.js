@@ -233,6 +233,15 @@ if (!sGet.get("nostrBlockedHashtags")) sSet.run("nostrBlockedHashtags", "[]");
 // ── NEW: Theme selector (dark | light | auto) ──
 if (!sGet.get("themeChoice")) sSet.run("themeChoice", "dark");
 if (!sGet.get("nostrDefaultHashtags")) sSet.run("nostrDefaultHashtags", DEFAULT_TEASER_HASHTAGS);
+if (!sGet.get("themeTokens")) sSet.run("themeTokens", JSON.stringify({
+  accent: "#6366f1",
+  accentSoft: "rgba(99, 102, 241, 0.16)",
+  surface: "#0f172a",
+  surfaceAlt: "#111827",
+  text: "#e5e7eb",
+  muted: "#94a3b8",
+  border: "rgba(255, 255, 255, 0.08)"
+}));
 
 // ── NEW: Notification templates (DM + Email subject/body per status) ──
 const DEFAULT_SUBJECT = `[{{storeName}}] Order {{orderId}}, {{statusLabel}}`;
@@ -1515,6 +1524,15 @@ export const Settings = {
       lightningAddress: map.lightningAddress || "",
       // NEW: theme
       themeChoice: map.themeChoice || "dark",
+      themeTokens: safeParseJSON(map.themeTokens, {
+        accent: "#6366f1",
+        accentSoft: "rgba(99, 102, 241, 0.16)",
+        surface: "#0f172a",
+        surfaceAlt: "#111827",
+        text: "#e5e7eb",
+        muted: "#94a3b8",
+        border: "rgba(255, 255, 255, 0.08)"
+      }),
       nostrDefaultHashtags: map.nostrDefaultHashtags || DEFAULT_TEASER_HASHTAGS,
       nostrCommentsEnabled,
       nostrBlockedPubkeys: safeParseJSON(map.nostrBlockedPubkeys, []),
@@ -1578,6 +1596,7 @@ export const Settings = {
       nostrRelays: full.nostrRelays,
       lightningAddress: full.lightningAddress,
       themeChoice: full.themeChoice,
+      themeTokens: full.themeTokens,
       nostrDefaultHashtags: full.nostrDefaultHashtags,
       nostrBlockedPubkeys: full.nostrBlockedPubkeys,
       nostrBlockedHashtags: full.nostrBlockedHashtags,
@@ -1594,6 +1613,7 @@ export const Settings = {
     nostrNpub, nostrNip05, nostrRelays, lightningAddress,
     // NEW: theme
     themeChoice,
+    themeTokens,
     nostrDefaultHashtags,
     nostrCommentsEnabled,
     nostrBlockedPubkeys,
@@ -1669,6 +1689,14 @@ export const Settings = {
     if (lightningAddress !== undefined) sSet.run("lightningAddress", lightningAddress || "");
     // NEW: theme
     if (themeChoice !== undefined) sSet.run("themeChoice", themeChoice || "dark");
+    if (themeTokens !== undefined) {
+      try {
+        const val = typeof themeTokens === "string" ? themeTokens : JSON.stringify(themeTokens || {});
+        sSet.run("themeTokens", val);
+      } catch {
+        // ignore invalid JSON
+      }
+    }
     if (nostrDefaultHashtags !== undefined) sSet.run("nostrDefaultHashtags", nostrDefaultHashtags || DEFAULT_TEASER_HASHTAGS);
 
     // NEW: notification templates

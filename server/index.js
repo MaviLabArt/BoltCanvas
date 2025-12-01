@@ -1148,6 +1148,7 @@ app.put("/api/admin/settings", requireAdmin, (req, res) => {
     nostrBlockedPubkeys, nostrBlockedHashtags,
     // NEW Theme
     themeChoice,
+    themeTokens,
     // NEW Email/IMAP
     smtpEnabled, smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass,
     smtpFromName, smtpFromAddress, smtpEnvelopeFrom, smtpReplyTo, smtpSignature, smtpSaveToSent,
@@ -1167,7 +1168,7 @@ app.put("/api/admin/settings", requireAdmin, (req, res) => {
       commissionTitle, commissionBody, commissionCtaLabel, commissionCtaHref,
       nostrNpub, nostrNip05, nostrRelays, lightningAddress, nostrDefaultHashtags, nostrCommentsEnabled,
       nostrBlockedPubkeys, nostrBlockedHashtags,
-      themeChoice,
+      themeChoice, themeTokens,
       smtpEnabled, smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass,
       smtpFromName, smtpFromAddress, smtpEnvelopeFrom, smtpReplyTo, smtpSignature, smtpSaveToSent,
       imapHost, imapPort, imapSecure, imapUser, imapPass, imapMailbox,
