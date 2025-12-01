@@ -8,6 +8,13 @@
 :root {
   --font-display: "Space Grotesk", system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji","Segoe UI Emoji", "Segoe UI Symbol";
   --font-body: "Inter", system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji","Segoe UI Emoji", "Segoe UI Symbol";
+  --ct-accent: #6366f1;
+  --ct-accentSoft: rgba(99, 102, 241, 0.16);
+  --ct-surface: #0f172a;
+  --ct-surfaceAlt: #111827;
+  --ct-text: #e5e7eb;
+  --ct-muted: #94a3b8;
+  --ct-border: rgba(255, 255, 255, 0.08);
 }
 body { font-family: var(--font-body); }
 h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em; }
@@ -433,4 +440,93 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
 }
 [data-theme='light'] .bg-slate-900\/95.px-4.py-3 img {
   background-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+/* ===================================================================
+   CUSTOM THEME (admin-defined tokens) - data-theme="custom"
+   =================================================================== */
+[data-theme='custom'] {
+  color-scheme: dark;
+}
+[data-theme='custom'] body {
+  background-color: var(--ct-surface);
+  color: var(--ct-text);
+}
+[data-theme='custom'] .bg-slate-950 { background-color: var(--ct-surface) !important; }
+[data-theme='custom'] .bg-slate-950\/90,
+[data-theme='custom'] .bg-slate-950\/80 { background-color: var(--ct-surface) !important; }
+[data-theme='custom'] .bg-slate-900 { background-color: var(--ct-surface) !important; }
+[data-theme='custom'] .bg-slate-800 { background-color: var(--ct-surfaceAlt) !important; }
+[data-theme='custom'] .bg-black\/20 { background-color: rgba(0, 0, 0, 0.45) !important; }
+[data-theme='custom'] .ring-white\/10,
+[data-theme='custom'] .ring-white\/15,
+[data-theme='custom'] .ring-white\/20 { --tw-ring-color: var(--ct-border) !important; }
+[data-theme='custom'] .border-white\/10,
+[data-theme='custom'] .border-white\/20 { border-color: var(--ct-border) !important; }
+[data-theme='custom'] .text-white,
+[data-theme='custom'] .text-white\/95,
+[data-theme='custom'] .text-white\/90,
+[data-theme='custom'] .text-white\/85 { color: var(--ct-text) !important; }
+[data-theme='custom'] .text-white\/80,
+[data-theme='custom'] .text-white\/70,
+[data-theme='custom'] .text-white\/60,
+[data-theme='custom'] .text-white\/50,
+[data-theme='custom'] .text-white\/40,
+[data-theme='custom'] .text-white\/30,
+[data-theme='custom'] .text-white\/20,
+[data-theme='custom'] .text-white\/10 { color: var(--ct-muted) !important; }
+[data-theme='custom'] .bg-indigo-500\/90,
+[data-theme='custom'] .bg-indigo-500\/80,
+[data-theme='custom'] .hover\:bg-indigo-500:hover {
+  background-color: var(--ct-accent) !important;
+  color: #ffffff !important;
+}
+[data-theme='custom'] .bg-indigo-500\/70,
+[data-theme='custom'] .bg-indigo-500\/60 { background-color: var(--ct-accent) !important; color: #ffffff !important; }
+[data-theme='custom'] .bg-indigo-500\/15 { background-color: var(--ct-accentSoft) !important; color: var(--ct-accent) !important; }
+[data-theme='custom'] .text-indigo-100,
+[data-theme='custom'] .text-indigo-200,
+[data-theme='custom'] .text-indigo-200\/80 { color: var(--ct-accent) !important; }
+[data-theme='custom'] .bg-indigo-400 { background-color: var(--ct-accent) !important; }
+[data-theme='custom'].theme-preview,
+[data-theme='custom'] .theme-preview {
+  color: var(--ct-text);
+}
+[data-theme='custom'] .theme-preview .text-white,
+[data-theme='custom'] .theme-preview .text-white\/95,
+[data-theme='custom'] .theme-preview .text-white\/90,
+[data-theme='custom'] .theme-preview .text-white\/85,
+[data-theme='custom'] .theme-preview .text-white\/80,
+[data-theme='custom'] .theme-preview .text-white\/70,
+[data-theme='custom'] .theme-preview .text-white\/60,
+[data-theme='custom'] .theme-preview .text-white\/50,
+[data-theme='custom'] .theme-preview .text-white\/40,
+[data-theme='custom'] .theme-preview .text-white\/30,
+[data-theme='custom'] .theme-preview .text-white\/20,
+[data-theme='custom'] .theme-preview .text-white\/10 {
+  color: var(--ct-text) !important;
+}
+[data-theme='custom'] .theme-preview .text-slate-50,
+[data-theme='custom'] .theme-preview .text-slate-100,
+[data-theme='custom'] .theme-preview .text-slate-200,
+[data-theme='custom'] .theme-preview .text-slate-300,
+[data-theme='custom'] .theme-preview .text-slate-400,
+[data-theme='custom'] .theme-preview .text-slate-500 {
+  color: var(--ct-muted) !important;
+}
+[data-theme='custom'] .skel { background-color: var(--ct-surfaceAlt) !important; box-shadow: inset 0 1px 0 rgba(0,0,0,0.1); }
+[data-theme='custom'] .skel-img,
+[data-theme='custom'] .skel-line { background-color: rgba(255, 255, 255, 0.06) !important; }
+[data-theme='custom'] .btn-loading {
+  background-color: var(--ct-accent);
+  background-image: linear-gradient(180deg, var(--ct-accentSoft), rgba(0,0,0,0.2));
+}
+[data-theme='custom'] .pay-now-btn {
+  background: var(--ct-accent);
+  border-color: var(--ct-border);
+  color: #fff !important;
+}
+[data-theme='custom'] .free-shipping-pill {
+  background-color: var(--ct-accentSoft);
+  color: var(--ct-accent);
 }
