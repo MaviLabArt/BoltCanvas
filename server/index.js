@@ -660,6 +660,15 @@ function sanitizeShipping(value) {
   return bounded;
 }
 
+function maxPurchasableForProduct(product) {
+  if (!product || !product.available) return 0;
+  if (Number.isFinite(product.maxQuantity)) return Math.max(0, product.maxQuantity);
+  if (product.isUnique) return 1;
+  const qty = Number(product.quantityAvailable);
+  if (Number.isFinite(qty) && qty >= 0) return Math.max(0, qty);
+  return MAX_CART_QTY;
+}
+
 function sanitizeCartProduct(raw) {
   if (!raw || typeof raw !== "object") return null;
   const id = trimCartString(raw.id, 160);
@@ -668,7 +677,7 @@ function sanitizeCartProduct(raw) {
   const priceSats = Number.isFinite(priceRaw) ? Math.max(0, Math.floor(priceRaw)) : 0;
   const product = {
     id,
-    title: trimCartString(raw.title || "Artwork", 256),
+    title: trimCartString(raw.title || "Product", 256),
     priceSats,
     available: !!raw.available,
     mainImageIndex: Number.isInteger(raw.mainImageIndex) ? raw.mainImageIndex : 0,
@@ -679,10 +688,25 @@ function sanitizeCartProduct(raw) {
     shippingEuropeSats: sanitizeShipping(raw.shippingEuropeSats),
     shippingWorldSats: sanitizeShipping(raw.shippingWorldSats),
     shippingZoneOverrides: sanitizeCartZoneOverrides(raw.shippingZoneOverrides),
+    isUnique: raw.isUnique !== undefined ? !!raw.isUnique : true,
+    quantityAvailable: (() => {
+      const num = Number(raw.quantityAvailable);
+      return Number.isFinite(num) && num >= 0 ? Math.floor(num) : null;
+    })(),
     __cartVersion: Number.isFinite(Number(raw.__cartVersion))
       ? Number(raw.__cartVersion)
       : 0
   };
+  const hasFiniteQty = Number.isFinite(product.quantityAvailable);
+  product.available = product.available && (!hasFiniteQty || product.quantityAvailable > 0);
+  if (product.available) {
+    const maxQty = product.isUnique
+      ? 1
+      : (product.quantityAvailable === null ? MAX_CART_QTY : Math.max(0, Math.min(MAX_CART_QTY, product.quantityAvailable)));
+    product.maxQuantity = maxQty;
+  } else {
+    product.maxQuantity = 0;
+  }
   const thumbUrls = sanitizeUrlArray(raw.thumbUrls);
   if (thumbUrls.length) product.thumbUrls = thumbUrls;
   const imageUrls = sanitizeUrlArray(raw.imageUrls);
@@ -1178,11 +1202,20 @@ app.get("/api/admin/products", requireAdmin, (req, res) => {
     const versionTag = makeImageVersionQuery(p.imageVersion, safeIdx);
     const thumbUrl = count ? `/api/products/${p.id}/thumb/${safeIdx}.jpg${versionTag}` : "";
     const mainUrl = count ? `/api/products/${p.id}/image/${safeIdx}.jpg${versionTag}` : "";
+    const maxQuantity = (() => {
+      if (!p.available) return 0;
+      if (p.isUnique) return 1;
+      if (Number.isFinite(p.quantityAvailable)) return Math.max(0, p.quantityAvailable);
+      return null;
+    })();
     return {
       id: p.id,
       title: p.title,
       subtitle: p.subtitle,
       priceSats: p.priceSats,
+      isUnique: !!p.isUnique,
+      quantityAvailable: p.quantityAvailable,
+      maxQuantity,
       available: p.available,
       hidden: p.hidden,
       createdAt: p.createdAt,
@@ -1427,9 +1460,9 @@ app.post("/api/admin/orders/:id/status", requireAdmin, async (req, res) => {
     }
 
     const updated = Orders.setStatus(id, status, { courier, tracking });
-    if (status === "PAID" && Array.isArray(updated?.items)) {
+    if (status === "PAID" && existing?.status !== "PAID" && Array.isArray(updated?.items)) {
       for (const it of updated.items) {
-        try { Products.markSold(it.productId); } catch {}
+        try { Products.consumeStock(it.productId, it.qty || 1); } catch {}
       }
     }
 
@@ -1465,7 +1498,9 @@ app.post("/api/admin/products", requireAdmin, (req, res) => {
     shippingItalySats, shippingEuropeSats, shippingWorldSats,
     available,
     showDimensions,
-    hidden
+    hidden,
+    isUnique,
+    quantityAvailable
   } = req.body || {};
   if (!title || !priceSats || !images?.length) {
     return res.status(400).json({ error: "title, priceSats, images required" });
@@ -1486,7 +1521,9 @@ app.post("/api/admin/products", requireAdmin, (req, res) => {
     shippingItalySats: Math.max(0, shippingItalySats|0),
     shippingEuropeSats: Math.max(0, shippingEuropeSats|0),
     shippingWorldSats: Math.max(0, shippingWorldSats|0),
-    shippingZoneOverrides: Array.isArray(shippingZoneOverrides) ? shippingZoneOverrides : []
+    shippingZoneOverrides: Array.isArray(shippingZoneOverrides) ? shippingZoneOverrides : [],
+    isUnique: isUnique !== undefined ? !!isUnique : undefined,
+    quantityAvailable: quantityAvailable
   });
   if (available === false) Products.update(created.id, { available: false });
   if (hidden === true) Products.update(created.id, { hidden: true });
@@ -1515,6 +1552,8 @@ app.put("/api/admin/products/:id", requireAdmin, (req, res) => {
   if (req.body.available !== undefined) patch.available = !!req.body.available;
   if (req.body.hidden !== undefined) patch.hidden = !!req.body.hidden;
   if (req.body.showDimensions !== undefined) patch.showDimensions = !!req.body.showDimensions;
+  if (req.body.isUnique !== undefined) patch.isUnique = !!req.body.isUnique;
+  if (req.body.quantityAvailable !== undefined) patch.quantityAvailable = req.body.quantityAvailable;
 
   const changed = Products.update(id, patch);
   if (!changed) return res.status(404).json({ error: "Not found" });
@@ -1606,12 +1645,14 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
       const p = Products.get(productId, { includeImages: false });
       if (!p || !p.available || p.hidden) throw new Error(`Item not available: ${productId}`);
       const q = Math.max(1, Math.floor(qty || 1));
-      if (q !== 1) throw new Error(`Paintings are unique. qty must be 1: ${productId}`);
+      const maxAllowed = maxPurchasableForProduct(p);
+      if (maxAllowed <= 0) throw new Error(`Item not available: ${productId}`);
+      if (q > maxAllowed) throw new Error(`Only ${maxAllowed} available for ${productId}`);
       return {
         productId,
         title: p.title,
         priceSats: p.priceSats,
-        qty: 1,
+        qty: q,
         shippingItalySats: p.shippingItalySats || 0,
         shippingEuropeSats: p.shippingEuropeSats || 0,
         shippingWorldSats: p.shippingWorldSats || 0,
@@ -1619,7 +1660,7 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
       };
     });
 
-    const subtotal = loaded.reduce((x, it) => x + it.priceSats, 0);
+    const subtotal = loaded.reduce((x, it) => x + it.priceSats * Math.max(1, it.qty || 1), 0);
     const settings = Settings.getAll();
     const zones = normalizeShippingZones(settings.shippingZones);
     let shipping = 0;
@@ -1642,9 +1683,10 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
       );
     } else {
       shipping = loaded.reduce((x, it) => {
-        if (country === "IT") return x + (it.shippingItalySats || 0);
-        if (isEurope(country)) return x + (it.shippingEuropeSats || 0);
-        return x + (it.shippingWorldSats || 0);
+        const qty = Math.max(1, Number(it.qty) || 1);
+        if (country === "IT") return x + qty * (it.shippingItalySats || 0);
+        if (isEurope(country)) return x + qty * (it.shippingEuropeSats || 0);
+        return x + qty * (it.shippingWorldSats || 0);
       }, 0);
     }
     const total = subtotal + shipping;
@@ -1869,8 +1911,8 @@ async function handleBoltzStatusSideEffects({ swapId, mappedStatus, rawStatus })
 
   if (mappedStatus === "PAID") {
     const order = Orders.markPaidBySwapId(swapId);
-    if (order?.items?.length) {
-      for (const it of order.items) Products.markSold(it.productId);
+    if (order?.__justPaid && order?.items?.length) {
+      for (const it of order.items) Products.consumeStock(it.productId, it.qty || 1);
     }
     notifyPaidOnce(order);
     try { await dmOrderUpdate(order, "PAID"); } catch {}
@@ -1908,8 +1950,8 @@ app.get("/api/invoices/:hash/status", async (req, res) => {
 
     if (status === "PAID") {
       const order = Orders.markPaidByHash(req.params.hash);
-      if (order?.items?.length) {
-        for (const it of order.items) Products.markSold(it.productId);
+      if (order?.__justPaid && order?.items?.length) {
+        for (const it of order.items) Products.consumeStock(it.productId, it.qty || 1);
       }
       notifyPaidOnce(order); // << ntfy
       // NOSTR DM on PAID
@@ -1968,8 +2010,8 @@ app.get("/api/onchain/:swapId/status", async (req, res) => {
 
       if (mapped === "CONFIRMED") {
         const updated = Orders.markPaidByHash(order.paymentHash);
-        if (updated?.items?.length) {
-          for (const it of updated.items) Products.markSold(it.productId);
+        if (updated?.__justPaid && updated?.items?.length) {
+          for (const it of updated.items) Products.consumeStock(it.productId, it.qty || 1);
         }
         notifyPaidOnce(updated);
         try { await dmOrderUpdate(updated, "PAID"); } catch {}
@@ -2041,8 +2083,8 @@ app.get("/api/invoices/:hash/stream", async (req, res) => {
 
       if (status === "PAID") {
         const order = Orders.markPaidByHash(paymentHash);
-        if (order?.items?.length) {
-          for (const it of order.items) Products.markSold(it.productId);
+        if (order?.__justPaid && order?.items?.length) {
+          for (const it of order.items) Products.consumeStock(it.productId, it.qty || 1);
         }
         notifyPaidOnce(order); // << ntfy
         try { await dmOrderUpdate(order, "PAID"); } catch {}
@@ -2109,8 +2151,8 @@ app.get("/api/onchain/:swapId/stream", async (req, res) => {
     } else {
       if (mappedStatus === "CONFIRMED") {
         const updated = Orders.markPaidByHash(freshOrder.paymentHash);
-        if (updated?.items?.length) {
-          for (const it of updated.items) Products.markSold(it.productId);
+        if (updated?.__justPaid && updated?.items?.length) {
+          for (const it of updated.items) Products.consumeStock(it.productId, it.qty || 1);
         }
         notifyPaidOnce(updated);
         try { await dmOrderUpdate(updated, "PAID"); } catch {}
@@ -2340,8 +2382,8 @@ app.post(BTCPAY_WEBHOOK_PATH, async (req, res) => {
 
     if (mapped === "PAID" || mapped === "CONFIRMED") {
       const order = Orders.markPaidByHash(invoiceId);
-      if (order?.items?.length) {
-        for (const it of order.items) Products.markSold(it.productId);
+      if (order?.__justPaid && order?.items?.length) {
+        for (const it of order.items) Products.consumeStock(it.productId, it.qty || 1);
       }
       notifyPaidOnce(order);
       try { await dmOrderUpdate(order, "PAID"); } catch {}
@@ -2568,8 +2610,8 @@ if (!TEST_MODE) (function startPaymentUpdatesWatcher() {
   startPaymentWatcher({
     onPaid: async (hash) => {
       const order = Orders.markPaidByHash(hash);
-      if (order?.items?.length) {
-        for (const it of order.items) Products.markSold(it.productId);
+      if (order?.__justPaid && order?.items?.length) {
+        for (const it of order.items) Products.consumeStock(it.productId, it.qty || 1);
       }
       notifyPaidOnce(order);
       try { await dmOrderUpdate(order, "PAID"); } catch {}
@@ -2616,8 +2658,8 @@ if (!TEST_MODE) (function startPendingInvoiceSweeper() {
 
           if (st === "PAID") {
             const order = Orders.markPaidByHash(o.paymentHash);
-            if (order?.items?.length) {
-              for (const it of order.items) Products.markSold(it.productId);
+            if (order?.__justPaid && order?.items?.length) {
+              for (const it of order.items) Products.consumeStock(it.productId, it.qty || 1);
             }
             notifyPaidOnce(order);
             try { await dmOrderUpdate(order, "PAID"); } catch {}
@@ -2673,8 +2715,8 @@ if (ENABLE_WEBHOOKS) {
         const hash = evt?.transaction?.initiationVia?.paymentHash;
         if (hash) {
           const order = Orders.markPaidByHash(hash);
-          if (order?.items?.length) {
-            for (const it of order.items) Products.markSold(it.productId);
+          if (order?.__justPaid && order?.items?.length) {
+            for (const it of order.items) Products.consumeStock(it.productId, it.qty || 1);
           }
           notifyPaidOnce(order); // << ntfy
           try { await dmOrderUpdate(order, "PAID"); } catch {}

@@ -154,6 +154,8 @@ export default function Products() {
       mainImageIndex: 0,
       available: true,
       hidden: false,
+      isUnique: true,
+      quantityAvailable: 1,
       // dimensioni (solo numeri, cm)
       widthCm: "",
       heightCm: "",
@@ -429,6 +431,13 @@ export default function Products() {
                 <div className="text-sm text-white/70 mt-1">
                   {Number(p.priceSats || 0).toLocaleString("en-US")} sats
                 </div>
+                <div className="text-xs text-white/60 mt-1">
+                  {p.isUnique ? t("Pezzo unico", "Unique item") : (
+                    Number.isFinite(p.quantityAvailable)
+                      ? t(`Disponibili: ${p.quantityAvailable}`, `Available: ${p.quantityAvailable}`)
+                      : t("Quantità illimitata", "Unlimited quantity")
+                  )}
+                </div>
                 {isHidden && (
                   <div className="text-xs text-amber-400 mt-1">
                     {t("Nascosto dal sito", "Hidden from site")}
@@ -577,6 +586,12 @@ function Editor({ initial, shippingZones = [], onClose, onSaved }) {
   const [title, setTitle] = useState(initial.title || "");
   const [subtitle, setSubtitle] = useState(initial.subtitle || "");
   const [priceSats, setPriceSats] = useState(initial.priceSats || 0);
+  const [isUnique, setIsUnique] = useState(initial.isUnique !== false);
+  const [quantityAvailable, setQuantityAvailable] = useState(
+    initial.isUnique === false
+      ? (initial.quantityAvailable ?? "")
+      : 1
+  );
 
   // breve = "description" (preview legacy); lunga = "longDescription"
   const [longDescription, setLongDescription] = useState(
@@ -623,6 +638,8 @@ function Editor({ initial, shippingZones = [], onClose, onSaved }) {
     setHidden(initial.hidden ?? false);
     setShowDimensions(initial.showDimensions !== false);
     setZoneOverrides(makeInitialZoneOverrideState(initial));
+    setIsUnique(initial.isUnique !== false);
+    setQuantityAvailable(initial.isUnique === false ? (initial.quantityAvailable ?? "") : 1);
   }, [initial]);
 
   const parseNonNegative = (raw, allowEmpty = true) => {
@@ -779,6 +796,13 @@ function Editor({ initial, shippingZones = [], onClose, onSaved }) {
       subtitle: subtitle.trim(),
       longDescription: longDescription,
       priceSats: Math.floor(Number(priceSats || 0)),
+      isUnique: !!isUnique,
+      quantityAvailable: (() => {
+        if (isUnique) return 1;
+        if (quantityAvailable === "" || quantityAvailable === null || quantityAvailable === undefined) return null;
+        const num = Number(quantityAvailable);
+        return Number.isFinite(num) && num >= 0 ? Math.floor(num) : null;
+      })(),
       images: imagePayload, // thumbs are not sent; server generates thumbnails on demand
       mainImageIndex: Math.min(
         Math.max(0, Number(mainImageIndex) | 0),
@@ -876,6 +900,43 @@ function Editor({ initial, shippingZones = [], onClose, onSaved }) {
               {formErrors.priceSats ? (
                 <div className="text-xs text-amber-300 mt-1">{formErrors.priceSats}</div>
               ) : null}
+            </div>
+
+            <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10">
+                <input
+                  type="checkbox"
+                  checked={isUnique}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setIsUnique(checked);
+                    if (checked) setQuantityAvailable(1);
+                  }}
+                />
+                <div>
+                  <div className="font-medium">{t("Pezzo unico", "Unique item")}</div>
+                  <div className="text-xs text-white/60">
+                    {t("Se abilitato, quantità massima 1.", "If enabled, maximum quantity is 1.")}
+                  </div>
+                </div>
+              </label>
+              <div>
+                <label className="block text-sm text-white/70 mb-1">
+                  {t("Quantità disponibile", "Available quantity")}
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  className="w-full px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10 disabled:opacity-60"
+                  value={isUnique ? 1 : quantityAvailable}
+                  onChange={(e) => setQuantityAvailable(e.target.value)}
+                  disabled={isUnique}
+                  placeholder={t("Lascia vuoto per illimitato", "Leave blank for unlimited")}
+                />
+                <div className="text-xs text-white/60 mt-1">
+                  {t("Lascia vuoto per illimitato. Usa 0 per esaurito.", "Leave blank for unlimited. Use 0 if out of stock.")}
+                </div>
+              </div>
             </div>
 
             <div className="md:col-span-2">

@@ -443,9 +443,11 @@ export default function Paid() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-medium truncate">{it.title}</div>
-                        <div className="text-sm text-white/70">Qty: 1</div>
+                        <div className="text-sm text-white/70">Qty: {Math.max(1, Number(it.qty) || 1)}</div>
                       </div>
-                      <div className="text-right font-medium">{formatSats(it.priceSats)} sats</div>
+                      <div className="text-right font-medium">
+                        {formatSats((it.priceSats || 0) * Math.max(1, Number(it.qty) || 1))} sats
+                      </div>
                     </li>
                   );
                 })}

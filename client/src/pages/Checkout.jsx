@@ -390,7 +390,7 @@ export default function Checkout() {
       return;
     }
     const payload = {
-      items: items.map((it) => ({ productId: it.product.id, qty: 1 })),
+      items: items.map((it) => ({ productId: it.product.id, qty: Math.max(1, Number(it.qty) || 1) })),
       customer: {
         ...form
       },
