@@ -174,7 +174,12 @@ export default function Orders() {
               <div className="text-white/70 text-sm">{t("Articoli", "Items")}</div>
               <ul className="list-disc ml-5">
                 {(o.items || []).map((it, i)=>(
-                  <li key={i}>{it.title}, {formatSats(it.priceSats)} sats</li>
+                  <li key={i}>
+                    {it.title}, {formatSats(it.priceSats)} sats
+                    {Number.isFinite(it.qty) && it.qty > 1 ? (
+                      <span className="text-white/60"> × {it.qty}</span>
+                    ) : null}
+                  </li>
                 ))}
               </ul>
             </div>

@@ -227,17 +227,20 @@ function ntfyNotifyPaid(order) {
   const titlePrefix = NTFY_TITLE_PREFIX ? `${NTFY_TITLE_PREFIX}, ` : "";
     if (!order) return;
 
-    const title = `${titlePrefix}Pagamento ricevuto ✅ Ordine ${order.id}`;
+    const langIsEn = String(ADMIN_LANG || "").toLowerCase() === "en";
+    const title = langIsEn
+      ? `${titlePrefix}Payment received ✅ Order ${order.id}`
+      : `${titlePrefix}Pagamento ricevuto ✅ Ordine ${order.id}`;
     const tags = "moneybag,receipt,checkered_flag";
 
     const fmt = (n) => (Number(n) || 0).toLocaleString("it-IT");
-    const when = new Date(order.createdAt || Date.now()).toLocaleString("it-IT", { hour12: false });
+    const when = new Date(order.createdAt || Date.now()).toLocaleString(langIsEn ? "en-US" : "it-IT", { hour12: false });
 
   const contacts = []
-    .concat(order.contactEmail ? [`Email: ${order.contactEmail}`] : [])
+    .concat(order.contactEmail ? [`${langIsEn ? "Email" : "Email"}: ${order.contactEmail}`] : [])
     .concat(order.contactTelegram ? [`Telegram: ${order.contactTelegram}`] : [])
     .concat(order.contactNostr ? [`Nostr: ${order.contactNostr}`] : [])
-    .concat(order.contactPhone ? [`Phone: ${order.contactPhone}`] : [])
+    .concat(order.contactPhone ? [`${langIsEn ? "Phone" : "Phone"}: ${order.contactPhone}`] : [])
     .join(" • ");
 
   const addressParts = [
@@ -251,28 +254,49 @@ function ntfyNotifyPaid(order) {
     .filter(Boolean);
 
   const itemsLines = (order.items || [])
-    .map((it) => ` • ${it.title}, ${fmt(it.priceSats)} sats`)
+    .map((it) => {
+      const qty = Number.isFinite(it.qty) && it.qty > 1 ? ` x${it.qty}` : "";
+      return ` • ${it.title}${qty ? qty : ""}, ${fmt(it.priceSats)} sats`;
+    })
       .join("\n");
 
     const hasNotes = String(order?.notes || "").trim().length > 0;
 
-    const bodyLines = [
-      `Ordine: ${order.id}`,
-      `Stato: ${order.status}`,
-      `Importo totale: ${fmt(order.totalSats)} sats`,
-      `Subtotale: ${fmt(order.subtotalSats)} • Spedizione: ${fmt(order.shippingSats)} sats`,
-      ``,
-      `Articoli:`,
-      itemsLines || " • (vuoto)",
-      ``,
-    `Cliente: ${(order.name || "")} ${(order.surname || "")}`.trim(),
-    addressParts.length ? `Indirizzo: ${addressParts.join(", ")}` : "Indirizzo:",
-      contacts ? `Contatti: ${contacts}` : `Contatti: (non indicati)`,
-      hasNotes ? `Note cliente: ${order.notes}` : ``,
-      ``,
-      `Payment hash: ${order.paymentHash || "-"}`,
-      `Data ordine: ${when}`,
-    ].join("\n");
+    const bodyLines = langIsEn
+      ? [
+          `Order: ${order.id}`,
+          `Status: ${order.status}`,
+          `Total: ${fmt(order.totalSats)} sats`,
+          `Subtotal: ${fmt(order.subtotalSats)} • Shipping: ${fmt(order.shippingSats)} sats`,
+          ``,
+          `Items:`,
+          itemsLines || " • (empty)",
+          ``,
+          `Customer: ${(order.name || "")} ${(order.surname || "")}`.trim(),
+          addressParts.length ? `Address: ${addressParts.join(", ")}` : "Address:",
+          contacts ? `Contacts: ${contacts}` : `Contacts: (not provided)`,
+          hasNotes ? `Customer notes: ${order.notes}` : ``,
+          ``,
+          `Payment hash: ${order.paymentHash || "-"}`,
+          `Order date: ${when}`
+        ].join("\n")
+      : [
+          `Ordine: ${order.id}`,
+          `Stato: ${order.status}`,
+          `Importo totale: ${fmt(order.totalSats)} sats`,
+          `Subtotale: ${fmt(order.subtotalSats)} • Spedizione: ${fmt(order.shippingSats)} sats`,
+          ``,
+          `Articoli:`,
+          itemsLines || " • (vuoto)",
+          ``,
+          `Cliente: ${(order.name || "")} ${(order.surname || "")}`.trim(),
+          addressParts.length ? `Indirizzo: ${addressParts.join(", ")}` : "Indirizzo:",
+          contacts ? `Contatti: ${contacts}` : `Contatti: (non indicati)`,
+          hasNotes ? `Note cliente: ${order.notes}` : ``,
+          ``,
+          `Payment hash: ${order.paymentHash || "-"}`,
+          `Data ordine: ${when}`,
+        ].join("\n");
 
     const args = [
       "-sS",
