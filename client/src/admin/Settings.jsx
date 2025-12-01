@@ -365,7 +365,12 @@ export default function Settings() {
         themeTokens: mergeThemeTokens(s.themeTokens)
       };
       const r = await api.put("/admin/settings", payload);
-      setS((prev) => ({ ...prev, ...r.data, themeTokens: mergeThemeTokens(r.data?.themeTokens) }));
+      const hydrated = hydrateSimplePresetFromZones(r.data || {});
+      setS((prev) => ({
+        ...prev,
+        ...hydrated,
+        themeTokens: mergeThemeTokens(hydrated.themeTokens)
+      }));
       setMessage(t("Impostazioni salvate.", "Settings saved."));
     } catch (e) {
       const msg =

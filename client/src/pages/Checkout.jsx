@@ -610,10 +610,28 @@ export default function Checkout() {
                 </div>
                 <div className="flex-1">
                   <div className="font-medium">{it.product.title}</div>
-                  <div className="text-white/70 text-sm">
+                  {Number.isFinite(it.qty) && it.qty > 1 ? (
+                    <div className="text-white/70 text-sm">
+                      {formatSats(it.product.priceSats)} sats × {it.qty}
+                    </div>
+                  ) : (
+                    <div className="text-white/70 text-sm">
+                      {formatSats(it.product.priceSats)} sats
+                    </div>
+                  )}
+                </div>
+                {Number.isFinite(it.qty) && it.qty > 1 ? (
+                  <div className="text-right text-sm text-white/70">
+                    <div>Qty: {it.qty}</div>
+                    <div className="font-semibold">
+                      {formatSats((it.product.priceSats || 0) * it.qty)} sats
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-right font-semibold">
                     {formatSats(it.product.priceSats)} sats
                   </div>
-                </div>
+                )}
               </li>
             );
           })}
