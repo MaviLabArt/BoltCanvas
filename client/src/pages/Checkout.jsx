@@ -795,7 +795,7 @@ function OnchainModal({ onClose, status, live, onchainAddress, onchainAmountSats
           </span>
         </div>
         <div className="mt-2 text-white/80">
-          Pay once to this address with the exact amount. We’ll see it in mempool, confirm it, and settle Lightning. Once paid, we’ll contact you within 24h to arrange shipping.
+          Pay once to this address with the exact amount. We’ll see it in mempool and confirm once in the block. We’ll contact you within 24h to arrange shipping.
         </div>
 
         <div className="mt-3 flex flex-wrap gap-3 items-center">
@@ -817,7 +817,7 @@ function OnchainModal({ onClose, status, live, onchainAddress, onchainAmountSats
         </div>
         {feeSats > 0 && (
           <div className="mt-1 text-xs text-white/60">
-            Includes on-chain fee: <span className="font-semibold text-white/80">{formatSats(feeSats)} sats</span>
+            Includes Boltz (submarine swap) fee: <span className="font-semibold text-white/80">{formatSats(feeSats)} sats</span>
           </div>
         )}
         {isMempool && (
