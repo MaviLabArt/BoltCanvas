@@ -11,6 +11,9 @@ import * as blink from "./blink.js";
 // LND driver
 import * as lnd from "./lnd.js";
 
+// NWC driver (NIP-47 via @getalby/sdk)
+import * as nwc from "./nwc.js";
+
 // BTCPay Server driver
 import * as btcpay from "./btcpay.js";
 
@@ -33,6 +36,10 @@ export async function ensureBtcWalletId(args = {}) {
     const { url, apiKey, explicitWalletId } = args;
     return blink.ensureBtcWalletId({ url, apiKey, explicitWalletId });
   }
+  if (PAYMENT_PROVIDER === "nwc") {
+    const { url, relayUrls } = args;
+    return nwc.ensureBtcWalletId({ url, relayUrls });
+  }
   if (PAYMENT_PROVIDER === "btcpay") {
     const { url, apiKey, explicitStoreId } = args;
     return btcpay.ensureBtcWalletId({ url, apiKey, explicitStoreId });
@@ -48,6 +55,10 @@ export async function createInvoiceSats(args) {
   if (PAYMENT_PROVIDER === "blink") {
     const { url, apiKey, walletId, amount, memo, expiresIn } = args || {};
     return blink.createInvoiceSats({ url, apiKey, walletId, amount, memo, expiresIn });
+  }
+  if (PAYMENT_PROVIDER === "nwc") {
+    const { url, relayUrls, amount, memo, expiresIn } = args || {};
+    return nwc.createInvoiceSats({ url, relayUrls, amount, memo, expiresIn });
   }
   if (PAYMENT_PROVIDER === "btcpay") {
     const { url, apiKey, walletId, amount, memo, expiresIn } = args || {};
@@ -67,6 +78,10 @@ export async function invoiceStatus(args) {
   if (PAYMENT_PROVIDER === "blink") {
     const { url, apiKey, paymentHash } = args || {};
     return blink.invoiceStatus({ url, apiKey, paymentHash });
+  }
+  if (PAYMENT_PROVIDER === "nwc") {
+    const { url, relayUrls, paymentHash } = args || {};
+    return nwc.invoiceStatus({ url, relayUrls, paymentHash });
   }
   if (PAYMENT_PROVIDER === "btcpay") {
     const { url, apiKey, paymentHash, walletId } = args || {};
@@ -137,6 +152,14 @@ export async function createOnchainSwapViaBoltz(args = {}) {
           memo,
           expiresIn: args.expiresIn
         })
+      : PAYMENT_PROVIDER === "nwc"
+        ? await nwc.createInvoiceSats({
+            url: args.url,
+            relayUrls: args.relayUrls,
+            amount,
+            memo,
+            expiresIn: args.expiresIn
+          })
       : await lnd.createInvoiceSats({
           amount,
           memo,
@@ -284,6 +307,21 @@ export function subscribeInvoiceStatus({ paymentHash, onStatus }) {
   }
 
   // LND: subscribe all invoices and filter by this hash
+  if (PAYMENT_PROVIDER === "nwc") {
+    const NWC_URL = process.env.NWC_URL || process.env.NWC_WALLET_CONNECT_URL || "";
+    const RELAYS = String(process.env.NWC_RELAYS_CSV || process.env.NWC_RELAYS || "")
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    return nwc.subscribeInvoiceStatus({
+      url: NWC_URL,
+      relayUrls: RELAYS,
+      paymentHash,
+      onStatus
+    });
+  }
+
+  // LND: subscribe all invoices and filter by this hash
   return lnd.subscribeInvoiceStatus({ paymentHash, onStatus });
 }
 
@@ -360,6 +398,12 @@ export function startPaymentWatcher({ onPaid }) {
 
   if (PAYMENT_PROVIDER === "btcpay") {
     // We rely on webhooks and the background sweeper for BTCPay.
+    return;
+  }
+
+  if (PAYMENT_PROVIDER === "nwc") {
+    // Per-invoice polling + sweeper handle updates for NWC.
+    nwc.startPaymentWatcher({ onPaid });
     return;
   }
 
