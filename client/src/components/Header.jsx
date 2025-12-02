@@ -192,7 +192,7 @@ export default function Header() {
 
   return (
     <>
-      <header className="sticky top-0 z-20 backdrop-blur supports-[backdrop-filter]:bg-white/5 bg-black/20 border-b border-white/10">
+      <header className="sticky top-0 z-20 backdrop-blur-sm supports-[backdrop-filter]:bg-white/5 bg-black/20 border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             {/* Left: Home button (logo only; hidden on detail/cart/checkout/orders) */}

@@ -207,7 +207,7 @@ export default function ProductComments({ productId }) {
             onChange={(e) => setInput(e.target.value.slice(0, maxLen))}
             maxLength={maxLen}
             placeholder={canPost ? "Share your thoughts… (text only, 600 chars max)" : "Connect Nostr in the header to leave a note."}
-            className="w-full rounded-xl bg-slate-900 ring-1 ring-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 resize-y focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            className="w-full rounded-xl bg-slate-900 ring-1 ring-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 resize-y focus:outline-hidden focus:ring-2 focus:ring-indigo-400"
             rows={3}
             disabled={!canPost}
           />

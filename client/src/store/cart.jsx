@@ -514,7 +514,7 @@ function CartToast({ notice, onHide }) {
     <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
       <div
         className={[
-          "flex items-center gap-3 rounded-2xl bg-slate-900/95 px-4 py-3 ring-1 ring-white/15 shadow-2xl backdrop-blur transition-all duration-500 ease-out transform",
+          "flex items-center gap-3 rounded-2xl bg-slate-900/95 px-4 py-3 ring-1 ring-white/15 shadow-2xl backdrop-blur-sm transition-all duration-500 ease-out transform",
           visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6",
           pop ? "scale-105 shadow-[0_12px_40px_rgba(99,102,241,0.35)] ring-2 ring-indigo-400/60" : "scale-100"
         ].join(" ")}

@@ -243,7 +243,7 @@ export default function Orders() {
                       type="text"
                       value={(shippingInputs[o.id]?.courier) ?? (o.courier || "")}
                       onChange={(e)=>updateShippingInput(o.id, "courier", e.target.value)}
-                      className="mt-1 w-full px-4 py-2.5 rounded-2xl bg-slate-900 ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                      className="mt-1 w-full px-4 py-2.5 rounded-2xl bg-slate-900 ring-1 ring-white/10 focus:outline-hidden focus:ring-2 focus:ring-indigo-400"
                       placeholder={t("Es. DHL, SDA, GLS…", "E.g. DHL, FedEx, UPS…")}
                     />
                   </label>
@@ -253,7 +253,7 @@ export default function Orders() {
                       type="text"
                       value={(shippingInputs[o.id]?.tracking) ?? (o.tracking || "")}
                       onChange={(e)=>updateShippingInput(o.id, "tracking", e.target.value)}
-                      className="mt-1 w-full px-4 py-2.5 rounded-2xl bg-slate-900 ring-1 ring-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                      className="mt-1 w-full px-4 py-2.5 rounded-2xl bg-slate-900 ring-1 ring-white/10 focus:outline-hidden focus:ring-2 focus:ring-indigo-400"
                       placeholder={t("Inserisci il codice di tracking", "Enter the tracking code")}
                     />
                   </label>

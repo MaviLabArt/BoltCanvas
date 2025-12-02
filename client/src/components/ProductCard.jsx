@@ -73,7 +73,7 @@ export default function ProductCard({ p, radiusScale = "3xl" }) {
 
           {/* Price pill in top-right inside image */}
           <div className="absolute top-3 right-3">
-            <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-black/55 backdrop-blur ring-1 ring-white/20">
+            <span className="px-2.5 py-1 text-xs font-medium rounded-full bg-black/55 backdrop-blur-sm ring-1 ring-white/20">
               {formatSats(p.priceSats)} sats
             </span>
           </div>

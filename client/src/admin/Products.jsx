@@ -841,7 +841,7 @@ function Editor({ initial, shippingZones = [], onClose, onSaved }) {
         <div className="relative w-full max-w-3xl mx-auto rounded-3xl bg-slate-900 ring-1 ring-white/10 p-6 max-h-[90vh] overflow-y-auto">
           <button
             type="button"
-            className="absolute top-4 right-4 p-2 rounded-full text-white/70 hover:text-white hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            className="absolute top-4 right-4 p-2 rounded-full text-white/70 hover:text-white hover:bg-white/10 focus:outline-hidden focus:ring-2 focus:ring-indigo-400"
             onClick={onClose}
             aria-label={t("Chiudi modale", "Close modal")}
           >

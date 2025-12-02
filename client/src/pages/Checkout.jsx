@@ -335,7 +335,7 @@ export default function Checkout() {
   const BtcpayModal = ({ url, onClose }) => {
     if (!url) return null;
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs">
         <div className="absolute inset-0" onClick={onClose} />
         <div className="relative w-[92vw] max-w-3xl h-[80vh] bg-slate-900 ring-1 ring-white/10 rounded-2xl overflow-hidden shadow-2xl">
           <button

@@ -143,7 +143,7 @@ export default function Home() {
               <div className="mt-2">
                 <Link
                   to="/about"
-                  className="inline-block underline underline-offset-4 hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
+                  className="inline-block underline underline-offset-4 hover:opacity-90 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-400"
                 >
                   Read more →
                 </Link>
