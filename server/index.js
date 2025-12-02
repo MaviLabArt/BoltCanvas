@@ -88,6 +88,16 @@ const BLINK_WS_URL = process.env.BLINK_WS_URL || "wss://ws.blink.sv/graphql";
 const BLINK_API_KEY = process.env.BLINK_API_KEY;
 const BLINK_BTC_WALLET_ID = process.env.BLINK_BTC_WALLET_ID || "";
 
+// NWC (Nostr Wallet Connect) env
+const NWC_URL = process.env.NWC_URL || process.env.NWC_WALLET_CONNECT_URL || "";
+const NWC_RELAYS = (() => {
+  const raw = process.env.NWC_RELAYS_CSV || process.env.NWC_RELAYS || "";
+  return raw
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+})();
+
 // BTCPay-specific env (used when PAYMENT_PROVIDER === "btcpay")
 const BTCPAY_URL = (process.env.BTCPAY_URL || "").replace(/\/+$/, "");
 const BTCPAY_API_KEY = process.env.BTCPAY_API_KEY || "";
@@ -184,6 +194,9 @@ function resolveZonePriceForProduct(zone, product) {
 
 if (PAYMENT_PROVIDER === "blink" && !BLINK_API_KEY) {
   console.warn("[WARN] BLINK_API_KEY is empty. Set it in server/.env (or switch PAYMENT_PROVIDER).");
+}
+if (PAYMENT_PROVIDER === "nwc" && !NWC_URL) {
+  console.warn("[WARN] NWC_URL is empty. Set it in server/.env (nostr+walletconnect://...).");
 }
 if (PAYMENT_PROVIDER === "btcpay" && (!BTCPAY_API_KEY || !BTCPAY_URL || !BTCPAY_STORE_ID)) {
   console.warn("[WARN] BTCPAY_URL/BTCPAY_API_KEY/BTCPAY_STORE_ID missing. Set them in server/.env.");
@@ -1727,6 +1740,11 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
             apiKey: BLINK_API_KEY,
             explicitWalletId: BLINK_BTC_WALLET_ID || undefined
           }
+        : PAYMENT_PROVIDER === "nwc"
+          ? {
+              url: NWC_URL,
+              relayUrls: NWC_RELAYS
+            }
         : PAYMENT_PROVIDER === "btcpay"
           ? {
               url: BTCPAY_URL,
@@ -1755,16 +1773,25 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
               webhookUrl: BOLTZ_WEBHOOK_URL || undefined,
               expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
             }
+          : PAYMENT_PROVIDER === "nwc"
+            ? {
+                url: NWC_URL,
+                relayUrls: NWC_RELAYS,
+                amount: total,
+                memo,
+                webhookUrl: BOLTZ_WEBHOOK_URL || undefined,
+                expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
+              }
           : PAYMENT_PROVIDER === "btcpay"
             ? {
                 url: BTCPAY_URL,
                 apiKey: BTCPAY_API_KEY,
-              walletId,
-              amount: total,
-              memo,
-              orderRef,
-              expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
-            }
+                walletId,
+                amount: total,
+                memo,
+                orderRef,
+                expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
+              }
           : {
               amount: total,
               memo,
@@ -1783,15 +1810,22 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
               amount: total,
               memo
             }
+          : PAYMENT_PROVIDER === "nwc"
+            ? {
+                url: NWC_URL,
+                relayUrls: NWC_RELAYS,
+                amount: total,
+                memo
+              }
           : PAYMENT_PROVIDER === "btcpay"
             ? {
                 url: BTCPAY_URL,
                 apiKey: BTCPAY_API_KEY,
-              walletId,
-              amount: total,
-              memo,
-              orderRef
-            }
+                walletId,
+                amount: total,
+                memo,
+                orderRef
+              }
           : {
               amount: total,
               memo
@@ -1873,6 +1907,11 @@ app.post("/api/zaps/create-invoice", async (req, res) => {
             apiKey: BLINK_API_KEY,
             explicitWalletId: BLINK_BTC_WALLET_ID || undefined
           }
+        : PAYMENT_PROVIDER === "nwc"
+          ? {
+              url: NWC_URL,
+              relayUrls: NWC_RELAYS
+            }
         : PAYMENT_PROVIDER === "btcpay"
           ? {
               url: BTCPAY_URL,
@@ -1898,6 +1937,13 @@ app.post("/api/zaps/create-invoice", async (req, res) => {
             amount: sats,
             memo
           }
+        : PAYMENT_PROVIDER === "nwc"
+          ? {
+              url: NWC_URL,
+              relayUrls: NWC_RELAYS,
+              amount: sats,
+              memo
+            }
         : PAYMENT_PROVIDER === "btcpay"
           ? {
               url: BTCPAY_URL,
@@ -1967,9 +2013,11 @@ app.get("/api/invoices/:hash/status", async (req, res) => {
     const args =
       PAYMENT_PROVIDER === "blink"
         ? { url: BLINK_GRAPHQL_URL, apiKey: BLINK_API_KEY, paymentHash: req.params.hash }
+        : PAYMENT_PROVIDER === "nwc"
+          ? { url: NWC_URL, relayUrls: NWC_RELAYS, paymentHash: req.params.hash }
         : PAYMENT_PROVIDER === "btcpay"
           ? { url: BTCPAY_URL, apiKey: BTCPAY_API_KEY, paymentHash: req.params.hash, walletId: { storeId: BTCPAY_STORE_ID } }
-        : { paymentHash: req.params.hash };
+          : { paymentHash: req.params.hash };
 
     const status = await invoiceStatus(args);
 
@@ -2675,9 +2723,11 @@ if (!TEST_MODE) (function startPendingInvoiceSweeper() {
           const args =
             PAYMENT_PROVIDER === "blink"
               ? { url: BLINK_GRAPHQL_URL, apiKey: BLINK_API_KEY, paymentHash: o.paymentHash }
+              : PAYMENT_PROVIDER === "nwc"
+                ? { url: NWC_URL, relayUrls: NWC_RELAYS, paymentHash: o.paymentHash }
               : PAYMENT_PROVIDER === "btcpay"
                 ? { url: BTCPAY_URL, apiKey: BTCPAY_API_KEY, paymentHash: o.paymentHash, walletId: { storeId: BTCPAY_STORE_ID } }
-              : { paymentHash: o.paymentHash };
+                : { paymentHash: o.paymentHash };
 
           const st = await invoiceStatus(args);
 

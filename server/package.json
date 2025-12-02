@@ -8,6 +8,7 @@
     "test": "vitest"
   },
   "dependencies": {
+    "@getalby/sdk": "^7.0.0",
     "better-sqlite3": "^12.5.0",
     "cookie-session": "^2.0.0",
     "cors": "^2.8.5",
