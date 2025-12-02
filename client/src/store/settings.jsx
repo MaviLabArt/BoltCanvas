@@ -27,6 +27,16 @@ function loadCachedSettings() {
   }
 }
 
+const DEFAULT_THEME_TOKENS = {
+  accent: "#6366f1",
+  accentSoft: "rgba(99, 102, 241, 0.16)",
+  surface: "#0f172a",
+  surfaceAlt: "#111827",
+  text: "#e5e7eb",
+  muted: "#94a3b8",
+  border: "rgba(255, 255, 255, 0.08)"
+};
+
 function persistCachedSettings(val) {
   if (typeof window === "undefined") return;
   try {
@@ -37,7 +47,19 @@ function persistCachedSettings(val) {
 }
 
 export function SettingsProvider({ children }) {
-  const initialCache = loadCachedSettings();
+  const initialCacheRaw = loadCachedSettings();
+  const mergeThemeTokens = useCallback((raw) => {
+    const base = { ...DEFAULT_THEME_TOKENS };
+    if (raw && typeof raw === "object") {
+      Object.entries(raw).forEach(([k, v]) => {
+        if (typeof v === "string" && v.trim() !== "") {
+          base[k] = v;
+        }
+      });
+    }
+    return base;
+  }, []);
+  const initialCache = initialCacheRaw ? { ...initialCacheRaw, themeTokens: mergeThemeTokens(initialCacheRaw.themeTokens) } : null;
   const [settings, setSettings] = useState(initialCache);
   const [loading, setLoading] = useState(!initialCache);
   const [error, setError] = useState(null);
@@ -48,15 +70,16 @@ export function SettingsProvider({ children }) {
       setLoading(true);
       const r = await api.get("/public-settings");
       const data = r.data || {};
-      setSettings(data);
-      persistCachedSettings(data);
+      const merged = { ...data, themeTokens: mergeThemeTokens(data.themeTokens) };
+      setSettings(merged);
+      persistCachedSettings(merged);
       setError(null);
     } catch (err) {
       setError(err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [mergeThemeTokens]);
 
   useEffect(() => {
     load();

@@ -106,7 +106,7 @@ export default function RecentCommentsStrip({ products }) {
                       />
                     ) : null}
                     <div className="flex items-center gap-1 min-w-0">
-                      <span className="truncate max-w-[120px]">{product.title || "View piece"}</span>
+                      <span className="truncate max-w-[120px]">{product.title || "View item"}</span>
                       <span aria-hidden>→</span>
                     </div>
                   </Link>

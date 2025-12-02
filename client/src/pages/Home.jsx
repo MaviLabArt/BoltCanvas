@@ -165,7 +165,7 @@ export default function Home() {
       )}
 
       {/* --- Gallery heading --- */}
-      <div id="gallery" className="mb-2 text-center">
+      <div id="gallery" className="mb-8 text-center">
         <h2 className="heading text-2xl sm:text-3xl font-semibold tracking-tight">
           {settings.productsHeading || "Featured Products"}
         </h2>

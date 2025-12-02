@@ -9,6 +9,16 @@ import { CONTINENT_GROUPS } from "../constants/continents.js";
 import { normalizeShippingZones } from "../utils/shipping.js";
 import { renderMarkdown } from "../utils/markdown.js";
 
+const DEFAULT_THEME_TOKENS = {
+  accent: "#6366f1",
+  accentSoft: "rgba(99, 102, 241, 0.16)",
+  surface: "#0f172a",
+  surfaceAlt: "#111827",
+  text: "#e5e7eb",
+  muted: "#94a3b8",
+  border: "rgba(255, 255, 255, 0.08)"
+};
+
 async function fileToDataUrl(file) {
   const r = new FileReader();
   return new Promise((resolve, reject) => {
@@ -36,6 +46,16 @@ function parseListInput(raw) {
 function joinList(val) {
   if (Array.isArray(val)) return val.join("\n");
   return String(val || "");
+}
+
+function mergeThemeTokens(raw) {
+  const base = { ...DEFAULT_THEME_TOKENS };
+  if (raw && typeof raw === "object") {
+    Object.entries(raw).forEach(([k, v]) => {
+      if (typeof v === "string" && v.trim() !== "") base[k] = v;
+    });
+  }
+  return base;
 }
 
 export default function Settings() {
@@ -79,13 +99,22 @@ export default function Settings() {
     nostrNpub: "",
     nostrNip05: "",
     nostrRelays: ["wss://relay.damus.io", "wss://nos.lol"],
-    nostrDefaultHashtags: "#shop #shopping #lightning",
+    nostrDefaultHashtags: "#shop #lightning #bitcoin",
     nostrCommentsEnabled: true,
     nostrBlockedPubkeys: [],
     lightningAddress: "",
 
     // --- NEW: Theme selector ---
     themeChoice: "dark",
+    themeTokens: {
+      accent: "#6366f1",
+      accentSoft: "rgba(99, 102, 241, 0.16)",
+      surface: "#0f172a",
+      surfaceAlt: "#111827",
+      text: "#e5e7eb",
+      muted: "#94a3b8",
+      border: "rgba(255, 255, 255, 0.08)"
+    },
 
     // --- EMAIL: only signature stays editable (credentials come from .env) ---
     smtpSignature: "Thanks for your support,\nYour Shop Name",
@@ -171,7 +200,12 @@ export default function Settings() {
     api.get("/admin/settings").then((r) => {
       const hydrated = hydrateSimplePresetFromZones(r.data || {});
       const { nostrBlockedHashtags: _ignoredBlockedHashtags, ...rest } = hydrated;
-      setS((prev) => ({ ...prev, ...rest, shippingMode: "simple" }));
+      setS((prev) => ({
+        ...prev,
+        ...rest,
+        themeTokens: mergeThemeTokens(rest.themeTokens),
+        shippingMode: "simple"
+      }));
     });
   }, []);
 
@@ -327,10 +361,16 @@ export default function Settings() {
         shippingDomesticCountry: s.shippingDomesticCountry || "IT",
         shippingDomesticPriceSats: Math.max(0, Number(s.shippingDomesticPriceSats || 0)),
         shippingContinentPrices: normalizedContinentPrices,
-        shippingOverrides: normalizedOverrides
+        shippingOverrides: normalizedOverrides,
+        themeTokens: mergeThemeTokens(s.themeTokens)
       };
       const r = await api.put("/admin/settings", payload);
-      setS((prev) => ({ ...prev, ...r.data }));
+      const hydrated = hydrateSimplePresetFromZones(r.data || {});
+      setS((prev) => ({
+        ...prev,
+        ...hydrated,
+        themeTokens: mergeThemeTokens(hydrated.themeTokens)
+      }));
       setMessage(t("Impostazioni salvate.", "Settings saved."));
     } catch (e) {
       const msg =
@@ -372,7 +412,7 @@ export default function Settings() {
           }
         />
 
-        {/* Hero line (one-sentence artist statement + location) */}
+        {/* Hero line (short tagline under the store name) */}
         <input
           className="px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10"
           placeholder={t('Riga sotto il titolo, es. "Original oil on canvas by M. V., Milan."', 'Line under the title, e.g. "Original oil on canvas by M. V., Milan."')}
@@ -601,7 +641,72 @@ export default function Settings() {
           />
             <span>{t("Auto (sistema)", "Auto (system)")}</span>
           </label>
+          <label className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-slate-950 ring-1 ring-white/10 cursor-pointer md:col-span-2">
+            <input
+              type="radio"
+              name="themeChoice"
+              value="custom"
+              checked={s.themeChoice === "custom"}
+              onChange={(e) => setS({ ...s, themeChoice: e.target.value })}
+            />
+            <span>{t("Tema personalizzato", "Custom theme")}</span>
+          </label>
         </div>
+
+        {s.themeChoice === "custom" && (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              ["accent", t("Colore accento", "Accent color")],
+              ["accentSoft", t("Accento soft (sfumature)", "Accent soft (glow)")],
+              ["surface", t("Sfondo principale", "Primary surface")],
+              ["surfaceAlt", t("Sfondo secondario", "Secondary surface")],
+              ["text", t("Testo principale", "Primary text")],
+              ["muted", t("Testo attenuato", "Muted text")],
+              ["border", t("Bordi / anelli", "Borders / rings")]
+            ].map(([key, label]) => {
+              const value = s.themeTokens?.[key] || "";
+              const pickable = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value)
+                ? value
+                : (DEFAULT_THEME_TOKENS[key] || "#6366f1");
+              return (
+                <div key={key} className="space-y-1">
+                  <label className="text-sm text-white/70 flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={pickable}
+                      onChange={(e) => setS((prev) => ({
+                        ...prev,
+                        themeTokens: { ...(prev.themeTokens || {}), [key]: e.target.value }
+                      }))}
+                      className="h-8 w-10 rounded-lg border border-white/20 bg-slate-950"
+                      title={label}
+                    />
+                    <span>{label}</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10"
+                    value={value}
+                    onChange={(e) => setS((prev) => ({
+                      ...prev,
+                      themeTokens: { ...(prev.themeTokens || {}), [key]: e.target.value }
+                    }))}
+                    placeholder="#6366f1 or rgba(...)"
+                  />
+                </div>
+              );
+            })}
+            <div className="sm:col-span-2 lg:col-span-3 flex flex-wrap gap-3">
+              <button
+                type="button"
+                className="px-3 py-2 rounded-xl bg-slate-800 ring-1 ring-white/10"
+                onClick={() => setS((prev) => ({ ...prev, themeTokens: mergeThemeTokens(DEFAULT_THEME_TOKENS) }))}
+              >
+                {t("Reset colori default", "Reset to defaults")}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* --- ABOUT --- */}
@@ -945,7 +1050,7 @@ export default function Settings() {
           />
           <input
             className="px-4 py-3 rounded-2xl bg-slate-900 ring-1 ring-white/10"
-            placeholder={t("Hashtag predefiniti teaser, es. #shop #shopping #lightning", "Default teaser hashtags, e.g. #shop #shopping #lightning")}
+            placeholder={t("Hashtag predefiniti teaser, es. #shop #lightning #bitcoin", "Default teaser hashtags, e.g. #shop #lightning #bitcoin")}
             value={s.nostrDefaultHashtags || ""}
             onChange={(e) =>
               setS({ ...s, nostrDefaultHashtags: e.target.value })
@@ -1212,7 +1317,9 @@ function StorefrontPreview({ settings, t }) {
       ? "light"
       : settings.themeChoice === "ember"
       ? "ember"
-      : "dark";
+      : settings.themeChoice === "custom"
+        ? "custom"
+        : "dark";
   const heroTitle = !settings.logo
     ? (settings.storeName || t("Your Shop Name", "Your Shop Name"))
     : "";
@@ -1229,11 +1336,24 @@ function StorefrontPreview({ settings, t }) {
     theme === "light"
       ? (settings.logoLight || settings.logoDark || settings.logo)
       : (settings.logoDark || settings.logo || settings.logoLight);
+  const tokens = mergeThemeTokens(settings.themeTokens);
+  const customStyle = theme === "custom"
+    ? {
+        "--ct-accent": tokens.accent,
+        "--ct-accentSoft": tokens.accentSoft,
+        "--ct-surface": tokens.surface,
+        "--ct-surfaceAlt": tokens.surfaceAlt,
+        "--ct-text": tokens.text,
+        "--ct-muted": tokens.muted,
+        "--ct-border": tokens.border
+      }
+    : undefined;
 
   return (
     <div
       data-theme={theme}
-      className="rounded-3xl bg-slate-950 ring-1 ring-white/10 p-4 space-y-4"
+      style={customStyle}
+      className="theme-preview rounded-3xl bg-slate-950 ring-1 ring-white/10 p-4 space-y-4"
     >
       <div className="flex items-center gap-3">
         <div className="text-lg font-semibold">{t("Anteprima live", "Live preview")}</div>

@@ -89,6 +89,15 @@ export default function ProductDetail() {
   const mainImgsAbs = mainImgs.map((u) => absoluteApiUrl(u));
   const thumbImgsAbs = thumbImgs.map((u) => absoluteApiUrl(u));
   const mainImgsLen = mainImgs.length;
+  const stockLabel = useMemo(() => {
+    if (!p?.available) return "";
+    if (p.isUnique) return "";
+    const qty = Number(p?.maxQuantity);
+    if (!Number.isFinite(qty) || qty <= 0) return "";
+    if (qty === 1) return "Only 1 piece left in stock";
+    if (qty <= 5) return `Only ${qty} pieces left in stock`;
+    return `${qty} pieces in stock`;
+  }, [p?.available, p?.isUnique, p?.maxQuantity]);
 
   // Lightbox keyboard controls - depend only on booleans/length, not arrays themselves
   useEffect(() => {
@@ -158,7 +167,7 @@ export default function ProductDetail() {
   const showFreeShippingPill = hasFreePresetForAllZones || perProductFreeEverywhere;
   const freeShippingLabel = hasFreePresetForAllZones
     ? "Free Shipping Worldwide"
-    : "Free shipping on this piece";
+    : "Free shipping on this item";
 
   const hasImages = mainImgs.length > 0;
   const mainImageAbsolute = hasImages ? mainImgsAbs[Math.max(0, Math.min(active, mainImgsAbs.length - 1))] || mainImgsAbs[0] : "";
@@ -240,9 +249,9 @@ export default function ProductDetail() {
             {p.longDescription || p.description}
           </p>
 
-          <div className="mt-8">
+          <div className="mt-8 flex flex-col gap-2">
             <button
-              className="px-4 py-3 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:opacity-50"
+              className="px-4 py-3 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:opacity-50 w-max"
               disabled={!p.available}
               onClick={() => {
                 add(p, 1);
@@ -250,6 +259,13 @@ export default function ProductDetail() {
             >
               Add to Cart
             </button>
+            {stockLabel && (
+              <div className="w-full flex justify-start">
+                <span className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 ring-1 ring-white/10 px-3 py-1 text-xs font-semibold text-white/80 max-w-xs text-center">
+                  <span className="truncate">{stockLabel}</span>
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </div>
