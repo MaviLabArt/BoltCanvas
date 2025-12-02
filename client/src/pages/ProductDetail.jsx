@@ -323,13 +323,13 @@ export default function ProductDetail() {
                 }
                 draggable={false}
               />
-              <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-black/60 text-xs text-white/80 ring-1 ring-white/10 backdrop-blur zoom-indicator-pill">
+              <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-black/60 text-xs text-white/80 ring-1 ring-white/10 backdrop-blur-sm zoom-indicator-pill">
                 {zoomLabel}
               </div>
             </div>
             <button
               type="button"
-              className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-black/60 text-xs text-white/80 ring-1 ring-white/10 backdrop-blur"
+              className="absolute top-3 right-3 px-2.5 py-1 rounded-full bg-black/60 text-xs text-white/80 ring-1 ring-white/10 backdrop-blur-sm"
               onClick={(e) => {
                 e.stopPropagation();
                 setLightbox(false);

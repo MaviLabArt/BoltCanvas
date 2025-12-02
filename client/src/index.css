@@ -1,6 +1,8 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.cjs";
+@source "../index.html";
+@source "./**/*.{js,jsx,ts,tsx}";
+@source inline("rounded-3xl bg-slate-900 ring-1 ring-white/10");
 
 :root { color-scheme: dark; }
 
@@ -31,10 +33,21 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
 
 /* -------- Skeleton cards for Home grid -------- */
 .skel {
-  @apply rounded-3xl bg-slate-900 ring-1 ring-white/10 overflow-hidden;
+  border-radius: 1.5rem;            /* rounded-3xl */
+  background-color: #0f172a;        /* slate-900 */
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.1); /* ring-1 ring-white/10 */
+  overflow: hidden;
 }
-.skel-img { @apply w-full aspect-[4/3] bg-slate-800; }
-.skel-line { @apply h-4 rounded bg-slate-800; }
+.skel-img {
+  width: 100%;
+  aspect-ratio: 4 / 3;              /* aspect-[4/3] */
+  background-color: #1e293b;        /* slate-800 */
+}
+.skel-line {
+  height: 1rem;                     /* h-4 */
+  border-radius: 0.25rem;           /* default rounded */
+  background-color: #1e293b;        /* slate-800 */
+}
 .skel-anim {
   background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.06), rgba(255,255,255,0));
   background-size: 200% 100%;
@@ -48,9 +61,7 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
 }
 
 /* Safelist dynamic radius classes used via settings (Tailwind JIT keep) */
-.rounded-xl{}
-.rounded-2xl{}
-.rounded-3xl{}
+@source inline("rounded-xl rounded-2xl rounded-3xl");
 
 /* -------------------------------------------------------------------
    Checkout primary call-to-action (Pay Now) - theme aware
@@ -397,7 +408,7 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
 /* -------------------------------------------------------------------
    Product card price pill inside dark bubble (Home): keep text WHITE
    ------------------------------------------------------------------- */
-[data-theme='light'] .bg-black\/55.backdrop-blur.ring-white\/20 {
+[data-theme='light'] .bg-black\/55.backdrop-blur-sm.ring-white\/20 {
   color: #ffffff !important;
 }
 [data-theme='light'] .bg-black\/60 { background-color: rgba(31, 27, 22, 0.28) !important; }

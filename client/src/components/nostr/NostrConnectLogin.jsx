@@ -90,7 +90,7 @@ export default function NostrConnectLogin({ onBack, onClose }) {
           <input
             value={customUri}
             onChange={(e) => setCustomUri(e.target.value)}
-            className="mt-2 w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 focus:border-indigo-400 outline-none text-sm"
+            className="mt-2 w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 focus:border-indigo-400 outline-hidden text-sm"
             placeholder="bunker://..."
           />
         </label>

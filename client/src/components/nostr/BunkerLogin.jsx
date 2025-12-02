@@ -28,7 +28,7 @@ export default function BunkerLogin({ onBack, onClose }) {
         <input
           value={bunker}
           onChange={(e) => setBunker(e.target.value)}
-          className="mt-2 w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 focus:border-indigo-400 outline-none"
+          className="mt-2 w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 focus:border-indigo-400 outline-hidden"
           placeholder="bunker://..."
           required
         />
