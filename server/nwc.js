@@ -32,18 +32,27 @@ function msatsToSats(msats) {
 
 function mapInvoiceState(payload = {}) {
   const state = String(payload.state || payload.status || "").toLowerCase();
-  // Consider settled/paid based on state, preimage, or timestamps
-  const hasPreimage = !!payload.preimage;
   const settledAt = Number(payload.settled_at || payload.settledAt || 0);
-  if (state === "settled" || state === "paid" || state === "complete" || hasPreimage || settledAt > 0) {
-    return "PAID";
-  }
-  if (state === "settled" || state === "paid") return "PAID";
+  const expiresAt = Number(payload.expires_at || payload.expiresAt || 0);
+  const now = Date.now() / 1000;
+  const hasPreimage = !!payload.preimage;
+  const explicitSettled =
+    payload.is_settled === true ||
+    payload.settled === true ||
+    payload.paid === true ||
+    payload.is_paid === true;
+
+  // 1) Trust explicit state
+  if (state === "settled" || state === "paid" || state === "complete") return "PAID";
   if (state === "expired" || state === "canceled") return "EXPIRED";
   if (state === "failed") return "FAILED";
 
-  const expiresAt = Number(payload.expires_at || 0);
-  if (expiresAt && Date.now() / 1000 > expiresAt) return "EXPIRED";
+  // 2) Infer settlement from preimage/flags/timestamps
+  if (explicitSettled || hasPreimage || settledAt > 0) return "PAID";
+
+  // 3) Infer expiry from expires_at
+  if (expiresAt && now > expiresAt) return "EXPIRED";
+
   return "PENDING";
 }
 
@@ -60,8 +69,7 @@ async function makeClient({ url, relayUrl, relayUrls } = {}) {
     nostrWalletConnectUrl,
     relayUrl: finalRelay
   });
-  // If wallet/relay doesn't provide info events, pin a supported version to skip compatibility fetch.
-  if (!client.version) client.version = "1.0";
+  // Compatibility/info-event handling is internal to the SDK; we can't skip it here.
   log("makeClient", { relayUrl: finalRelay || urlRelay || "from-url", walletPubkey: client.walletPubkey?.slice(0, 12) });
   return client;
 }
@@ -138,6 +146,7 @@ export async function invoiceStatus({ url, relayUrls, paymentHash } = {}) {
   const client = await makeClient({ url, relayUrls });
   log("lookupInvoice start", { paymentHash: paymentHash.slice(0, 12) });
   const res = await client.lookupInvoice({ payment_hash: paymentHash });
+  log("lookupInvoice raw", res);
   const r = res || {};
   const status = mapInvoiceState(r);
   log("lookupInvoice ok", { paymentHash: paymentHash.slice(0, 12), status, state: r.state || r.status, settled_at: r.settled_at, preimage: r.preimage ? "[present]" : undefined });
@@ -178,8 +187,36 @@ export function subscribeInvoiceStatus({ paymentHash, onStatus, url, relayUrls, 
   };
 }
 
-// NWC does not expose a "subscribe all invoices" stream out of the box.
-// We rely on per-invoice polling + the existing sweeper for background updates.
-export function startPaymentWatcher() {
-  return;
+/**
+ * Subscribe to NWC payment_received notifications and call onPaid(paymentHash).
+ * Returns an unsubscribe function (best-effort). Self-bootstraps async and keeps interface sync for pay.js.
+ */
+export function startPaymentWatcher({ url, relayUrls, onPaid } = {}) {
+  let unsubscribe = () => {};
+  let client = null;
+
+  (async () => {
+    try {
+      client = await makeClient({ url, relayUrls });
+      log("notifications: subscribing", { relayUrl: client.relayUrl, walletPubkey: client.walletPubkey?.slice(0, 12) });
+      unsubscribe = await client.subscribeNotifications((n) => {
+        try {
+          if (!n || n.notification_type !== "payment_received") return;
+          const tx = n.notification || {};
+          const hash = tx.payment_hash || tx.paymentHash || "";
+          log("notifications: payment_received", { paymentHash: hash.slice(0, 12) });
+          if (hash && typeof onPaid === "function") onPaid(hash);
+        } catch (e) {
+          log("notifications: handler error", e?.message || e);
+        }
+      }, ["payment_received"]);
+    } catch (e) {
+      log("notifications: subscribe failed", e?.message || e);
+    }
+  })();
+
+  return () => {
+    try { unsubscribe?.(); } catch {}
+    try { client?.close?.(); } catch {}
+  };
 }
