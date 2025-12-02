@@ -402,7 +402,7 @@ export function startPaymentWatcher({ onPaid }) {
   }
 
   if (PAYMENT_PROVIDER === "nwc") {
-    // Per-invoice polling + sweeper handle updates for NWC.
+    // Notifications (payment_received) + polling/sweeper handle updates for NWC.
     nwc.startPaymentWatcher({ onPaid });
     return;
   }
