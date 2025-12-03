@@ -4,7 +4,7 @@ BoltCanvas is a small, opinionated shop template:
 
 - A clean public gallery where people can browse your products.
 - A simple admin area where you manage products, texts and orders.
-- Bitcoin-only payments in **sats** (Blink, LND, BTCPay Server, or Nostr Wallet Connect), with the option to let buyers pay **on-chain** while you still receive Lightning.
+- Bitcoin-only payments in **sats** (Blink, LND, BTCPay Server, Nostr Wallet Connect, or LNURL), with the option to let buyers pay **on-chain** while you still receive Lightning.
 - **on-chain** payments settle via lightning through BOLTZ. But once set up, neither you nor your users will even notice... Unless BTCPayserver is set and in that case they will settle onchain normally.
 - **extremely** lightweight.
 
@@ -82,7 +82,7 @@ All the Nostr parts are optional; if you don’t configure them, the shop still 
 
 ## How payments work
 
-- **Lightning (Blink, LND, BTCPay Server, or Nostr Wallet Connect)**  
+- **Lightning (Blink, LND, BTCPay Server, Nostr Wallet Connect, or LNURL)**  
   When a buyer checks out, the server creates a Lightning invoice in sats.  
   The checkout page shows a QR and tracks the invoice until it is paid or expires.
 
@@ -102,6 +102,7 @@ From the buyer’s point of view: Lightning is instant; on-chain shows a mempool
   - Your own **LND** node: REST URL + macaroon + TLS details (for expert and self sovreign users 💪).
   - A **BTCPay Server** instance:
   - A **Nostr Wallet Connect** URL from your wallet provider (e.g. Alby Hub, Rizful NWC, etc.). This is a `nostr+walletconnect://...` string that includes a relay and secret.
+  - An **LNURL** pay endpoint (Lightning Address or bech32 LNURL) that supports LNURL-verify for status.
   - BTCPay API key scopes (minimum recommended):
     - `btcpay.store.canviewinvoices`
     - `btcpay.store.cancreateinvoice`
@@ -125,6 +126,7 @@ The default example config (`server/.env.example`) is designed to be a good star
 - `PAYMENT_PROVIDER=lnd`: set `LND_REST_URL`, `LND_MACAROON_HEX`, TLS settings.
 - `PAYMENT_PROVIDER=btcpay`: set `BTCPAY_URL`, `BTCPAY_API_KEY`, `BTCPAY_STORE_ID` (+ webhook secret for status updates).
 - `PAYMENT_PROVIDER=nwc` (Nostr Wallet Connect): set `NWC_URL=nostr+walletconnect://...` (include `relay=` and `secret=`). Optionally override relay with `NWC_RELAYS_CSV=wss://relay.example.com`. On-chain still works via Boltz, same as Blink/LND.
+- `PAYMENT_PROVIDER=lnurl` (LNURL-pay + LNURL-verify): set one of `LNURL_LIGHTNING_ADDRESS`, `LNURL_BECH32`, or `LNURL_PAY_URL`. Status is polled via LNURL-verify (no push); on-chain still works via Boltz.
 
 ### 1. Install and build
 From the project root:

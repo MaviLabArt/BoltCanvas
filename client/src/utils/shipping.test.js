@@ -66,32 +66,20 @@ describe("computeShippingQuote", () => {
     expect(quote.reason).toBe("zone");
   });
 
-  it("falls back to region-based shipping when no zones are configured", () => {
+  it("falls back to zero shipping when no zones are configured", () => {
     const quote = computeShippingQuote({
       items: [
-        {
-          priceSats: 1000,
-          qty: 1,
-          shippingItalySats: 100,
-          shippingEuropeSats: 200,
-          shippingWorldSats: 300
-        },
-        {
-          priceSats: 500,
-          qty: 3,
-          shippingItalySats: 0,
-          shippingEuropeSats: 50,
-          shippingWorldSats: 70
-        }
+        { priceSats: 1000, qty: 1 },
+        { priceSats: 500, qty: 3 }
       ],
       settings: { shippingZones: [] },
       country: "PL"
     });
 
     expect(quote.subtotalSats).toBe(2500);
-    expect(quote.shippingSats).toBe(350);
-    expect(quote.totalSats).toBe(2850);
-    expect(quote.reason).toBe("fallback");
+    expect(quote.shippingSats).toBe(0);
+    expect(quote.totalSats).toBe(2500);
+    expect(quote.reason).toBe("fallback_zero");
     expect(quote.available).toBe(true);
   });
 
@@ -100,9 +88,7 @@ describe("computeShippingQuote", () => {
       items: [
         {
           priceSats: 1200,
-          shippingItalySats: 0,
-          shippingEuropeSats: 50,
-          shippingWorldSats: 100
+          qty: 1
         }
       ],
       settings: {

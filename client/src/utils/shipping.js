@@ -33,9 +33,6 @@ export function normalizeShippingZones(zones) {
 export function computeShippingQuote({ items, settings, country }) {
   const entries = (Array.isArray(items) ? items : []).map((it) => ({
     priceSats: Math.max(0, Number(it?.priceSats || 0)),
-    shippingItalySats: Math.max(0, Number(it?.shippingItalySats || 0)),
-    shippingEuropeSats: Math.max(0, Number(it?.shippingEuropeSats || 0)),
-    shippingWorldSats: Math.max(0, Number(it?.shippingWorldSats || 0)),
     qty: Math.max(1, Math.floor(Number(it?.qty) || 1)),
     shippingZoneOverrides: normalizeZoneOverrides(it?.shippingZoneOverrides)
   }));
@@ -71,20 +68,15 @@ export function computeShippingQuote({ items, settings, country }) {
       available = false;
       reason = "no_zone";
     } else {
-      shippingSats = entries.reduce(
-        (sum, it) =>
-          sum + it.qty * resolveZonePriceForProduct(zone, it.shippingZoneOverrides),
+      shippingSats = entries.reduce((sum, it) =>
+        sum + it.qty * resolveZonePriceForProduct(zone, it.shippingZoneOverrides),
         0
       );
       reason = shippingSats === 0 ? "zone_free" : "zone";
     }
   } else {
-    shippingSats = entries.reduce((sum, it) => {
-      if (upperCountry === "IT") return sum + it.qty * it.shippingItalySats;
-      if (isEurope(upperCountry)) return sum + it.qty * it.shippingEuropeSats;
-      return sum + it.qty * it.shippingWorldSats;
-    }, 0);
-    reason = shippingSats === 0 ? "fallback_zero" : "fallback";
+    shippingSats = 0;
+    reason = "fallback_zero";
   }
 
   return {

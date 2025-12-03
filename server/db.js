@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS orders (
   boltzExpectedAmountSats INTEGER DEFAULT 0,
   boltzTimeoutBlockHeight INTEGER DEFAULT 0,
   boltzRefundPrivKey TEXT DEFAULT '',
+  boltzRefundPubKey TEXT DEFAULT '',
+  boltzRedeemScript TEXT DEFAULT '',
   boltzStatus TEXT DEFAULT '',
   createdAt INTEGER NOT NULL,
   clientId TEXT DEFAULT '',
@@ -117,10 +119,6 @@ addColumnIfMissing("products", "mainImageIndex INTEGER DEFAULT 0");
 addColumnIfMissing("products", "widthCm INTEGER DEFAULT NULL");
 addColumnIfMissing("products", "heightCm INTEGER DEFAULT NULL");
 addColumnIfMissing("products", "depthCm INTEGER DEFAULT NULL");
-addColumnIfMissing("products", "shippingItalySats INTEGER DEFAULT 0");
-addColumnIfMissing("products", "shippingEuropeSats INTEGER DEFAULT 0");
-addColumnIfMissing("products", "shippingWorldSats INTEGER DEFAULT 0");
-addColumnIfMissing("products", "shippingSurchargeSats INTEGER NOT NULL DEFAULT 0");
 addColumnIfMissing("products", "shippingZoneOverrides TEXT NOT NULL DEFAULT '[]'");
 addColumnIfMissing("products", "showDimensions INTEGER NOT NULL DEFAULT 1");
 addColumnIfMissing("products", "imageVersion TEXT DEFAULT ''");
@@ -129,6 +127,46 @@ addColumnIfMissing("products", "hidden INTEGER NOT NULL DEFAULT 0");
 addColumnIfMissing("products", "displayOrder INTEGER NOT NULL DEFAULT 0");
 addColumnIfMissing("products", "isUnique INTEGER NOT NULL DEFAULT 1");
 addColumnIfMissing("products", "quantityAvailable INTEGER DEFAULT 1");
+addColumnIfMissing("products", "lastSoldAt INTEGER NOT NULL DEFAULT 0");
+// Backfill lastSoldAt for existing sold items (run once on startup)
+try {
+  db.prepare(`
+    UPDATE products
+       SET lastSoldAt = CASE
+         WHEN lastSoldAt IS NULL OR lastSoldAt = 0 THEN createdAt
+         ELSE lastSoldAt
+       END
+     WHERE available = 0
+       AND (quantityAvailable = 0 OR isUnique = 1)
+  `).run();
+} catch {}
+
+// Backfill lastSoldAt using latest PAID order timestamp for sold items
+try {
+  const paidOrders = db.prepare(`SELECT createdAt, items FROM orders WHERE status='PAID'`).all();
+  const latestByProduct = new Map();
+  for (const row of paidOrders) {
+    let items = [];
+    try { items = JSON.parse(row.items || "[]"); } catch {}
+    if (!Array.isArray(items)) continue;
+    for (const it of items) {
+      const pid = String(it?.productId || "").trim();
+      if (!pid) continue;
+      const ts = Number(row.createdAt || 0);
+      const prev = latestByProduct.get(pid) || 0;
+      if (ts > prev) latestByProduct.set(pid, ts);
+    }
+  }
+  const soldRows = db.prepare(`SELECT id, lastSoldAt FROM products WHERE available=0`).all();
+  const updateStmt = db.prepare(`UPDATE products SET lastSoldAt=? WHERE id=?`);
+  for (const p of soldRows) {
+    const candidate = latestByProduct.get(p.id);
+    const current = Number(p.lastSoldAt || 0);
+    if (candidate && candidate > current) {
+      updateStmt.run(candidate, p.id);
+    }
+  }
+} catch {}
 
 const zeroDisplayOrder = db.prepare(`SELECT COUNT(*) AS cnt FROM products WHERE displayOrder=0`).get();
 if (zeroDisplayOrder?.cnt > 0) {
@@ -163,7 +201,13 @@ addColumnIfMissing("orders", "boltzAddress TEXT DEFAULT ''");
 addColumnIfMissing("orders", "boltzExpectedAmountSats INTEGER DEFAULT 0");
 addColumnIfMissing("orders", "boltzTimeoutBlockHeight INTEGER DEFAULT 0");
 addColumnIfMissing("orders", "boltzRefundPrivKey TEXT DEFAULT ''");
+addColumnIfMissing("orders", "boltzRefundPubKey TEXT DEFAULT ''");
+addColumnIfMissing("orders", "boltzRedeemScript TEXT DEFAULT ''");
+addColumnIfMissing("orders", "boltzRescueIndex INTEGER DEFAULT 0");
+addColumnIfMissing("orders", "boltzSwapTree TEXT DEFAULT ''");
 addColumnIfMissing("orders", "boltzStatus TEXT DEFAULT ''");
+addColumnIfMissing("orders", "lnurlVerifyUrl TEXT DEFAULT ''");
+addColumnIfMissing("orders", "lnurlExpiresAt INTEGER DEFAULT 0");
 // NEW: shipping metadata
 addColumnIfMissing("orders", "courier TEXT DEFAULT ''");
 addColumnIfMissing("orders", "tracking TEXT DEFAULT ''");
@@ -322,6 +366,7 @@ if (!sGet.get("notifyEmailBody_SHIPPED")) sSet.run(
 
 // ✨ Signature default (configured from Admin Dashboard)
 if (!sGet.get("smtpSignature")) sSet.run("smtpSignature", "Thanks for your support,\nYour Shop Name");
+if (!sGet.get("boltzRescueNextIndex")) sSet.run("boltzRescueNextIndex", "0");
 
 const EMPTY_IMAGES_JSON = "[]";
 const MAX_PRODUCT_IMAGES = 8;
@@ -903,7 +948,13 @@ migrateInlineProductImages();
 export const Products = {
   all({ includeImages = false } = {}) {
     const rows = db
-      .prepare(`SELECT * FROM products ORDER BY available DESC, displayOrder DESC, createdAt DESC`)
+      .prepare(`
+        SELECT * FROM products
+        ORDER BY
+          available DESC,
+          CASE WHEN available=1 THEN displayOrder ELSE 0 END DESC,
+          CASE WHEN available=1 THEN createdAt ELSE COALESCE(lastSoldAt, createdAt) END DESC
+      `)
       .all();
     return rows.map((row) => normalizeProductRow(row, { includeImages }));
   },
@@ -915,7 +966,14 @@ export const Products = {
 
   page({ offset = 0, limit = 24 } = {}) {
     const rows = db
-      .prepare(`SELECT * FROM products ORDER BY available DESC, displayOrder DESC, createdAt DESC LIMIT ? OFFSET ?`)
+      .prepare(`
+        SELECT * FROM products
+        ORDER BY
+          available DESC,
+          CASE WHEN available=1 THEN displayOrder ELSE 0 END DESC,
+          CASE WHEN available=1 THEN createdAt ELSE COALESCE(lastSoldAt, createdAt) END DESC
+        LIMIT ? OFFSET ?
+      `)
       .all(limit, offset);
     return rows.map((row) => normalizeProductRow(row, { includeImages: false }));
   },
@@ -926,7 +984,13 @@ export const Products = {
 
   allPublic() {
     const rows = db
-      .prepare(`SELECT * FROM products ORDER BY available DESC, displayOrder DESC, createdAt DESC`)
+      .prepare(`
+        SELECT * FROM products
+        ORDER BY
+          available DESC,
+          CASE WHEN available=1 THEN displayOrder ELSE 0 END DESC,
+          CASE WHEN available=1 THEN createdAt ELSE COALESCE(lastSoldAt, createdAt) END DESC
+      `)
       .all();
     return rows
       .map((row) => normalizeProductRow(row))
@@ -985,16 +1049,15 @@ export const Products = {
           return null;
         })(),
         showDimensions: !!n.showDimensions,
-        shippingItalySats: n.shippingItalySats,
-        shippingEuropeSats: n.shippingEuropeSats,
-        shippingWorldSats: n.shippingWorldSats,
         shippingZoneOverrides: Array.isArray(n.shippingZoneOverrides) ? n.shippingZoneOverrides : [],
+        lastSoldAt: n.lastSoldAt || 0,
         cacheTag: [
           n.id,
           derivedAvailable ? 1 : 0,
           n.hidden ? 1 : 0,
           n.createdAt || 0,
           n.displayOrder || 0,
+          n.lastSoldAt || 0,
           n.priceSats,
           safeIdx,
           n.imageVersion || "",
@@ -1004,9 +1067,6 @@ export const Products = {
           n.depthCm ?? "",
           n.showDimensions ? "1" : "0",
           overrideTag,
-          n.shippingItalySats,
-          n.shippingEuropeSats,
-          n.shippingWorldSats,
           n.isUnique ? "1" : "0",
           n.quantityAvailable ?? ""
         ].join(":")
@@ -1031,10 +1091,6 @@ export const Products = {
     heightCm = null,
     depthCm = null,
     showDimensions = true,
-    shippingSurchargeSats = 0,
-    shippingItalySats = 0,
-    shippingEuropeSats = 0,
-    shippingWorldSats = 0,
     shippingZoneOverrides = [],
     isUnique = true,
     quantityAvailable = undefined,
@@ -1054,9 +1110,8 @@ export const Products = {
       `INSERT INTO products
        (id, title, description, priceSats, images, available, hidden, createdAt, displayOrder,
         subtitle, longDescription, mainImageIndex, widthCm, heightCm, depthCm, showDimensions,
-        shippingSurchargeSats, shippingItalySats, shippingEuropeSats, shippingWorldSats,
-        shippingZoneOverrides, imageVersion, imageCount, isUnique, quantityAvailable)
-       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        shippingZoneOverrides, imageVersion, imageCount, isUnique, quantityAvailable, lastSoldAt)
+       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       title,
@@ -1073,15 +1128,12 @@ export const Products = {
       numOrNull(heightCm),
       numOrNull(depthCm),
       showDimensions ? 1 : 0,
-      Math.max(0, shippingSurchargeSats | 0),
-      Math.max(0, shippingItalySats | 0),
-      Math.max(0, shippingEuropeSats | 0),
-      Math.max(0, shippingWorldSats | 0),
       JSON.stringify(normalizedOverrides),
       "",
       0,
       uniqueFlag ? 1 : 0,
-      qtyValue
+      qtyValue,
+      0
     );
     ProductImages.replaceAll(id, imagePayload);
     return this.get(id);
@@ -1137,13 +1189,14 @@ export const Products = {
       }
     }
 
+    const nextLastSold = (!nextAvailable && cur.available) ? now() : (cur.lastSoldAt || 0);
+
     db.prepare(
       `UPDATE products
          SET title=?, description=?, priceSats=?, images=?, available=?, hidden=?,
              subtitle=?, longDescription=?, mainImageIndex=?,
              widthCm=?, heightCm=?, depthCm=?, showDimensions=?,
-             shippingSurchargeSats=?, shippingItalySats=?, shippingEuropeSats=?, shippingWorldSats=?,
-             shippingZoneOverrides=?, isUnique=?, quantityAvailable=?
+             shippingZoneOverrides=?, isUnique=?, quantityAvailable=?, lastSoldAt=?
        WHERE id=?`
     ).run(
       patch.title ?? cur.title,
@@ -1159,13 +1212,10 @@ export const Products = {
       numOrNull(patch.heightCm ?? cur.heightCm),
       numOrNull(patch.depthCm ?? cur.depthCm),
       (patch.showDimensions ?? cur.showDimensions) ? 1 : 0,
-      Math.max(0, (patch.shippingSurchargeSats ?? cur.shippingSurchargeSats) | 0),
-      Math.max(0, (patch.shippingItalySats ?? cur.shippingItalySats) | 0),
-      Math.max(0, (patch.shippingEuropeSats ?? cur.shippingEuropeSats) | 0),
-      Math.max(0, (patch.shippingWorldSats ?? cur.shippingWorldSats) | 0),
       JSON.stringify(normalizedOverrides),
       nextIsUnique ? 1 : 0,
       nextQuantity,
+      nextLastSold,
       id
     );
 
@@ -1194,23 +1244,32 @@ export const Products = {
     const nextQty = product.isUnique ? 0 : Math.max(0, currentQty - decrement);
     const nextAvailable = product.isUnique ? 0 : (nextQty > 0 ? 1 : 0);
 
-    db.prepare(`UPDATE products SET quantityAvailable=?, available=? WHERE id=?`).run(
+    const soldAt = nextAvailable ? product.lastSoldAt || 0 : now();
+
+    db.prepare(`UPDATE products SET quantityAvailable=?, available=?, lastSoldAt=? WHERE id=?`).run(
       nextQty,
       nextAvailable,
+      soldAt,
       id
     );
     return this.get(id, { includeImages: false });
   },
 
   markSold(id) {
-    db.prepare(`UPDATE products SET available=0, quantityAvailable=0 WHERE id=?`).run(id);
+    db.prepare(`UPDATE products SET available=0, quantityAvailable=0, lastSoldAt=? WHERE id=?`).run(now(), id);
   },
 
   reorder(orderIds = []) {
     if (!Array.isArray(orderIds) || orderIds.length === 0) return 0;
 
     const allRows = db
-      .prepare(`SELECT id FROM products ORDER BY available DESC, displayOrder DESC, createdAt DESC`)
+      .prepare(`
+        SELECT id FROM products
+        ORDER BY
+          available DESC,
+          CASE WHEN available=1 THEN displayOrder ELSE 0 END DESC,
+          CASE WHEN available=1 THEN createdAt ELSE COALESCE(lastSoldAt, createdAt) END DESC
+      `)
       .all();
     if (!allRows.length) return 0;
 
@@ -1274,13 +1333,10 @@ function normalizeProductRow(row, { includeImages = false } = {}) {
     heightCm: row.heightCm ?? null,
     depthCm: row.depthCm ?? null,
     showDimensions: !!row.showDimensions,
-    shippingSurchargeSats: Number(row.shippingSurchargeSats || 0),
-    shippingItalySats: Number(row.shippingItalySats || 0),
-    shippingEuropeSats: Number(row.shippingEuropeSats || 0),
-    shippingWorldSats: Number(row.shippingWorldSats || 0),
     shippingZoneOverrides: parseZoneOverrides(row.shippingZoneOverrides),
     imageCount: Number(row.imageCount || 0),
-    imageVersion: row.imageVersion || ""
+    imageVersion: row.imageVersion || "",
+    lastSoldAt: Number(row.lastSoldAt || 0)
   };
   if (includeImages) {
     base.images = ProductImages.list(row.id);
@@ -1291,7 +1347,10 @@ function normalizeProductRow(row, { includeImages = false } = {}) {
 
 export const Orders = {
   all() {
-    this.prunePendingOlderThan(24 * 60 * 60 * 1000);
+    this.prunePendingOlderThan(
+      24 * 60 * 60 * 1000,          // regular pending TTL (24h)
+      14 * 24 * 60 * 60 * 1000      // Boltz on-chain pending TTL (14 days)
+    );
     return db
       .prepare(`SELECT * FROM orders ORDER BY createdAt DESC`)
       .all()
@@ -1323,16 +1382,17 @@ export const Orders = {
         paymentMethod,
         name, surname, address, city, province, postalCode, country,
         contactEmail, contactTelegram, contactNostr, contactPhone,
-        status, paymentHash, paymentRequest,
-        boltzSwapId, boltzAddress, boltzExpectedAmountSats, boltzTimeoutBlockHeight, boltzRefundPrivKey, boltzStatus,
+        status, paymentHash, paymentRequest, lnurlVerifyUrl, lnurlExpiresAt,
+        boltzSwapId, boltzAddress, boltzExpectedAmountSats, boltzTimeoutBlockHeight,
+        boltzRefundPrivKey, boltzRefundPubKey, boltzRedeemScript, boltzRescueIndex, boltzSwapTree, boltzStatus,
         createdAt, clientId, notes
       ) VALUES (
         ?, ?, ?, ?, ?,
         ?,
         ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
-        ?, ?, ?,
-        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?
       )
     `);
@@ -1357,11 +1417,17 @@ export const Orders = {
       "PENDING",
       order.paymentHash || null,
       order.paymentRequest || null,
+      order.lnurlVerifyUrl || "",
+      Math.max(0, Math.floor(Number(order.lnurlExpiresAt || 0))),
       order.boltzSwapId || "",
       order.boltzAddress || "",
       Math.max(0, Math.floor(Number(order.boltzExpectedAmountSats || 0))),
       Math.max(0, Math.floor(Number(order.boltzTimeoutBlockHeight || 0))),
       order.boltzRefundPrivKey || "",
+      order.boltzRefundPubKey || "",
+      order.boltzRedeemScript || "",
+      numOrNull(order.boltzRescueIndex),
+      order.boltzSwapTree || "",
       order.boltzStatus || "",
       now(),
       order.clientId || "",
@@ -1418,9 +1484,27 @@ export const Orders = {
   remove(id) {
     db.prepare(`DELETE FROM orders WHERE id=?`).run(id);
   },
-  prunePendingOlderThan(ms) {
-    const cutoff = now() - ms;
-    db.prepare(`DELETE FROM orders WHERE status='PENDING' AND createdAt < ?`).run(cutoff);
+  prunePendingOlderThan(ms, boltzMs) {
+    const cutoffRegular = now() - ms;
+    const cutoffBoltz = now() - (boltzMs ?? ms);
+    // Delete non-Boltz pending older than regular cutoff
+    db.prepare(`
+      DELETE FROM orders
+       WHERE status='PENDING'
+         AND (paymentMethod <> 'onchain' OR boltzSwapId IS NULL OR boltzSwapId = '')
+         AND createdAt < ?
+    `).run(cutoffRegular);
+    // Delete Boltz on-chain pending older than extended cutoff
+    db.prepare(`
+      DELETE FROM orders
+       WHERE status='PENDING'
+         AND paymentMethod='onchain'
+         AND boltzSwapId IS NOT NULL
+         AND boltzSwapId <> ''
+         AND boltzRefundPubKey IS NOT NULL
+         AND boltzRefundPubKey <> ''
+         AND createdAt < ?
+    `).run(cutoffBoltz);
   },
 };
 
@@ -1438,7 +1522,16 @@ function normalizeOrderRow(o) {
     boltzAddress: o.boltzAddress || "",
     boltzExpectedAmountSats: Number(o.boltzExpectedAmountSats || 0),
     boltzTimeoutBlockHeight: Number(o.boltzTimeoutBlockHeight || 0),
-    boltzStatus: o.boltzStatus || ""
+    boltzRefundPrivKey: o.boltzRefundPrivKey || "",
+    boltzRefundPubKey: o.boltzRefundPubKey || "",
+    boltzRedeemScript: o.boltzRedeemScript || "",
+    boltzRescueIndex: (o.boltzRescueIndex === null || o.boltzRescueIndex === undefined || o.boltzRescueIndex === "")
+      ? null
+      : Number(o.boltzRescueIndex),
+    boltzSwapTree: o.boltzSwapTree || "",
+    boltzStatus: o.boltzStatus || "",
+    lnurlVerifyUrl: o.lnurlVerifyUrl || "",
+    lnurlExpiresAt: Number(o.lnurlExpiresAt || 0)
   };
 }
 
@@ -1475,6 +1568,12 @@ export const NostrCarts = {
 };
 
 export const Settings = {
+  nextRescueIndex() {
+    const cur = Number(sGet.get("boltzRescueNextIndex")?.value ?? 0);
+    const next = cur + 1;
+    sSet.run("boltzRescueNextIndex", String(next));
+    return cur;
+  },
   getAll() {
     const rows = db.prepare(`SELECT key, value FROM settings`).all();
     const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));

@@ -6,11 +6,6 @@ const Ctx = createContext(null);
 const STORAGE_KEY = "cart_v1";
 const CART_VERSION = 4;
 const MAX_QTY = 99;
-const SHIPPING_KEYS = [
-  "shippingItalySats",
-  "shippingEuropeSats",
-  "shippingWorldSats"
-];
 const MAX_CART_ITEMS = 24;
 
 function readStoredItems() {
@@ -71,17 +66,8 @@ function sanitizeZoneOverrides(source) {
 function snapshotProduct(product, { needsShippingHydrate = false } = {}) {
   if (!product || !product.id) return null;
 
-  const missingShipping = SHIPPING_KEYS.some(
-    (key) => product[key] === undefined || product[key] === null
-  );
-
-  const numbers = SHIPPING_KEYS.reduce((acc, key) => {
-    const raw = product[key];
-    const num = Number(raw);
-    acc[key] = Number.isFinite(num) ? num : 0;
-    return acc;
-  }, {});
   const zoneOverrides = sanitizeZoneOverrides(product?.shippingZoneOverrides);
+  const missingShipping = zoneOverrides.length === 0;
 
   const quantityAvailable = (() => {
     const num = Number(product.quantityAvailable);
@@ -103,9 +89,6 @@ function snapshotProduct(product, { needsShippingHydrate = false } = {}) {
     thumbUrls: Array.isArray(product.thumbUrls) ? product.thumbUrls.slice(0, 3) : undefined,
     imageUrls: Array.isArray(product.imageUrls) ? product.imageUrls.slice(0, 3) : undefined,
     previewImage: selectPreviewImage(product),
-    shippingItalySats: numbers.shippingItalySats,
-    shippingEuropeSats: numbers.shippingEuropeSats,
-    shippingWorldSats: numbers.shippingWorldSats,
     shippingZoneOverrides: zoneOverrides,
     isUnique: product.isUnique !== undefined ? !!product.isUnique : true,
     quantityAvailable,
@@ -139,8 +122,9 @@ function clampQty(qty, product) {
 function reviveStoredItems(rawList) {
   return rawList
     .map((entry) => {
-      const legacyMissingShipping = !SHIPPING_KEYS.every((key) =>
-        Object.prototype.hasOwnProperty.call(entry?.product || {}, key)
+      const legacyMissingShipping = !(
+        Array.isArray(entry?.product?.shippingZoneOverrides) &&
+        entry.product.shippingZoneOverrides.length > 0
       );
       const legacyCartVersion = Number(entry?.product?.__cartVersion || 0);
       const product = snapshotProduct(entry?.product, {
@@ -387,8 +371,9 @@ export function CartProvider({ children }) {
     if (!product || !product.id) return;
     (async () => {
       let enriched = product;
-      const hydrateIfMissing = SHIPPING_KEYS.some(
-        (key) => enriched[key] === undefined || enriched[key] === null
+      const hydrateIfMissing = !(
+        Array.isArray(enriched?.shippingZoneOverrides) &&
+        enriched.shippingZoneOverrides.length > 0
       );
       if (hydrateIfMissing) {
         try {
@@ -403,9 +388,7 @@ export function CartProvider({ children }) {
         }
       }
 
-      const needsHydrateFlag = SHIPPING_KEYS.some(
-        (key) => enriched[key] === undefined || enriched[key] === null
-      );
+      const needsHydrateFlag = hydrateIfMissing;
       const snapshot = snapshotProduct(enriched, { needsShippingHydrate: needsHydrateFlag });
       if (!snapshot) return;
       if (!snapshot.__needsShippingHydrate) delete snapshot.__needsShippingHydrate;

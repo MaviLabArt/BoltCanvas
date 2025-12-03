@@ -25,7 +25,15 @@ vi.mock("../../services/api.js", () => ({
 vi.mock("../../store/cart.jsx", () => ({
   useCart: () => ({
     items: [
-      { product: { id: "p1", title: "Item", priceSats: 1000, shippingItalySats: 0, shippingEuropeSats: 0, shippingWorldSats: 0 }, qty: 1 }
+      {
+        product: {
+          id: "p1",
+          title: "Item",
+          priceSats: 1000,
+          shippingZoneOverrides: []
+        },
+        qty: 1
+      }
     ],
     clear: vi.fn(),
     subtotal: () => 1000
