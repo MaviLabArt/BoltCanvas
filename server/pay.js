@@ -1,9 +1,24 @@
 // server/pay.js
 import WebSocket from "ws";
 import { EventEmitter } from "events";
+import { Settings } from "./db.js";
+import { deriveRefundKey } from "./boltz.js";
 
-// Choose provider: "blink" (default) or "lnd"
-export const PAYMENT_PROVIDER = String(process.env.PAYMENT_PROVIDER || "blink").toLowerCase();
+// Choose providers
+// - Lightning: "blink" (default) | "lnd" | "btcpay" | "nwc" | "lnurl"
+// - On-chain: "boltz" (default) | "btcpay"
+export const LIGHTNING_PAYMENT_PROVIDER = String(
+  process.env.LIGHTNING_PAYMENT_PROVIDER ||
+  process.env.PAYMENT_PROVIDER || // backward compat
+  "blink"
+).toLowerCase();
+export const ONCHAIN_PROVIDER = String(
+  process.env.ONCHAIN_PROVIDER ||
+  process.env.ONCHAIN_PAYMENT_PROVIDER ||
+  (String(process.env.PAYMENT_PROVIDER || "").toLowerCase() === "btcpay" ? "btcpay" : "boltz")
+).toLowerCase();
+// Backward compat alias (used throughout codebase)
+export const PAYMENT_PROVIDER = LIGHTNING_PAYMENT_PROVIDER;
 
 // Blink driver (reuses your existing blink.js)
 import * as blink from "./blink.js";
@@ -13,6 +28,9 @@ import * as lnd from "./lnd.js";
 
 // NWC driver (NIP-47 via @getalby/sdk)
 import * as nwc from "./nwc.js";
+
+// LNURL driver (LNURL-pay + LNURL-verify)
+import * as lnurl from "./lnurl.js";
 
 // BTCPay Server driver
 import * as btcpay from "./btcpay.js";
@@ -36,6 +54,9 @@ export async function ensureBtcWalletId(args = {}) {
     const { url, apiKey, explicitWalletId } = args;
     return blink.ensureBtcWalletId({ url, apiKey, explicitWalletId });
   }
+  if (PAYMENT_PROVIDER === "lnurl") {
+    return lnurl.ensureBtcWalletId();
+  }
   if (PAYMENT_PROVIDER === "nwc") {
     const { url, relayUrls } = args;
     return nwc.ensureBtcWalletId({ url, relayUrls });
@@ -55,6 +76,10 @@ export async function createInvoiceSats(args) {
   if (PAYMENT_PROVIDER === "blink") {
     const { url, apiKey, walletId, amount, memo, expiresIn } = args || {};
     return blink.createInvoiceSats({ url, apiKey, walletId, amount, memo, expiresIn });
+  }
+  if (PAYMENT_PROVIDER === "lnurl") {
+    const { amount, memo } = args || {};
+    return lnurl.createInvoiceSats({ amount, memo });
   }
   if (PAYMENT_PROVIDER === "nwc") {
     const { url, relayUrls, amount, memo, expiresIn } = args || {};
@@ -78,6 +103,10 @@ export async function invoiceStatus(args) {
   if (PAYMENT_PROVIDER === "blink") {
     const { url, apiKey, paymentHash } = args || {};
     return blink.invoiceStatus({ url, apiKey, paymentHash });
+  }
+  if (PAYMENT_PROVIDER === "lnurl") {
+    const { paymentHash, verifyUrl, paymentRequest, expiresAt } = args || {};
+    return lnurl.invoiceStatus({ paymentHash, verifyUrl, paymentRequest, expiresAt });
   }
   if (PAYMENT_PROVIDER === "nwc") {
     const { url, relayUrls, paymentHash } = args || {};
@@ -110,7 +139,16 @@ function normalizeBoltzSwap(swap) {
       Number(swap?.timeoutBlockHeight ?? swap?.lockupTimeoutBlock ?? swap?.timeoutHeight ?? 0)
     )
   );
-  return { onchainAddress, onchainAmountSats, timeoutBlockHeight };
+  const redeemScript = String(
+    swap?.redeemScript || swap?.lockupScript || swap?.script || ""
+  ).trim();
+  let swapTree = "";
+  if (swap?.swapTree) {
+    swapTree = typeof swap.swapTree === "string"
+      ? swap.swapTree
+      : JSON.stringify(swap.swapTree);
+  }
+  return { onchainAddress, onchainAmountSats, timeoutBlockHeight, redeemScript, swapTree };
 }
 
 export async function createOnchainSwapViaBoltz(args = {}) {
@@ -118,7 +156,7 @@ export async function createOnchainSwapViaBoltz(args = {}) {
   const amount = Number(args.amount || 0);
 
   // BTCPay: create native on-chain invoice, skip Boltz entirely
-  if (PAYMENT_PROVIDER === "btcpay") {
+  if (ONCHAIN_PROVIDER === "btcpay") {
     const invoice = await btcpay.createOnchainInvoice({
       url: args.url,
       apiKey: args.apiKey,
@@ -152,6 +190,11 @@ export async function createOnchainSwapViaBoltz(args = {}) {
           memo,
           expiresIn: args.expiresIn
         })
+      : PAYMENT_PROVIDER === "lnurl"
+        ? await lnurl.createInvoiceSats({
+            amount,
+            memo
+          })
       : PAYMENT_PROVIDER === "nwc"
         ? await nwc.createInvoiceSats({
             url: args.url,
@@ -160,19 +203,42 @@ export async function createOnchainSwapViaBoltz(args = {}) {
             memo,
             expiresIn: args.expiresIn
           })
-      : await lnd.createInvoiceSats({
-          amount,
-          memo,
-          expiresIn: args.expiresIn
-        });
+          : await lnd.createInvoiceSats({
+              amount,
+              memo,
+              expiresIn: args.expiresIn
+            });
 
-  // 2) Create Submarine swap at Boltz
-  const { swap, refundPrivateKey, refundPublicKey } = await boltz.createSubmarineSwap({
+  // 2) Create Submarine swap at Boltz (deterministic refund key if rescue mnemonic is set)
+  const rescueMnemonic = String(process.env.BOLTZ_RESCUE_MNEMONIC || "").trim();
+  const rescuePath = process.env.BOLTZ_RESCUE_PATH || undefined;
+  let rescueIndex = null;
+  let refundKey = null;
+
+  if (rescueMnemonic) {
+    try {
+      rescueIndex = Settings.nextRescueIndex();
+      refundKey = deriveRefundKey(rescueIndex, {
+        mnemonic: rescueMnemonic,
+        pathBase: rescuePath
+      });
+    } catch {
+      rescueIndex = null;
+      refundKey = null;
+    }
+  }
+  // Fallback to ad-hoc keys if no rescue mnemonic is configured
+  if (!refundKey) {
+    refundKey = deriveRefundKey(0, { mnemonic: "" });
+  }
+
+  const { swap, refundPrivateKey, refundPublicKey, rescueIndex: derivedIndex } = await boltz.createSubmarineSwap({
     invoice: invoice.paymentRequest,
-    webhookUrl
+    webhookUrl,
+    refundKey: refundKey || undefined
   });
 
-  const { onchainAddress, onchainAmountSats, timeoutBlockHeight } = normalizeBoltzSwap(swap);
+  const { onchainAddress, onchainAmountSats, timeoutBlockHeight, redeemScript, swapTree } = normalizeBoltzSwap(swap);
   const bip21 = boltz.buildBip21({
     address: onchainAddress,
     amountSats: onchainAmountSats,
@@ -184,8 +250,11 @@ export async function createOnchainSwapViaBoltz(args = {}) {
     paymentMethod: "onchain",
     boltzSwapId: swap?.id || "",
     boltzStatus: swap?.status || "",
-    boltzRefundPrivKey: refundPrivateKey || "",
+    boltzRefundPrivKey: "",
     boltzRefundPubKey: refundPublicKey || "",
+    boltzRescueIndex: derivedIndex ?? rescueIndex,
+    boltzRedeemScript: "",
+    boltzSwapTree: "",
     onchainAddress,
     onchainAmountSats,
     timeoutBlockHeight,
@@ -196,8 +265,8 @@ export async function createOnchainSwapViaBoltz(args = {}) {
 export async function boltzSwapStatus({ swapId }) {
   const swap = await boltz.getSwapStatus({ swapId });
   const mappedStatus = boltz.mapBoltzStatus(swap?.status);
-  const { onchainAddress, onchainAmountSats, timeoutBlockHeight } = normalizeBoltzSwap(swap);
-  return { swap, mappedStatus, onchainAddress, onchainAmountSats, timeoutBlockHeight };
+  const { onchainAddress, onchainAmountSats, timeoutBlockHeight, redeemScript, swapTree } = normalizeBoltzSwap(swap);
+  return { swap, mappedStatus, onchainAddress, onchainAmountSats, timeoutBlockHeight, redeemScript, swapTree };
 }
 
 export function subscribeBoltzSwapStatus({ swapId, onUpdate }) {
@@ -208,7 +277,7 @@ export function subscribeBoltzSwapStatus({ swapId, onUpdate }) {
  * Subscribe to a single invoice status updates.
  * Returns an unsubscribe function.
  */
-export function subscribeInvoiceStatus({ paymentHash, onStatus }) {
+export function subscribeInvoiceStatus({ paymentHash, onStatus, ...rest }) {
   if (PAYMENT_PROVIDER === "blink") {
     const BLINK_WS_URL = process.env.BLINK_WS_URL || "wss://ws.blink.sv/graphql";
     const BLINK_API_KEY = process.env.BLINK_API_KEY || "";
@@ -257,6 +326,17 @@ export function subscribeInvoiceStatus({ paymentHash, onStatus }) {
     ws.on("close", () => unsub());
     ws.on("error", () => unsub());
     return unsub;
+  }
+
+  if (PAYMENT_PROVIDER === "lnurl") {
+    const { verifyUrl, paymentRequest, expiresAt } = rest || {};
+    return lnurl.subscribeInvoiceStatus({
+      paymentHash,
+      onStatus,
+      verifyUrl,
+      paymentRequest,
+      expiresAt
+    });
   }
 
   if (PAYMENT_PROVIDER === "btcpay") {
@@ -398,6 +478,12 @@ export function startPaymentWatcher({ onPaid }) {
 
   if (PAYMENT_PROVIDER === "btcpay") {
     // We rely on webhooks and the background sweeper for BTCPay.
+    return;
+  }
+
+  if (PAYMENT_PROVIDER === "lnurl") {
+    // Polling/sweeper handle LNURL verify; no push channel.
+    lnurl.startPaymentWatcher();
     return;
   }
 

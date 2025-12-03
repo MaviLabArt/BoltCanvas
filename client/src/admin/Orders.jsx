@@ -274,6 +274,41 @@ export default function Orders() {
             <div className="font-semibold">{t("Totale", "Total")}: {formatSats(o.totalSats)} sats</div>
           </div>
 
+          <div className="mt-3 grid gap-2 text-sm">
+            <div>
+              {t("Metodo di pagamento", "Payment method")}:{" "}
+              <span className="font-semibold">{o.paymentMethod || "lightning"}</span>
+            </div>
+            {(o.status === "PAID" || o.status === "PREPARATION" || o.status === "SHIPPED") && o.paymentHash ? (
+              <div>
+                {t("Payment hash / invoice", "Payment hash / invoice")}:{" "}
+                <span className="font-semibold break-all">{o.paymentHash}</span>
+              </div>
+            ) : null}
+            {o.status === "PAID" && o.paymentRequest && (
+              <div>
+                {t("Invoice id", "Invoice id")}:{" "}
+                <span className="font-semibold break-all whitespace-normal">
+                  {o.paymentRequest}
+                </span>
+              </div>
+            )}
+
+            {o.paymentMethod === "onchain" && (o.status === "PENDING" || o.status === "FAILED") && o.boltzSwapId && (
+              <div className="mt-2 rounded-2xl bg-slate-800/60 ring-1 ring-white/10 px-3 py-3 text-sm">
+                <div className="text-white/70">
+                  {t("Swap Boltz ID", "Boltz swap ID")}:{" "}
+                  <span className="font-mono break-all text-white">{o.boltzSwapId}</span>
+                </div>
+                {o.boltzStatus ? (
+                  <div className="text-xs text-white/60 mt-1">
+                    {t("Stato Boltz", "Boltz status")}: {o.boltzStatus}
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
+
           <div className="mt-4 flex flex-wrap gap-2">
             {/* Vai a PAGATO da PREPARATION o SHIPPED */}
             {(o.status === "PREPARATION" || o.status === "SHIPPED") && (

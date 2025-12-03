@@ -10,8 +10,7 @@ describe("db: products", () => {
       title: "Art One",
       description: "desc",
       priceSats: 1500,
-      images: [PNG_DATA_URL],
-      shippingItalySats: 10
+      images: [PNG_DATA_URL]
     });
     const p2 = Products.create({
       title: "Hidden",

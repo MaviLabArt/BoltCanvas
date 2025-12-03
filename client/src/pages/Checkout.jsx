@@ -123,9 +123,6 @@ export default function Checkout() {
     return computeShippingQuote({
       items: items.map((it) => ({
         priceSats: Number(it.product?.priceSats || 0),
-        shippingItalySats: it.product?.shippingItalySats,
-        shippingEuropeSats: it.product?.shippingEuropeSats,
-        shippingWorldSats: it.product?.shippingWorldSats,
         shippingZoneOverrides: it.product?.shippingZoneOverrides,
         qty: Math.max(1, Math.floor(Number(it.qty) || 1))
       })),

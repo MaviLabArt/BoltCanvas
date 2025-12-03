@@ -2,6 +2,10 @@
 import fetch from "node-fetch";
 import WebSocket from "ws";
 import crypto from "crypto";
+import * as bip39 from "bip39";
+import BIP32Factory from "bip32";
+import * as ecc from "tiny-secp256k1";
+const bip32 = BIP32Factory(ecc);
 import dns from "dns";
 import http from "http";
 import https from "https";
@@ -97,11 +101,29 @@ function generateRefundKeys() {
   };
 }
 
-export async function createSubmarineSwap({ invoice, webhookUrl }) {
+export function deriveRefundKey(index, {
+  mnemonic = process.env.BOLTZ_RESCUE_MNEMONIC || "",
+  pathBase = process.env.BOLTZ_RESCUE_PATH || "m/44/0/0/0"
+} = {}) {
+  if (!mnemonic) return { ...generateRefundKeys(), rescueIndex: null };
+  const seed = bip39.mnemonicToSeedSync(mnemonic);
+  const root = bip32.fromSeed(seed);
+  const node = root.derivePath(`${pathBase}/${index}`);
+  if (!node.privateKey) return { ...generateRefundKeys(), rescueIndex: null };
+  const priv = node.privateKey;
+  const pub = ecc.pointFromScalar(priv, true);
+  return {
+    rescueIndex: index,
+    refundPrivateKey: priv.toString("hex"),
+    refundPublicKey: Buffer.from(pub || []).toString("hex")
+  };
+}
+
+export async function createSubmarineSwap({ invoice, webhookUrl, refundKey }) {
   requireRestUrl();
   if (!invoice) throw new Error("invoice is required for Boltz swap");
 
-  const keys = generateRefundKeys();
+  const keys = refundKey || generateRefundKeys();
   const body = {
     invoice,
     from: "BTC",
@@ -141,7 +163,8 @@ export async function createSubmarineSwap({ invoice, webhookUrl }) {
   return {
     swap,
     refundPrivateKey: keys.refundPrivateKey,
-    refundPublicKey: keys.refundPublicKey
+    refundPublicKey: keys.refundPublicKey,
+    rescueIndex: keys.rescueIndex ?? null
   };
 }
 

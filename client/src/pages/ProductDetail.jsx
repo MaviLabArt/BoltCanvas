@@ -161,9 +161,7 @@ export default function ProductDetail() {
     });
   const perProductFreeEverywhere =
     shippingZones.length === 0 &&
-    ["shippingItalySats", "shippingEuropeSats", "shippingWorldSats"].every(
-      (key) => Number(p?.[key]) === 0
-    );
+    !productZoneOverrides.some((ov) => Number(ov?.priceSats || 0) > 0);
   const showFreeShippingPill = hasFreePresetForAllZones || perProductFreeEverywhere;
   const freeShippingLabel = hasFreePresetForAllZones
     ? "Free Shipping Worldwide"

@@ -162,9 +162,6 @@ export default function Products() {
       depthCm: "",
       showDimensions: true,
       // spedizioni (sats)
-      shippingItalySats: 0,
-      shippingEuropeSats: 0,
-      shippingWorldSats: 0,
       shippingZoneOverrides: [],
     });
   }
@@ -618,16 +615,7 @@ function Editor({ initial, shippingZones = [], onClose, onSaved }) {
   );
   const [showDimensions, setShowDimensions] = useState(initial.showDimensions !== false);
 
-  // Spedizioni per destinazione (sats)
-  const [shippingItalySats, setShippingItalySats] = useState(
-    initial.shippingItalySats || 0
-  );
-  const [shippingEuropeSats, setShippingEuropeSats] = useState(
-    initial.shippingEuropeSats || 0
-  );
-  const [shippingWorldSats, setShippingWorldSats] = useState(
-    initial.shippingWorldSats || 0
-  );
+  // Shipping zone overrides
   const [zoneOverrides, setZoneOverrides] = useState(() => makeInitialZoneOverrideState(initial));
   const [formErrors, setFormErrors] = useState({});
   const [formMessage, setFormMessage] = useState("");
@@ -650,8 +638,7 @@ function Editor({ initial, shippingZones = [], onClose, onSaved }) {
 
   function validate() {
     const errors = {
-      override: {},
-      shipping: {}
+      override: {}
     };
     let hasErrors = false;
 
@@ -668,19 +655,6 @@ function Editor({ initial, shippingZones = [], onClose, onSaved }) {
       errors.images = t("Aggiungi almeno una foto.", "Add at least one photo.");
       hasErrors = true;
     }
-
-    const shippingFields = [
-      ["shippingItalySats", shippingItalySats],
-      ["shippingEuropeSats", shippingEuropeSats],
-      ["shippingWorldSats", shippingWorldSats]
-    ];
-    shippingFields.forEach(([key, value]) => {
-      const parsed = parseNonNegative(value, true);
-      if (parsed === null) {
-        errors.shipping[key] = t("Inserisci un numero maggiore o uguale a 0.", "Enter a number greater than or equal to 0.");
-        hasErrors = true;
-      }
-    });
 
     Object.entries(zoneOverrides || {}).forEach(([zoneId, raw]) => {
       if (raw === "" || raw === null || raw === undefined) return;
@@ -814,9 +788,6 @@ function Editor({ initial, shippingZones = [], onClose, onSaved }) {
       heightCm: toNumOrNull(heightCm),
       depthCm: toNumOrNull(depthCm),
       showDimensions: !!showDimensions,
-      shippingItalySats: Math.max(0, Number(shippingItalySats || 0)),
-      shippingEuropeSats: Math.max(0, Number(shippingEuropeSats || 0)),
-      shippingWorldSats: Math.max(0, Number(shippingWorldSats || 0)),
       shippingZoneOverrides: buildZoneOverridePayload(zoneOverrides),
     };
 

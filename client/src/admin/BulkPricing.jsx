@@ -13,12 +13,6 @@ const BASE_FIELD_DEFS = [
   { key: "priceSats", it: "Prezzo (sats)", en: "Price (sats)" }
 ];
 
-const LEGACY_SHIPPING_FIELD_DEFS = [
-  { key: "shippingItalySats", it: "Spedizione Italia (sats)", en: "Shipping Italy (sats)" },
-  { key: "shippingEuropeSats", it: "Spedizione Europa (sats)", en: "Shipping Europe (sats)" },
-  { key: "shippingWorldSats", it: "Spedizione fuori UE (sats)", en: "Shipping outside EU (sats)" }
-];
-
 const DEFAULT_DOMESTIC_COUNTRY = "IT";
 
 const COUNTRY_NAME_MAP = COUNTRIES.reduce((acc, country) => {
@@ -116,19 +110,11 @@ export default function BulkPricing() {
   const [domesticCountry, setDomesticCountry] = useState(DEFAULT_DOMESTIC_COUNTRY);
   const [hasCustomZones, setHasCustomZones] = useState(false);
   const [showShipping, setShowShipping] = useState(false);
-  const hasConfiguredZones = shippingZones.length > 0;
   const baseFields = useMemo(
     () => BASE_FIELD_DEFS.map((f) => ({ key: f.key, label: t(f.it, f.en) })),
     [t]
   );
-  const legacyFields = useMemo(
-    () => LEGACY_SHIPPING_FIELD_DEFS.map((f) => ({ key: f.key, label: t(f.it, f.en) })),
-    [t]
-  );
-  const allFields = useMemo(
-    () => (hasConfiguredZones ? baseFields : [...baseFields, ...legacyFields]),
-    [baseFields, legacyFields, hasConfiguredZones]
-  );
+  const allFields = useMemo(() => baseFields, [baseFields]);
   const fieldKeys = useMemo(() => allFields.map((f) => f.key), [allFields]);
   const inlineFields = useMemo(() => baseFields, [baseFields]);
 
@@ -175,9 +161,6 @@ export default function BulkPricing() {
           imageCount: item.imageCount || 0,
           imageVersion: item.imageVersion || "",
           priceSats: toInputValue(item.priceSats),
-          shippingItalySats: toInputValue(item.shippingItalySats),
-          shippingEuropeSats: toInputValue(item.shippingEuropeSats),
-          shippingWorldSats: toInputValue(item.shippingWorldSats),
           zoneOverrides: overrideState
         };
       });
@@ -186,9 +169,6 @@ export default function BulkPricing() {
         const overrideState = makeInitialZoneOverrideState(it);
         originalsMap[it.id] = {
           priceSats: Number(it.priceSats || 0),
-          shippingItalySats: Number(it.shippingItalySats || 0),
-          shippingEuropeSats: Number(it.shippingEuropeSats || 0),
-          shippingWorldSats: Number(it.shippingWorldSats || 0),
           zoneOverrides: overrideState
         };
       }
@@ -259,7 +239,6 @@ export default function BulkPricing() {
       .sort((a, b) => a.priority - b.priority)
       .map(({ priority, ...rest }) => rest);
   }, [shippingZones, domesticCountry, hasCustomZones, t]);
-  const showLegacyShipping = !hasConfiguredZones;
   const tableColumns = 2 + inlineFields.length + (showShipping ? 1 : 0) + 1;
 
   async function saveChanges() {
@@ -269,9 +248,6 @@ export default function BulkPricing() {
       for (const row of dirtyRows) {
         const payload = {
           priceSats: Math.max(0, Math.floor(Number(row.priceSats || 0))),
-          shippingItalySats: Math.max(0, Math.floor(Number(row.shippingItalySats || 0))),
-          shippingEuropeSats: Math.max(0, Math.floor(Number(row.shippingEuropeSats || 0))),
-          shippingWorldSats: Math.max(0, Math.floor(Number(row.shippingWorldSats || 0))),
           shippingZoneOverrides: buildZoneOverridePayload(row.zoneOverrides)
         };
         await api.put(`/admin/products/${row.id}`, payload);
@@ -346,9 +322,12 @@ export default function BulkPricing() {
                   {field.label}
                 </th>
               ))}
+              <th className="px-4 py-3 text-left text-sm font-semibold text-white/70">
+                {t("Spedizioni (override)", "Shipping (override)")}
+              </th>
               {showShipping && (
                 <th className="px-4 py-3 text-left text-sm font-semibold text-white/70">
-                  {t("Spedizioni (lascia 0 per preset)", "Shipping (leave 0 for defaults)")}
+                  {t("Spedizioni (override)", "Shipping (override)")}
                 </th>
               )}
               <th className="px-4 py-3 text-left text-sm font-semibold text-white/70">
@@ -407,57 +386,34 @@ export default function BulkPricing() {
                     ))}
                     {showShipping && (
                       <td className="px-4 py-3 align-top">
-                        {showLegacyShipping ? (
-                          <div className="space-y-3">
-                            {legacyFields.map((field) => (
-                              <div
-                                key={field.key}
-                                className="rounded-2xl bg-slate-900/60 ring-1 ring-white/5 p-3 space-y-2"
-                              >
-                                <div className="text-sm font-semibold text-white/80">
-                                  {field.label}
+                        <div className="space-y-3">
+                          {zoneColumns.length === 0 ? (
+                            <div className="rounded-2xl bg-slate-900/60 ring-1 ring-white/5 p-3 text-sm text-white/60">
+                              {t("Nessuna zona di spedizione configurata", "No shipping zones configured")}
+                            </div>
+                          ) : (
+                            zoneColumns.map((column) => {
+                              const overrideValue = row.zoneOverrides?.[column.id] ?? "";
+                              return (
+                                <div
+                                  key={column.id}
+                                  className="rounded-2xl bg-slate-900/60 ring-1 ring-white/5 p-3 space-y-2"
+                                >
+                                  <div className="text-sm font-semibold text-white/80">{column.label}</div>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    value={overrideValue}
+                                    onChange={(e) => handleOverrideChange(row.id, column.id, e.target.value)}
+                                    placeholder={String(column.presetPrice)}
+                                    className="w-full px-3 py-2 rounded-xl bg-slate-950 ring-1 ring-white/10"
+                                  />
                                 </div>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="1"
-                                  value={row[field.key]}
-                                  onChange={(e) => handleFieldChange(row.id, field.key, e.target.value)}
-                                  className="w-full px-3 py-2 rounded-xl bg-slate-950 ring-1 ring-white/10"
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {zoneColumns.length === 0 ? (
-                              <div className="rounded-2xl bg-slate-900/60 ring-1 ring-white/5 p-3 text-sm text-white/60">
-                                {t("Nessuna zona di spedizione configurata", "No shipping zones configured")}
-                              </div>
-                            ) : (
-                              zoneColumns.map((column) => {
-                                const overrideValue = row.zoneOverrides?.[column.id] ?? "";
-                                return (
-                                  <div
-                                    key={column.id}
-                                    className="rounded-2xl bg-slate-900/60 ring-1 ring-white/5 p-3 space-y-2"
-                                  >
-                                    <div className="text-sm font-semibold text-white/80">{column.label}</div>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      step="1"
-                                      value={overrideValue}
-                                      onChange={(e) => handleOverrideChange(row.id, column.id, e.target.value)}
-                                      placeholder={String(column.presetPrice)}
-                                      className="w-full px-3 py-2 rounded-xl bg-slate-950 ring-1 ring-white/10"
-                                    />
-                                  </div>
-                                );
-                              })
-                            )}
-                          </div>
-                        )}
+                              );
+                            })
+                          )}
+                        </div>
                       </td>
                     )}
                     <td className="px-4 py-3 text-sm text-white/60">

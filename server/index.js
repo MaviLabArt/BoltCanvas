@@ -26,6 +26,7 @@ import {
   boltzSwapStatus,
   startPaymentWatcher,
   PAYMENT_PROVIDER,
+  ONCHAIN_PROVIDER,
   emitBtcpayStatus
 } from "./pay.js";
 import * as boltz from "./boltz.js";
@@ -87,6 +88,11 @@ const BLINK_GRAPHQL_URL = process.env.BLINK_GRAPHQL_URL;
 const BLINK_WS_URL = process.env.BLINK_WS_URL || "wss://ws.blink.sv/graphql";
 const BLINK_API_KEY = process.env.BLINK_API_KEY;
 const BLINK_BTC_WALLET_ID = process.env.BLINK_BTC_WALLET_ID || "";
+
+// LNURL env (when PAYMENT_PROVIDER === "lnurl")
+const LNURL_LIGHTNING_ADDRESS = process.env.LNURL_LIGHTNING_ADDRESS || process.env.BLITZ_LIGHTNING_ADDRESS || "";
+const LNURL_BECH32 = process.env.LNURL_BECH32 || process.env.BLITZ_LNURL || "";
+const LNURL_PAY_URL = process.env.LNURL_PAY_URL || "";
 
 // NWC (Nostr Wallet Connect) env
 const NWC_URL = process.env.NWC_URL || process.env.NWC_WALLET_CONNECT_URL || "";
@@ -195,10 +201,13 @@ function resolveZonePriceForProduct(zone, product) {
 if (PAYMENT_PROVIDER === "blink" && !BLINK_API_KEY) {
   console.warn("[WARN] BLINK_API_KEY is empty. Set it in server/.env (or switch PAYMENT_PROVIDER).");
 }
+if (PAYMENT_PROVIDER === "lnurl" && !(LNURL_LIGHTNING_ADDRESS || LNURL_BECH32 || LNURL_PAY_URL)) {
+  console.warn("[WARN] LNURL config missing. Set LNURL_LIGHTNING_ADDRESS or LNURL_BECH32 or LNURL_PAY_URL in server/.env.");
+}
 if (PAYMENT_PROVIDER === "nwc" && !NWC_URL) {
   console.warn("[WARN] NWC_URL is empty. Set it in server/.env (nostr+walletconnect://...).");
 }
-if (PAYMENT_PROVIDER === "btcpay" && (!BTCPAY_API_KEY || !BTCPAY_URL || !BTCPAY_STORE_ID)) {
+if ((PAYMENT_PROVIDER === "btcpay" || ONCHAIN_PROVIDER === "btcpay") && (!BTCPAY_API_KEY || !BTCPAY_URL || !BTCPAY_STORE_ID)) {
   console.warn("[WARN] BTCPAY_URL/BTCPAY_API_KEY/BTCPAY_STORE_ID missing. Set them in server/.env.");
 }
 
@@ -226,7 +235,7 @@ app.use((req, res, next) => {
 
 // prune PENDING > 1 day hourly
 setInterval(() => {
-  try { Orders.prunePendingOlderThan(24 * 60 * 60 * 1000); } catch {}
+  try { Orders.prunePendingOlderThan(24 * 60 * 60 * 1000, 14 * 24 * 60 * 60 * 1000); } catch {}
 }, 60 * 60 * 1000);
 
 // ---------------------------------------------------------------------
@@ -690,13 +699,6 @@ function sanitizeUrlArray(raw) {
   return out;
 }
 
-function sanitizeShipping(value) {
-  const num = Number(value);
-  if (!Number.isFinite(num)) return 0;
-  const bounded = Math.max(0, Math.min(10_000_000, Math.floor(num)));
-  return bounded;
-}
-
 function maxPurchasableForProduct(product) {
   if (!product || !product.available) return 0;
   if (Number.isFinite(product.maxQuantity)) return Math.max(0, product.maxQuantity);
@@ -721,9 +723,6 @@ function sanitizeCartProduct(raw) {
     mainImageThumbUrl: sanitizeUrl(raw.mainImageThumbUrl),
     mainImageUrl: sanitizeUrl(raw.mainImageUrl),
     previewImage: sanitizeUrl(raw.previewImage),
-    shippingItalySats: sanitizeShipping(raw.shippingItalySats),
-    shippingEuropeSats: sanitizeShipping(raw.shippingEuropeSats),
-    shippingWorldSats: sanitizeShipping(raw.shippingWorldSats),
     shippingZoneOverrides: sanitizeCartZoneOverrides(raw.shippingZoneOverrides),
     isUnique: raw.isUnique !== undefined ? !!raw.isUnique : true,
     quantityAvailable: (() => {
@@ -1027,10 +1026,12 @@ app.get("/api/public-settings", (req, res) => {
 app.get("/api/payments/config", (req, res) => {
   res.json({
     provider: PAYMENT_PROVIDER,
+    lightningProvider: PAYMENT_PROVIDER,
+    onchainProvider: ONCHAIN_PROVIDER,
     onchainEnabled: ONCHAIN_ENABLED,
     onchainMinSats: ONCHAIN_MIN_SATS,
     btcpayModalUrl:
-      PAYMENT_PROVIDER === "btcpay" && BTCPAY_URL
+      (PAYMENT_PROVIDER === "btcpay" || ONCHAIN_PROVIDER === "btcpay") && BTCPAY_URL
         ? `${BTCPAY_URL}/modal/btcpay.js`
         : "",
     boltz: {
@@ -1268,9 +1269,6 @@ app.get("/api/admin/products", requireAdmin, (req, res) => {
       widthCm: p.widthCm,
       heightCm: p.heightCm,
       depthCm: p.depthCm,
-      shippingItalySats: p.shippingItalySats,
-      shippingEuropeSats: p.shippingEuropeSats,
-      shippingWorldSats: p.shippingWorldSats,
       showDimensions: p.showDimensions,
       shippingZoneOverrides: Array.isArray(p.shippingZoneOverrides) ? p.shippingZoneOverrides : []
     };
@@ -1468,7 +1466,25 @@ app.post("/api/admin/products/:id/nostr/teaser/publish", requireAdmin, async (re
   }
 });
 
-// ✅ Admin orders list (sorted newest first)
+function normalizeHexPrivateKey(maybeKey) {
+  if (!maybeKey) return "";
+  if (Buffer.isBuffer(maybeKey)) {
+    return maybeKey.toString("hex");
+  }
+  const s = String(maybeKey || "").trim();
+  if (/^[0-9a-fA-F]{64}$/.test(s)) return s;
+  if (s.includes(",")) {
+    const bytes = s
+      .split(",")
+      .map((n) => Number(n.trim()) & 0xff)
+      .filter((n) => Number.isFinite(n));
+    if (bytes.length) {
+      return Buffer.from(bytes).toString("hex");
+    }
+  }
+  return s;
+}
+
 app.get("/api/admin/orders", requireAdmin, (req, res) => {
   try {
     const list = Orders.all() || [];
@@ -1531,9 +1547,7 @@ app.post("/api/admin/products", requireAdmin, (req, res) => {
   const {
     title, subtitle, description, longDescription, priceSats, images, mainImageIndex,
     widthCm, heightCm, depthCm,
-    shippingSurchargeSats,
     shippingZoneOverrides,
-    shippingItalySats, shippingEuropeSats, shippingWorldSats,
     available,
     showDimensions,
     hidden,
@@ -1554,11 +1568,7 @@ app.post("/api/admin/products", requireAdmin, (req, res) => {
     widthCm: widthCm ?? null,
     heightCm: heightCm ?? null,
     depthCm: depthCm ?? null,
-    shippingSurchargeSats: Math.max(0, shippingSurchargeSats | 0),
     showDimensions: showDimensions !== undefined ? !!showDimensions : true,
-    shippingItalySats: Math.max(0, shippingItalySats|0),
-    shippingEuropeSats: Math.max(0, shippingEuropeSats|0),
-    shippingWorldSats: Math.max(0, shippingWorldSats|0),
     shippingZoneOverrides: Array.isArray(shippingZoneOverrides) ? shippingZoneOverrides : [],
     isUnique: isUnique !== undefined ? !!isUnique : undefined,
     quantityAvailable: quantityAvailable
@@ -1580,10 +1590,6 @@ app.put("/api/admin/products/:id", requireAdmin, (req, res) => {
   if (req.body.widthCm !== undefined) patch.widthCm = req.body.widthCm ?? null;
   if (req.body.heightCm !== undefined) patch.heightCm = req.body.heightCm ?? null;
   if (req.body.depthCm !== undefined) patch.depthCm = req.body.depthCm ?? null;
-  if (req.body.shippingSurchargeSats !== undefined) patch.shippingSurchargeSats = Math.max(0, req.body.shippingSurchargeSats | 0);
-  if (req.body.shippingItalySats !== undefined) patch.shippingItalySats = Math.max(0, req.body.shippingItalySats | 0);
-  if (req.body.shippingEuropeSats !== undefined) patch.shippingEuropeSats = Math.max(0, req.body.shippingEuropeSats | 0);
-  if (req.body.shippingWorldSats !== undefined) patch.shippingWorldSats = Math.max(0, req.body.shippingWorldSats | 0);
   if (req.body.shippingZoneOverrides !== undefined) {
     patch.shippingZoneOverrides = Array.isArray(req.body.shippingZoneOverrides) ? req.body.shippingZoneOverrides : [];
   }
@@ -1691,9 +1697,6 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
         title: p.title,
         priceSats: p.priceSats,
         qty: q,
-        shippingItalySats: p.shippingItalySats || 0,
-        shippingEuropeSats: p.shippingEuropeSats || 0,
-        shippingWorldSats: p.shippingWorldSats || 0,
         shippingZoneOverrides: Array.isArray(p.shippingZoneOverrides) ? p.shippingZoneOverrides : []
       };
     });
@@ -1703,56 +1706,59 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
     const zones = normalizeShippingZones(settings.shippingZones);
     let shipping = 0;
 
-    if (zones.length > 0) {
-      const upperCountry = country || "";
-      const direct = zones.find((z) => (z.countries || []).includes(upperCountry));
-      const fallback = zones.find((z) => (z.countries || []).some((c) => c === "ALL" || c === "*"));
+  if (zones.length > 0) {
+    const upperCountry = country || "";
+    const direct = zones.find((z) => (z.countries || []).includes(upperCountry));
+    const fallback = zones.find((z) => (z.countries || []).some((c) => c === "ALL" || c === "*"));
       const zone = direct || fallback;
       if (!zone) {
         return res.status(400).json({ error: "Shipping not available for this country" });
       }
       shipping = loaded.reduce(
         (x, it) => {
-          const perItem = resolveZonePriceForProduct(zone, it);
-          const qty = Math.max(1, Number(it.qty) || 1);
-          return x + perItem * qty;
+        const perItem = resolveZonePriceForProduct(zone, it);
+        const qty = Math.max(1, Number(it.qty) || 1);
+        return x + perItem * qty;
         },
         0
       );
-    } else {
-      shipping = loaded.reduce((x, it) => {
-        const qty = Math.max(1, Number(it.qty) || 1);
-        if (country === "IT") return x + qty * (it.shippingItalySats || 0);
-        if (isEurope(country)) return x + qty * (it.shippingEuropeSats || 0);
-        return x + qty * (it.shippingWorldSats || 0);
-      }, 0);
-    }
+  } else {
+    shipping = 0;
+  }
     const total = subtotal + shipping;
     if (paymentMethod === "onchain" && ONCHAIN_MIN_SATS > 0 && total < ONCHAIN_MIN_SATS) {
       return res.status(400).json({ error: `Minimum on-chain amount is ${ONCHAIN_MIN_SATS} sats` });
     }
 
-    // Provider-specific wallet resolution (Blink needs it; LND returns a dummy id)
-    const walletId = await ensureBtcWalletId(
-      PAYMENT_PROVIDER === "blink"
-        ? {
-            url: BLINK_GRAPHQL_URL,
-            apiKey: BLINK_API_KEY,
-            explicitWalletId: BLINK_BTC_WALLET_ID || undefined
-          }
-        : PAYMENT_PROVIDER === "nwc"
+    // Provider-specific wallet resolution (Lightning side)
+    const walletId = await (async () => {
+      // On-chain via BTCPay does not need a lightning walletId
+      if (paymentMethod === "onchain" && ONCHAIN_PROVIDER === "btcpay") {
+        return { storeId: BTCPAY_STORE_ID || undefined };
+      }
+      return ensureBtcWalletId(
+        PAYMENT_PROVIDER === "blink"
           ? {
-              url: NWC_URL,
-              relayUrls: NWC_RELAYS
+              url: BLINK_GRAPHQL_URL,
+              apiKey: BLINK_API_KEY,
+              explicitWalletId: BLINK_BTC_WALLET_ID || undefined
             }
-        : PAYMENT_PROVIDER === "btcpay"
-          ? {
-              url: BTCPAY_URL,
-              apiKey: BTCPAY_API_KEY,
-              explicitStoreId: BTCPAY_STORE_ID || undefined
-            }
-        : {}
-    );
+          : PAYMENT_PROVIDER === "lnurl"
+            ? {}
+          : PAYMENT_PROVIDER === "nwc"
+            ? {
+                url: NWC_URL,
+                relayUrls: NWC_RELAYS
+              }
+          : PAYMENT_PROVIDER === "btcpay"
+            ? {
+                url: BTCPAY_URL,
+                apiKey: BTCPAY_API_KEY,
+                explicitStoreId: BTCPAY_STORE_ID || undefined
+              }
+            : {}
+      );
+    })();
 
     // Memo: "Order <store name> <product name>"
     const { storeName } = Settings.getAll();
@@ -1773,6 +1779,13 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
               webhookUrl: BOLTZ_WEBHOOK_URL || undefined,
               expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
             }
+          : PAYMENT_PROVIDER === "lnurl"
+            ? {
+                amount: total,
+                memo,
+                webhookUrl: BOLTZ_WEBHOOK_URL || undefined,
+                expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
+              }
           : PAYMENT_PROVIDER === "nwc"
             ? {
                 url: NWC_URL,
@@ -1810,6 +1823,11 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
               amount: total,
               memo
             }
+          : PAYMENT_PROVIDER === "lnurl"
+            ? {
+                amount: total,
+                memo
+              }
           : PAYMENT_PROVIDER === "nwc"
             ? {
                 url: NWC_URL,
@@ -1840,7 +1858,7 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
 
     const created = Orders.create({
       clientId,
-      items: loaded.map(({shippingItalySats,shippingEuropeSats,shippingWorldSats, ...keep}) => keep),
+      items: loaded,
       subtotalSats: subtotal,
       shippingSats: shipping,
       totalSats: total,
@@ -1862,8 +1880,14 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
       boltzAddress: inv.onchainAddress || "",
       boltzExpectedAmountSats: inv.onchainAmountSats || 0,
       boltzTimeoutBlockHeight: inv.timeoutBlockHeight || 0,
-      boltzRefundPrivKey: inv.boltzRefundPrivKey || "",
+      boltzRefundPrivKey: "",
+      boltzRefundPubKey: inv.boltzRefundPubKey || "",
+      boltzRedeemScript: "",
+      boltzRescueIndex: inv.boltzRescueIndex ?? inv.rescueIndex ?? null,
+      boltzSwapTree: "",
       boltzStatus: inv.boltzStatus || "",
+      lnurlVerifyUrl: inv.verifyUrl || "",
+      lnurlExpiresAt: inv.expiresAt || 0,
       // persist customer notes
       notes: sanitizedCustomer.notes || ""
     });
@@ -1907,6 +1931,8 @@ app.post("/api/zaps/create-invoice", async (req, res) => {
             apiKey: BLINK_API_KEY,
             explicitWalletId: BLINK_BTC_WALLET_ID || undefined
           }
+        : PAYMENT_PROVIDER === "lnurl"
+          ? {}
         : PAYMENT_PROVIDER === "nwc"
           ? {
               url: NWC_URL,
@@ -1937,6 +1963,11 @@ app.post("/api/zaps/create-invoice", async (req, res) => {
             amount: sats,
             memo
           }
+        : PAYMENT_PROVIDER === "lnurl"
+          ? {
+              amount: sats,
+              memo
+            }
         : PAYMENT_PROVIDER === "nwc"
           ? {
               url: NWC_URL,
@@ -2010,9 +2041,17 @@ async function handleBoltzStatusSideEffects({ swapId, mappedStatus, rawStatus })
 // ---------------------------------------------------------------------
 app.get("/api/invoices/:hash/status", async (req, res) => {
   try {
+    const orderForHash = Orders.byPaymentHash(req.params.hash);
     const args =
       PAYMENT_PROVIDER === "blink"
         ? { url: BLINK_GRAPHQL_URL, apiKey: BLINK_API_KEY, paymentHash: req.params.hash }
+        : PAYMENT_PROVIDER === "lnurl"
+          ? {
+              paymentHash: req.params.hash,
+              verifyUrl: orderForHash?.lnurlVerifyUrl,
+              paymentRequest: orderForHash?.paymentRequest,
+              expiresAt: orderForHash?.lnurlExpiresAt
+            }
         : PAYMENT_PROVIDER === "nwc"
           ? { url: NWC_URL, relayUrls: NWC_RELAYS, paymentHash: req.params.hash }
         : PAYMENT_PROVIDER === "btcpay"
@@ -2129,6 +2168,7 @@ app.get("/api/onchain/:swapId/status", async (req, res) => {
 // ---------------------------------------------------------------------
 app.get("/api/invoices/:hash/stream", async (req, res) => {
   const paymentHash = req.params.hash;
+  const orderForHash = Orders.byPaymentHash(paymentHash);
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
@@ -2151,6 +2191,9 @@ app.get("/api/invoices/:hash/stream", async (req, res) => {
 
   unsub = subscribeInvoiceStatus({
     paymentHash,
+    verifyUrl: orderForHash?.lnurlVerifyUrl,
+    paymentRequest: orderForHash?.paymentRequest,
+    expiresAt: orderForHash?.lnurlExpiresAt,
     onStatus: async (status) => {
       send({ status });
 
@@ -2219,7 +2262,7 @@ app.get("/api/onchain/:swapId/stream", async (req, res) => {
       timeoutBlockHeight: swapPayload?.timeoutBlockHeight ?? freshOrder.boltzTimeoutBlockHeight
     };
     send(payload);
-    if (PAYMENT_PROVIDER !== "btcpay") {
+    if (ONCHAIN_PROVIDER === "boltz") {
       await handleBoltzStatusSideEffects({ swapId, mappedStatus, rawStatus });
     } else {
       if (mappedStatus === "CONFIRMED") {
@@ -2425,8 +2468,8 @@ app.post("/api/webhooks/boltz", async (req, res) => {
 // ---------------------------------------------------------------------
 app.post(BTCPAY_WEBHOOK_PATH, async (req, res) => {
   try {
-    if (PAYMENT_PROVIDER !== "btcpay") {
-      return res.status(503).json({ error: "PAYMENT_PROVIDER is not btcpay" });
+    if (PAYMENT_PROVIDER !== "btcpay" && ONCHAIN_PROVIDER !== "btcpay") {
+      return res.status(503).json({ error: "BTCPay not configured as lightning or on-chain provider" });
     }
     if (!BTCPAY_WEBHOOK_SECRET) {
       return res.status(503).json({ error: "BTCPAY_WEBHOOK_SECRET not configured" });
@@ -2723,6 +2766,8 @@ if (!TEST_MODE) (function startPendingInvoiceSweeper() {
           const args =
             PAYMENT_PROVIDER === "blink"
               ? { url: BLINK_GRAPHQL_URL, apiKey: BLINK_API_KEY, paymentHash: o.paymentHash }
+              : PAYMENT_PROVIDER === "lnurl"
+                ? { paymentHash: o.paymentHash, verifyUrl: o.lnurlVerifyUrl, paymentRequest: o.paymentRequest, expiresAt: o.lnurlExpiresAt }
               : PAYMENT_PROVIDER === "nwc"
                 ? { url: NWC_URL, relayUrls: NWC_RELAYS, paymentHash: o.paymentHash }
               : PAYMENT_PROVIDER === "btcpay"
