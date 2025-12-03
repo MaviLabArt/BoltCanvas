@@ -1,4 +1,5 @@
 import { defineConfig, loadEnv } from "vite";
+import path from "node:path";
 import react from "@vitejs/plugin-react";
 import { visualizer } from "rollup-plugin-visualizer";
 
@@ -6,7 +7,8 @@ export default defineConfig(({ mode }) => {
   return {
     resolve: {
       alias: {
-        "lodash/isEqualWith": "/src/test/lodash-isEqualWith.js"
+        "lodash/isEqualWith": path.resolve(__dirname, "src/test/lodash-isEqualWith.js"),
+        "lodash/isEqualWith.js": path.resolve(__dirname, "src/test/lodash-isEqualWith.js")
       }
     },
     plugins: [
@@ -31,7 +33,7 @@ export default defineConfig(({ mode }) => {
       },
       setupFiles: "./src/test/setupTests.js",
       deps: {
-        inline: ["@testing-library/jest-dom", "lodash"],
+        inline: [],
         optimizer: {
           web: {
             include: ["@testing-library/jest-dom", "lodash"]
