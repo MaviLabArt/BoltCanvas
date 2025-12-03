@@ -1111,7 +1111,7 @@ export const Products = {
        (id, title, description, priceSats, images, available, hidden, createdAt, displayOrder,
         subtitle, longDescription, mainImageIndex, widthCm, heightCm, depthCm, showDimensions,
         shippingZoneOverrides, imageVersion, imageCount, isUnique, quantityAvailable, lastSoldAt)
-       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       title,
@@ -1119,6 +1119,7 @@ export const Products = {
       Math.floor(priceSats),
       EMPTY_IMAGES_JSON,
       initialAvailable,
+      0, // hidden
       createdAt,
       displayOrder,
       subtitle ?? "",
@@ -1130,7 +1131,7 @@ export const Products = {
       showDimensions ? 1 : 0,
       JSON.stringify(normalizedOverrides),
       "",
-      0,
+      0, // imageCount
       uniqueFlag ? 1 : 0,
       qtyValue,
       0

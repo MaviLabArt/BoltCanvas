@@ -1,7 +1,7 @@
 // server/lnurl.js
 // LNURL-pay + LNURL-verify provider (e.g. Blitz, any LNURL service exposing LUD-21).
-import lnurl from "lnurl";
 import { decode as decodeInvoice } from "light-bolt11-decoder";
+import { decodeLnurl } from "./lnurl-utils.js";
 
 // Fallback fetch for environments without global fetch (Node < 18)
 if (typeof fetch === "undefined") {
@@ -68,7 +68,7 @@ function lightningAddressToLnurlp(address) {
 
 function getLnurlPayUrl() {
   if (LNURL_PAY_URL) return LNURL_PAY_URL;
-  if (LNURL_BECH32) return lnurl.decode(LNURL_BECH32); // -> https://.../lnurlp/...
+  if (LNURL_BECH32) return decodeLnurl(LNURL_BECH32); // -> https://.../lnurlp/...
   if (LNURL_LIGHTNING_ADDRESS) return lightningAddressToLnurlp(LNURL_LIGHTNING_ADDRESS);
   throw new Error("LNURL_LIGHTNING_ADDRESS or LNURL_BECH32 or LNURL_PAY_URL must be set");
 }

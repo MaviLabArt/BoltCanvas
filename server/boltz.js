@@ -3,7 +3,7 @@ import fetch from "node-fetch";
 import WebSocket from "ws";
 import crypto from "crypto";
 import * as bip39 from "bip39";
-import BIP32Factory from "bip32";
+import { BIP32Factory } from "bip32";
 import * as ecc from "tiny-secp256k1";
 const bip32 = BIP32Factory(ecc);
 import dns from "dns";

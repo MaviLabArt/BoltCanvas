@@ -1030,10 +1030,6 @@ app.get("/api/payments/config", (req, res) => {
     onchainProvider: ONCHAIN_PROVIDER,
     onchainEnabled: ONCHAIN_ENABLED,
     onchainMinSats: ONCHAIN_MIN_SATS,
-    btcpayModalUrl:
-      (PAYMENT_PROVIDER === "btcpay" || ONCHAIN_PROVIDER === "btcpay") && BTCPAY_URL
-        ? `${BTCPAY_URL}/modal/btcpay.js`
-        : "",
     boltz: {
       rest: BOLTZ_REST_URL,
       ws: BOLTZ_WS_URL,
