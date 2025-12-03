@@ -16,7 +16,7 @@ const ACTIVE_PAYMENT_KEY = "lightning-shop-active-payment";
 
 function saveActivePayment(inv) {
   try {
-    if (!inv || String(inv.provider || "").toLowerCase() === "btcpay") return;
+    if (!inv) return;
     localStorage.setItem(ACTIVE_PAYMENT_KEY, JSON.stringify({ ...inv, savedAt: Date.now() }));
   } catch {}
 }
@@ -74,8 +74,6 @@ export default function Checkout() {
   const [sseConnected, setSseConnected] = useState(false); // to show LIVE badge
   const nav = useNavigate();
   const provider = useMemo(() => String(paymentConfig?.provider || "").toLowerCase(), [paymentConfig]);
-  const isBtcpay = provider === "btcpay";
-  const [btcpayFrameUrl, setBtcpayFrameUrl] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -98,20 +96,17 @@ export default function Checkout() {
         clearActivePayment();
         return;
       }
-      const provider = String(parsed.provider || "").toLowerCase();
-      if (provider === "btcpay") return; // don't restore BTCPay modal
-      const isBtcpay = false;
       const pm = String(parsed.paymentMethod || "").toLowerCase();
       if (pm === "onchain" && parsed.swapId && parsed.onchainAddress) {
         setPaymentMethod("onchain");
         setInv(parsed);
         setStatus("PENDING");
-        setShowPay(!isBtcpay);
+        setShowPay(true);
       } else if (pm === "lightning" && parsed.paymentHash && parsed.paymentRequest) {
         setPaymentMethod("lightning");
         setInv(parsed);
         setStatus("PENDING");
-        setShowPay(!isBtcpay);
+        setShowPay(true);
       }
     } catch {
       // ignore restore errors
@@ -209,40 +204,10 @@ export default function Checkout() {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [nav]);
 
-  // BTCPay inline modal polling
-  useEffect(() => {
-    if (!isBtcpay || !btcpayFrameUrl || !inv?.paymentHash) return;
-    let timer;
-    const poll = async () => {
-      try {
-        const r = await api.get(`/invoices/${inv.paymentHash}/status`);
-        const st = String(r.data?.status || "").toUpperCase();
-        setStatus(st);
-        if (st === "PAID") {
-          setBtcpayFrameUrl("");
-          return handlePaid(inv.paymentHash);
-        }
-        if (st === "EXPIRED") {
-          setBtcpayFrameUrl("");
-          return handleExpired();
-        }
-      } catch {
-        // ignore
-      }
-      timer = setTimeout(poll, 3000);
-    };
-    poll();
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [isBtcpay, btcpayFrameUrl, inv?.paymentHash, handlePaid, handleExpired]);
-
   // Live updates via SSE (server proxies Blink GraphQL-WS) with polling fallback
   useEffect(() => {
     if (!inv?.paymentHash) return;
     const isOnchain = String(inv.paymentMethod || "").toLowerCase() === "onchain";
-    const invProvider = String(inv?.provider || "").toLowerCase();
-    if (invProvider === "btcpay") return; // BTCPay handled via inline modal + webhook
     if (isOnchain && !inv.swapId) return;
 
     resolvedRef.current = false; // reset on new invoice
@@ -329,29 +294,6 @@ export default function Checkout() {
     );
   }
 
-  const BtcpayModal = ({ url, onClose }) => {
-    if (!url) return null;
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs">
-        <div className="absolute inset-0" onClick={onClose} />
-        <div className="relative w-[92vw] max-w-3xl h-[80vh] bg-slate-900 ring-1 ring-white/10 rounded-2xl overflow-hidden shadow-2xl">
-          <button
-            onClick={onClose}
-            className="absolute top-3 right-3 z-10 rounded-full bg-black/60 text-white px-3 py-1 text-sm"
-          >
-            Close
-          </button>
-          <iframe
-            title="BTCPay Checkout"
-            src={url}
-            className="w-full h-full border-0 bg-black"
-            allow="payment *; clipboard-read; clipboard-write"
-          />
-        </div>
-      </div>
-    );
-  };
-
   function contactProvided() {
     const { contactEmail, contactTelegram, contactNostr } = form;
     return Boolean(
@@ -401,13 +343,6 @@ export default function Checkout() {
       setInv(nextInv);
       saveActivePayment(nextInv);
       setStatus("PENDING");
-      if (isBtcpay) {
-        if (r.data?.checkoutLink) {
-          setBtcpayFrameUrl(r.data.checkoutLink);
-          setShowPay(false);
-          return;
-        }
-      }
       setShowPay(true);
     } catch (e) {
       alert(e?.response?.data?.error || "Failed to create invoice");
@@ -698,7 +633,6 @@ export default function Checkout() {
           )
         )}
       </AnimatePresence>
-      <BtcpayModal url={btcpayFrameUrl} onClose={() => setBtcpayFrameUrl("")} />
     </section>
   );
 }
