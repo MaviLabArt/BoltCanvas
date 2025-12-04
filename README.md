@@ -90,8 +90,8 @@ All the Nostr parts are optional; if you don’t configure them, the shop still 
   The checkout page shows a QR and tracks the invoice until it is paid or expires.
 
 - **On-chain**  
-  - **BTCPay Server (`ONCHAIN_PROVIDER=btcpay`):** creates a native on-chain invoice (BIP21) and tracks mempool → confirmation directly in BTCPay. You receive coins directly on-chain in your BTCPay wallet.  
-  - **XPUB (`ONCHAIN_PROVIDER=xpub`):** derives fresh on-chain addresses from your XPUB/YPUB/VPUB/ZPUB and watches them via an Esplora API (mempool.space by default). Coins go straight to your wallet; the shop marks the order paid when the tx hits mempool / confirms.  
+  - **BTCPay Server (`ONCHAIN_PROVIDER=btcpay`):**
+  - **XPUB (`ONCHAIN_PROVIDER=xpub`):** derives fresh on-chain addresses from your XPUB and watches them via an mempool.space API.
   - **Boltz (`ONCHAIN_PROVIDER=boltz`, default):** uses Boltz “Submarine swaps” to turn the Lightning invoice into a one-time Bitcoin address/amount. Boltz pays your Lightning invoice once the on-chain tx confirms, so you still receive Lightning.
 
 From the buyer’s point of view: Lightning is instant; on-chain shows a mempool/confirmation progress and then the same receipt.
@@ -113,11 +113,12 @@ From the buyer’s point of view: Lightning is instant; on-chain shows a mempool
     - `btcpay.store.canmodifyinvoices`
     - `btcpay.store.canviewstoresettings`
     - also set the webhook payload url into: https://yourdomain.com/api/webhooks/btcpay
+- An **XPUB** from your Bitcoin wallet if you want pure on-chain payments without Boltz or BTCPay.
 - Optional:
   - SMTP/IMAP for email updates.
   - Nostr keys if you want Nostr features.
   - ntfy for push-style order notifications (recommended).
-  - An **XPUB** from your Bitcoin wallet if you want pure on-chain payments without Boltz or BTCPay.
+  
 
 ---
 
@@ -127,7 +128,7 @@ The default example config (`server/.env.example`) is designed to be a good star
 
 ### Payment provider options (quick reference)
 
-- `PAYMENT_PROVIDER=blink`: set `BLINK_API_KEY`, optional `BLINK_BTC_WALLET_ID`.
+- `LIGHTNING_PAYMENT_PROVIDER=blink`: set `BLINK_API_KEY`, optional `BLINK_BTC_WALLET_ID`.
 - `PAYMENT_PROVIDER=lnd`: set `LND_REST_URL`, `LND_MACAROON_HEX`, TLS settings.
 - `PAYMENT_PROVIDER=btcpay`: set `BTCPAY_URL`, `BTCPAY_API_KEY`, `BTCPAY_STORE_ID` (+ webhook secret for status updates).
 - `PAYMENT_PROVIDER=nwc` (Nostr Wallet Connect): set `NWC_URL=nostr+walletconnect://...` (include `relay=` and `secret=`). Optionally override relay with `NWC_RELAYS_CSV=wss://relay.example.com`. On-chain still works via Boltz, same as Blink/LND.
@@ -135,17 +136,14 @@ The default example config (`server/.env.example`) is designed to be a good star
 
 **On-chain provider options**
 
-- `ONCHAIN_PROVIDER=boltz` (default):  
-  Uses Boltz Submarine swaps. You receive Lightning; buyers can still pay a normal on-chain address/amount. Works with any Lightning provider above.
+- `ONCHAIN_PROVIDER=boltz`:  
+  Uses Boltz Submarine swaps. You receive Lightning to your LIGHTNING_PAYMENT_PROVIDER; buyers can still pay a normal on-chain address/amount. Frictionless and clean, shop owner just receive lightning and does not even realize on the backend an onchain tx was made.
 - `ONCHAIN_PROVIDER=btcpay`:  
   Uses your BTCPay Server’s on-chain wallet. Set `BTCPAY_URL`, `BTCPAY_API_KEY`, `BTCPAY_STORE_ID`, and configure the webhook (see `.env.example`). Buyers see a BIP21 link; you receive coins directly into BTCPay.
 - `ONCHAIN_PROVIDER=xpub`:  
-  Sends coins directly to addresses derived from your XPUB/YPUB/VPUB/ZPUB. Configure:
-  - `ONCHAIN_XPUB` – your master public key (xpub/ypub/zpub/tpub/vpub).  
-  - `ONCHAIN_XPUB_NETWORK` – `mainnet`, `testnet4`, or `signet`.  
-  - `ONCHAIN_XPUB_ADDRESS_TYPE` – `p2wpkh` (default), `p2sh-p2wpkh`, or `p2pkh`.  
-  - `ONCHAIN_XPUB_API_BASE` – Esplora API base (defaults to mempool.space for the chosen network).  
-  The shop derives a fresh address per order, watches it via the Esplora API (mempool + chain), and marks the order paid once the expected amount is seen.
+  Sends coins directly to addresses derived from your XPUB. 
+  The shop derives a fresh address per order, watches it via the mempool.space API, and marks the order paid once the expected amount is confirmed in the block.
+  **IMPORTANT TO USE A FRESH XPUB TO AVOID ADDRESS REUSE**
 
 ### 1. Install and build
 From the project root:
