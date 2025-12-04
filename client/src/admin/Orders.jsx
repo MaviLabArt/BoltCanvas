@@ -294,15 +294,56 @@ export default function Orders() {
               </div>
             )}
 
-            {o.paymentMethod === "onchain" && (o.status === "PENDING" || o.status === "FAILED") && o.boltzSwapId && (
+            {o.paymentMethod === "onchain" && o.onchainProvider === "xpub" && (
               <div className="mt-2 rounded-2xl bg-slate-800/60 ring-1 ring-white/10 px-3 py-3 text-sm">
-                <div className="text-white/70">
-                  {t("Swap Boltz ID", "Boltz swap ID")}:{" "}
-                  <span className="font-mono break-all text-white">{o.boltzSwapId}</span>
-                </div>
-                {o.boltzStatus ? (
+                {o.status === "PAID" && (o.onchainTxid || o.onchainStatus) ? (
+                  <>
+                    <div className="text-white/70">
+                      {t("On-chain transaction", "On-chain transaction")}:{" "}
+                      <span className="font-mono break-all text-white">{o.onchainTxid || t("Unknown", "Unknown")}</span>
+                    </div>
+                    {o.onchainStatus ? (
+                      <div className="text-xs text-white/60 mt-1">
+                        {t("Status", "Status")}: {o.onchainStatus}
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <div className="text-white/70">
+                      {t("Bitcoin address to receive payment", "Bitcoin address to receive payment")}:{" "}
+                      <span className="font-mono break-all text-white">{o.onchainAddress || t("Unavailable", "Unavailable")}</span>
+                    </div>
+                    {o.onchainStatus ? (
+                      <div className="text-xs text-white/60 mt-1">
+                        {t("Status", "Status")}: {o.onchainStatus}
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            )}
+            {o.paymentMethod === "onchain" && o.onchainProvider !== "xpub" && (o.status === "PENDING" || o.status === "FAILED") && (o.onchainSwapId || o.onchainId || o.boltzSwapId) && (
+              <div className="mt-2 rounded-2xl bg-slate-800/60 ring-1 ring-white/10 px-3 py-3 text-sm">
+                {(() => {
+                  const ref = String(o.onchainProvider || "").toLowerCase() === "boltz"
+                    ? (o.onchainSwapId || o.boltzSwapId)
+                    : (o.onchainId || o.onchainSwapId);
+                  return (
+                    <div className="text-white/70">
+                      {t("On-chain payment ID", "On-chain payment ID")}:{" "}
+                      <span className="font-mono break-all text-white">{ref || t("Unavailable", "Unavailable")}</span>
+                    </div>
+                  );
+                })()}
+                {o.onchainStatus || o.boltzStatus ? (
                   <div className="text-xs text-white/60 mt-1">
-                    {t("Stato Boltz", "Boltz status")}: {o.boltzStatus}
+                    {t("Status", "Status")}: {o.onchainStatus || o.boltzStatus}
+                  </div>
+                ) : null}
+                {o.onchainProvider ? (
+                  <div className="text-xs text-white/60 mt-1">
+                    {t("Provider", "Provider")}: {o.onchainProvider}
                   </div>
                 ) : null}
               </div>

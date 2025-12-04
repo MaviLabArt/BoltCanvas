@@ -97,7 +97,8 @@ export default function Checkout() {
         return;
       }
       const pm = String(parsed.paymentMethod || "").toLowerCase();
-      if (pm === "onchain" && parsed.swapId && parsed.onchainAddress) {
+      const savedOnchainId = parsed.onchainId || parsed.onchainSwapId || parsed.swapId || parsed.orderId;
+      if (pm === "onchain" && savedOnchainId && parsed.onchainAddress) {
         setPaymentMethod("onchain");
         setInv(parsed);
         setStatus("PENDING");
@@ -206,43 +207,42 @@ export default function Checkout() {
 
   // Live updates via SSE (server proxies Blink GraphQL-WS) with polling fallback
   useEffect(() => {
-    if (!inv?.paymentHash) return;
+    if (!inv) return;
     const isOnchain = String(inv.paymentMethod || "").toLowerCase() === "onchain";
-    if (isOnchain && !inv.swapId) return;
+    const onchainId = inv?.onchainId || inv?.onchainSwapId || inv?.swapId || inv?.orderId;
+    const paymentId = isOnchain ? onchainId : inv.paymentHash;
+    if (!paymentId) return;
 
     resolvedRef.current = false; // reset on new invoice
     let es;
     let fallbackTimer;
 
-    const startPollingFallback = () => {
-      if (resolvedRef.current) return; // don't start polling if already resolved
-      setSseConnected(false);
+    const startPollingFallback = (fromError = false) => {
+      if (resolvedRef.current) return;
+      clearTimeout(fallbackTimer);
+      if (fromError) setSseConnected(false);
       const poll = async () => {
         if (resolvedRef.current) return;
         try {
-          if (isOnchain && inv.swapId) {
-            const r = await api.get(`/onchain/${inv.swapId}/status`);
-            const st = String(r.data?.status || "").toUpperCase();
-            setStatus(st);
-            if (st === "PAID") return handlePaid(inv.paymentHash);
-            if (st === "EXPIRED" || st === "FAILED") return handleExpired(st);
-          } else {
-            const r = await api.get(`/invoices/${inv.paymentHash}/status`);
-            const st = String(r.data?.status || "").toUpperCase();
-            setStatus(st);
-            if (st === "PAID") return handlePaid(inv.paymentHash);
-            if (st === "EXPIRED") return handleExpired();
+          const r = await api.get(`/payments/${paymentId}/status`);
+          const st = String(r.data?.status || "").toUpperCase();
+          setStatus(st);
+          if (st === "PAID" || (isOnchain && st === "CONFIRMED")) {
+            const paidRef = inv.paymentHash || onchainId || paymentId;
+            return handlePaid(paidRef);
           }
+          if (st === "EXPIRED" || st === "FAILED") return handleExpired(st);
         } catch {}
         fallbackTimer = setTimeout(poll, isOnchain ? 5000 : 3000);
       };
       poll();
     };
 
+    // Always run a lightweight poll alongside SSE so UI reflects mempool/confirm even if events are blocked.
+    startPollingFallback(false);
+
     try {
-      const url = isOnchain
-        ? `${API_BASE}/onchain/${inv.swapId}/stream`
-        : `${API_BASE}/invoices/${inv.paymentHash}/stream`;
+      const url = `${API_BASE}/payments/${paymentId}/stream`;
       es = new EventSource(url, { withCredentials: true });
       es.onopen = () => setSseConnected(true);
       es.onmessage = (evt) => {
@@ -252,7 +252,10 @@ export default function Checkout() {
           if (!payload?.status) return;
           const st = String(payload.status || "").toUpperCase();
           setStatus(st);
-          if (st === "PAID") handlePaid(inv.paymentHash);
+          if (st === "PAID" || (isOnchain && st === "CONFIRMED")) {
+            const paidRef = inv.paymentHash || inv.onchainId || inv.onchainSwapId || inv.swapId || inv.orderId || paymentId;
+            handlePaid(paidRef);
+          }
           if (st === "EXPIRED" || st === "FAILED") handleExpired(st);
         } catch {}
       };
@@ -262,10 +265,10 @@ export default function Checkout() {
         try {
           es.close();
         } catch {}
-        if (!resolvedRef.current) startPollingFallback();
+        if (!resolvedRef.current) startPollingFallback(true);
       };
     } catch {
-      startPollingFallback();
+      startPollingFallback(true);
     }
 
     return () => {
@@ -274,7 +277,7 @@ export default function Checkout() {
       } catch {}
       clearTimeout(fallbackTimer);
     };
-  }, [inv?.paymentHash, inv?.swapId, inv?.paymentMethod, clear, nav, handlePaid, handleExpired]);
+  }, [inv?.paymentHash, inv?.swapId, inv?.onchainId, inv?.onchainSwapId, inv?.orderId, inv?.paymentMethod, clear, nav, handlePaid, handleExpired]);
 
   if (items.length === 0 && !inv) {
     return (
@@ -489,7 +492,7 @@ export default function Checkout() {
             </button>
           </div>
           <div className="mt-2 text-xs text-white/60">
-            Lightning is instant. On-chain uses a Boltz swap: we detect mempool → confirmation → paid and mark your order automatically.
+            Lightning is instant. On-chain is monitored automatically: we detect mempool → confirmation → paid and mark your order automatically.
             {!onchainAllowed && paymentConfig?.onchainMinSats ? (
               <div className="text-amber-200 mt-1">
                 On-chain available from {formatSats(paymentConfig.onchainMinSats)} sats.
@@ -654,7 +657,7 @@ function OnchainModal({ onClose, status, live, onchainAddress, onchainAmountSats
   const statusUpper = String(status || "PENDING").toUpperCase();
   const statusLabel = (() => {
     switch (statusUpper) {
-      case "MEMPOOL": return "Seen in mempool";
+      case "MEMPOOL": return "Seen in mempool 🎉";
       case "CONFIRMED": return "Confirmed on-chain";
       case "PAID": return "Lightning invoice paid";
       case "FAILED": return "Failed";
@@ -751,31 +754,6 @@ function OnchainModal({ onClose, status, live, onchainAddress, onchainAmountSats
             Includes Boltz (submarine swap) fee: <span className="font-semibold text-white/80">{formatSats(feeSats)} sats</span>
           </div>
         )}
-        {isMempool && (
-          <div className="mt-3 text-xs text-white/70 flex items-center gap-2">
-            <span className="inline-flex gap-1">
-              <motion.span
-                className="inline-block h-2 w-2 rounded-full bg-white/80"
-                animate={reduce ? {} : { x: [0, 12, 0], opacity: [0.6, 1, 0.6] }}
-                transition={{ repeat: Infinity, duration: 1.2, ease: "easeInOut", delay: 0 }}
-              />
-              <motion.span
-                className="inline-block h-2 w-2 rounded-full bg-white/70"
-                animate={reduce ? {} : { x: [0, 12, 0], opacity: [0.6, 1, 0.6] }}
-                transition={{ repeat: Infinity, duration: 1.2, ease: "easeInOut", delay: 0.2 }}
-              />
-              <motion.span
-                className="inline-block h-2 w-2 rounded-full bg-white/60"
-                animate={reduce ? {} : { x: [0, 12, 0], opacity: [0.6, 1, 0.6] }}
-                transition={{ repeat: Infinity, duration: 1.2, ease: "easeInOut", delay: 0.4 }}
-              />
-            </span>
-            <span>
-              Hang in there—once this hits the first confirmation, we’ll settle the Lightning invoice automatically.
-            </span>
-          </div>
-        )}
-
         <div className="mt-4 grid place-items-center">
           {!isMempool ? (
             <>
@@ -811,7 +789,7 @@ function OnchainModal({ onClose, status, live, onchainAddress, onchainAmountSats
                   />
                 </div>
                 <div className="text-center text-white/80 text-xs px-3">
-                  Hang in there—waiting for the first confirmation to settle your Lightning payment.
+                  Hooray! We spotted your payment in mempool. Hang in there—once this hits the first confirmation, we’ll settle the payment automatically.
                 </div>
               </div>
             </div>

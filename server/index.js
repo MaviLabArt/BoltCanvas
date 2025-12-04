@@ -20,10 +20,12 @@ import {
   ensureBtcWalletId,
   createInvoiceSats,
   createOnchainSwapViaBoltz,
+  createOnchainPaymentForOrder,
   invoiceStatus,
   subscribeInvoiceStatus,
   subscribeBoltzSwapStatus,
   boltzSwapStatus,
+  getOnchainStatus,
   startPaymentWatcher,
   PAYMENT_PROVIDER,
   ONCHAIN_PROVIDER,
@@ -52,6 +54,8 @@ import { sendOrderStatusEmail, label as statusLabel } from "./email.js";
 import { verifySvixSignature } from "./svix.js";
 
 const app = express();
+// Disable ETag generation to avoid 304s on status endpoints (we rely on fresh payloads)
+app.set("etag", false);
 const TEST_MODE = process.env.NODE_ENV === "test";
 
 // Trust reverse proxy (needed for secure cookies over HTTPS/CDN/reverse-proxy)
@@ -1732,6 +1736,9 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
       if (paymentMethod === "onchain" && ONCHAIN_PROVIDER === "btcpay") {
         return { storeId: BTCPAY_STORE_ID || undefined };
       }
+      if (paymentMethod === "onchain" && ONCHAIN_PROVIDER === "xpub") {
+        return null;
+      }
       return ensureBtcWalletId(
         PAYMENT_PROVIDER === "blink"
           ? {
@@ -1762,97 +1769,12 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
     const memo = `Order ${storeName || "Lightning Shop"} ${firstTitle}`.trim();
     const orderRef = memo;
 
-    let inv;
-    if (paymentMethod === "onchain") {
-      inv = await createOnchainSwapViaBoltz(
-        PAYMENT_PROVIDER === "blink"
-          ? {
-              url: BLINK_GRAPHQL_URL,
-              apiKey: BLINK_API_KEY,
-              walletId,
-              amount: total,
-              memo,
-              webhookUrl: BOLTZ_WEBHOOK_URL || undefined,
-              expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
-            }
-          : PAYMENT_PROVIDER === "lnurl"
-            ? {
-                amount: total,
-                memo,
-                webhookUrl: BOLTZ_WEBHOOK_URL || undefined,
-                expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
-              }
-          : PAYMENT_PROVIDER === "nwc"
-            ? {
-                url: NWC_URL,
-                relayUrls: NWC_RELAYS,
-                amount: total,
-                memo,
-                webhookUrl: BOLTZ_WEBHOOK_URL || undefined,
-                expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
-              }
-          : PAYMENT_PROVIDER === "btcpay"
-            ? {
-                url: BTCPAY_URL,
-                apiKey: BTCPAY_API_KEY,
-                walletId,
-                amount: total,
-                memo,
-                orderRef,
-                expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
-              }
-          : {
-              amount: total,
-              memo,
-              webhookUrl: BOLTZ_WEBHOOK_URL || undefined,
-              expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
-            }
-      );
-    } else {
-      // Lightning-only (existing flow)
-      inv = await createInvoiceSats(
-        PAYMENT_PROVIDER === "blink"
-          ? {
-              url: BLINK_GRAPHQL_URL,
-              apiKey: BLINK_API_KEY,
-              walletId,
-              amount: total,
-              memo
-            }
-          : PAYMENT_PROVIDER === "lnurl"
-            ? {
-                amount: total,
-                memo
-              }
-          : PAYMENT_PROVIDER === "nwc"
-            ? {
-                url: NWC_URL,
-                relayUrls: NWC_RELAYS,
-                amount: total,
-                memo
-              }
-          : PAYMENT_PROVIDER === "btcpay"
-            ? {
-                url: BTCPAY_URL,
-                apiKey: BTCPAY_API_KEY,
-                walletId,
-                amount: total,
-                memo,
-                orderRef
-              }
-          : {
-              amount: total,
-              memo
-            }
-      );
-    }
-
     // If signed-in with Nostr, bind orders to nostr:<hex> so they persist across devices
     const clientId =
       (req.session?.nostrPubkey ? `nostr:${req.session.nostrPubkey}` : "") ||
       (req.session?.cid || "");
 
-    const created = Orders.create({
+    const baseOrderPayload = {
       clientId,
       items: loaded,
       subtotalSats: subtotal,
@@ -1869,39 +1791,191 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
       contactTelegram: sanitizedCustomer.contactTelegram,
       contactNostr: sanitizedCustomer.contactNostr,
       contactPhone: sanitizedCustomer.contactPhone,
-      paymentHash: inv.paymentHash,
-      paymentRequest: inv.paymentRequest,
       paymentMethod,
-      boltzSwapId: inv.boltzSwapId || inv.swapId || "",
-      boltzAddress: inv.onchainAddress || "",
-      boltzExpectedAmountSats: inv.onchainAmountSats || 0,
-      boltzTimeoutBlockHeight: inv.timeoutBlockHeight || 0,
-      boltzRefundPrivKey: "",
-      boltzRefundPubKey: inv.boltzRefundPubKey || "",
-      boltzRedeemScript: "",
-      boltzRescueIndex: inv.boltzRescueIndex ?? inv.rescueIndex ?? null,
-      boltzSwapTree: "",
-      boltzStatus: inv.boltzStatus || "",
-      lnurlVerifyUrl: inv.verifyUrl || "",
-      lnurlExpiresAt: inv.expiresAt || 0,
-      // persist customer notes
+      lnurlVerifyUrl: "",
+      lnurlExpiresAt: 0,
       notes: sanitizedCustomer.notes || ""
-    });
+    };
+
+    let inv;
+    let created;
+
+    if (paymentMethod === "onchain" && ONCHAIN_PROVIDER !== "boltz") {
+      const pre = Orders.create({
+        ...baseOrderPayload,
+        paymentHash: null,
+        paymentRequest: null,
+        onchainProvider: ONCHAIN_PROVIDER,
+        onchainAmountSats: total,
+        onchainId: "",
+        onchainStatus: "UNPAID"
+      });
+      try {
+        inv = await createOnchainPaymentForOrder({
+          order: pre,
+          amountSats: total,
+          memo,
+          expiresIn: ONCHAIN_INVOICE_EXPIRES_IN,
+          url: ONCHAIN_PROVIDER === "btcpay" ? BTCPAY_URL : undefined,
+          apiKey: ONCHAIN_PROVIDER === "btcpay" ? BTCPAY_API_KEY : undefined,
+          walletId
+        });
+        const attachPayload = {
+          provider: ONCHAIN_PROVIDER,
+          onchainId: inv.onchainId || pre.id,
+          address: inv.onchainAddress || "",
+          amountSats: inv.onchainAmountSats ?? total,
+          bip21: inv.onchainBip21 || inv.bip21 || "",
+          onchainStatus: "UNPAID",
+          onchainExpiresAt: inv.onchainExpiresAt || ""
+        };
+        if (inv.xpubIndex !== undefined) {
+          attachPayload.xpubIndex = inv.xpubIndex;
+        }
+        Orders.attachOnchainPayment(pre.id, attachPayload);
+        if (inv?.paymentHash || inv?.paymentRequest) {
+          Orders.setPaymentInfo(pre.id, {
+            paymentHash: inv.paymentHash,
+            paymentRequest: inv.paymentRequest
+          });
+        }
+        created = Orders.get(pre.id);
+      } catch (e) {
+        Orders.remove(pre.id);
+        throw e;
+      }
+    } else {
+      if (paymentMethod === "onchain") {
+        inv = await createOnchainSwapViaBoltz(
+          PAYMENT_PROVIDER === "blink"
+            ? {
+                url: BLINK_GRAPHQL_URL,
+                apiKey: BLINK_API_KEY,
+                walletId,
+                amount: total,
+                memo,
+                webhookUrl: BOLTZ_WEBHOOK_URL || undefined,
+                expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
+              }
+            : PAYMENT_PROVIDER === "lnurl"
+              ? {
+                  amount: total,
+                  memo,
+                  webhookUrl: BOLTZ_WEBHOOK_URL || undefined,
+                  expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
+                }
+            : PAYMENT_PROVIDER === "nwc"
+              ? {
+                  url: NWC_URL,
+                  relayUrls: NWC_RELAYS,
+                  amount: total,
+                  memo,
+                  webhookUrl: BOLTZ_WEBHOOK_URL || undefined,
+                  expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
+                }
+            : PAYMENT_PROVIDER === "btcpay"
+              ? {
+                  url: BTCPAY_URL,
+                  apiKey: BTCPAY_API_KEY,
+                  walletId,
+                  amount: total,
+                  memo,
+                  orderRef,
+                  expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
+                }
+              : {
+                  amount: total,
+                  memo,
+                  webhookUrl: BOLTZ_WEBHOOK_URL || undefined,
+                  expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
+                }
+        );
+      } else {
+        // Lightning-only (existing flow)
+        inv = await createInvoiceSats(
+          PAYMENT_PROVIDER === "blink"
+            ? {
+                url: BLINK_GRAPHQL_URL,
+                apiKey: BLINK_API_KEY,
+                walletId,
+                amount: total,
+                memo
+              }
+            : PAYMENT_PROVIDER === "lnurl"
+              ? {
+                  amount: total,
+                  memo
+                }
+            : PAYMENT_PROVIDER === "nwc"
+              ? {
+                  url: NWC_URL,
+                  relayUrls: NWC_RELAYS,
+                  amount: total,
+                  memo
+                }
+            : PAYMENT_PROVIDER === "btcpay"
+              ? {
+                  url: BTCPAY_URL,
+                  apiKey: BTCPAY_API_KEY,
+                  walletId,
+                  amount: total,
+                  memo,
+                  orderRef
+                }
+              : {
+                  amount: total,
+                  memo
+                }
+        );
+      }
+
+      created = Orders.create({
+        ...baseOrderPayload,
+        paymentHash: inv.paymentHash,
+        paymentRequest: inv.paymentRequest,
+        boltzSwapId: inv.boltzSwapId || inv.swapId || "",
+        boltzAddress: inv.onchainAddress || "",
+        boltzExpectedAmountSats: inv.onchainAmountSats || 0,
+        boltzTimeoutBlockHeight: inv.timeoutBlockHeight || 0,
+        boltzRefundPrivKey: "",
+        boltzRefundPubKey: inv.boltzRefundPubKey || "",
+        boltzRedeemScript: "",
+        boltzRescueIndex: inv.boltzRescueIndex ?? inv.rescueIndex ?? null,
+        boltzSwapTree: "",
+        boltzStatus: inv.boltzStatus || "",
+        lnurlVerifyUrl: inv.verifyUrl || "",
+        lnurlExpiresAt: inv.expiresAt || 0,
+        onchainId: paymentMethod === "onchain" && ONCHAIN_PROVIDER !== "boltz" ? (inv.onchainId || inv.onchainSwapId || "") : "",
+        onchainSwapId: paymentMethod === "onchain" && ONCHAIN_PROVIDER === "boltz" ? (inv.boltzSwapId || inv.swapId || "") : "",
+        onchainProvider: paymentMethod === "onchain" ? ONCHAIN_PROVIDER : "",
+        onchainAddress: inv.onchainAddress || "",
+        onchainAmountSats: inv.onchainAmountSats || 0,
+        onchainBip21: inv.onchainBip21 || inv.bip21 || "",
+        onchainStatus: paymentMethod === "onchain" ? "UNPAID" : "",
+        onchainExpiresAt: inv.onchainExpiresAt || ""
+      });
+    }
+
+    const onchainIdOut = inv?.onchainId || inv?.onchainSwapId || created.onchainId || created.onchainSwapId || created.id;
+    const swapIdOut = (paymentMethod === "onchain" && ONCHAIN_PROVIDER === "boltz")
+      ? (inv?.boltzSwapId || inv?.swapId || created.onchainSwapId || "")
+      : "";
 
     res.json({
       orderId: created.id,
       paymentMethod,
-      paymentRequest: inv.paymentRequest,
-      paymentHash: inv.paymentHash,
-      satoshis: inv.satoshis,
+      paymentRequest: inv?.paymentRequest || "",
+      paymentHash: inv?.paymentHash || created.paymentHash || "",
+      satoshis: inv?.satoshis ?? created.totalSats ?? total,
       totalSats: total,
-      swapId: inv.boltzSwapId || inv.swapId || "",
-      onchainAddress: inv.onchainAddress || "",
-      onchainAmountSats: inv.onchainAmountSats || 0,
-      onchainBip21: inv.bip21 || "",
-      onchainTimeoutBlockHeight: inv.timeoutBlockHeight || 0,
-      checkoutLink: inv.checkoutLink || "",
-      invoiceId: inv.invoiceId || ""
+      swapId: swapIdOut,
+      onchainId: onchainIdOut,
+      onchainAddress: inv?.onchainAddress || created.onchainAddress || "",
+      onchainAmountSats: inv?.onchainAmountSats ?? created.onchainAmountSats ?? 0,
+      onchainBip21: inv?.onchainBip21 || inv?.bip21 || created.onchainBip21 || "",
+      onchainTimeoutBlockHeight: inv?.timeoutBlockHeight || created.boltzTimeoutBlockHeight || 0,
+      checkoutLink: inv?.checkoutLink || "",
+      invoiceId: inv?.invoiceId || ""
     });
   } catch (e) {
     console.error("create-invoice error:", e?.message || e);
@@ -2032,10 +2106,31 @@ async function handleBoltzStatusSideEffects({ swapId, mappedStatus, rawStatus })
   return orderBefore;
 }
 
+// Resolve a payment identifier into type + normalized ids
+function resolvePaymentById(id) {
+  if (!id) return null;
+  const bySwap = Orders.bySwapId(id);
+  if (bySwap) {
+    const isBoltz = String(bySwap.onchainProvider || "").toLowerCase() === "boltz" || !!bySwap.boltzSwapId;
+    const swapId = isBoltz ? (bySwap.boltzSwapId || bySwap.onchainSwapId || id) : (bySwap.onchainId || bySwap.onchainSwapId || id);
+    return { type: "onchain", swapId, order: bySwap };
+  }
+  const byHash = Orders.byPaymentHash(id);
+  if (byHash) return { type: "lightning", hash: byHash.paymentHash || id, order: byHash };
+  const byId = Orders.get(id);
+  if (!byId) return null;
+  if (String(byId.paymentMethod || "").toLowerCase() === "onchain") {
+    const isBoltz = String(byId.onchainProvider || "").toLowerCase() === "boltz" || !!byId.boltzSwapId;
+    const swapId = isBoltz ? (byId.boltzSwapId || byId.onchainSwapId || byId.id) : (byId.onchainId || byId.onchainSwapId || byId.id);
+    return { type: "onchain", swapId, order: byId };
+  }
+  return { type: "lightning", hash: byId.paymentHash || id, order: byId };
+}
+
 // ---------------------------------------------------------------------
 // Invoice status (polling fallback) - cancels order on EXPIRED
 // ---------------------------------------------------------------------
-app.get("/api/invoices/:hash/status", async (req, res) => {
+async function handleInvoiceStatus(req, res) {
   try {
     const orderForHash = Orders.byPaymentHash(req.params.hash);
     const args =
@@ -2078,91 +2173,103 @@ app.get("/api/invoices/:hash/status", async (req, res) => {
   } catch (e) {
     res.status(400).json({ error: String(e.message || e) });
   }
-});
+}
+app.get("/api/invoices/:hash/status", handleInvoiceStatus);
 
 // ---------------------------------------------------------------------
 // On-chain (Boltz) swap status (polling)
 // ---------------------------------------------------------------------
-app.get("/api/onchain/:swapId/status", async (req, res) => {
+async function handleOnchainStatus(req, res) {
   try {
     const swapId = req.params.swapId;
-    const order = Orders.bySwapId(swapId);
+    const order = Orders.bySwapId(swapId) || Orders.get(swapId);
     if (!order) return res.status(404).json({ error: "Not found" });
+
+    // Avoid client caching (304) so status updates propagate
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Surrogate-Control", "no-store");
+
+    const orderProvider = String(
+      order.onchainProvider || (order.boltzSwapId ? "boltz" : ONCHAIN_PROVIDER) || ""
+    ).toLowerCase();
 
     // If order already marked paid, short-circuit
     if (String(order.status || "").toUpperCase() === "PAID") {
       return res.json({
         status: "PAID",
-        rawStatus: order.boltzStatus || "invoice.paid",
-        onchainAddress: order.boltzAddress || "",
-        onchainAmountSats: order.boltzExpectedAmountSats || 0,
-        timeoutBlockHeight: order.boltzTimeoutBlockHeight || 0
+        rawStatus: order.onchainStatus || order.boltzStatus || "invoice.paid",
+        onchainAddress: order.onchainAddress || "",
+        onchainAmountSats: order.onchainAmountSats || 0,
+        timeoutBlockHeight: order.boltzTimeoutBlockHeight || 0,
+        onchainTxid: order.onchainTxid || ""
       });
     }
 
-    if (PAYMENT_PROVIDER === "btcpay") {
-      const inv = await btcpay.getInvoice({
-        url: BTCPAY_URL,
-        apiKey: BTCPAY_API_KEY,
-        storeId: BTCPAY_STORE_ID,
-        invoiceId: swapId
-      });
-      const raw = String(inv?.status || "");
-      const mapped = (() => {
-        const st = raw.toLowerCase();
-        if (st === "settled") return "CONFIRMED";
-        if (st === "processing") return "MEMPOOL";
-        if (st === "expired" || st === "invalid") return "EXPIRED";
-        return "PENDING";
-      })();
+    const statusPayload = await getOnchainStatus(order, {
+      btcpayConfig: { url: BTCPAY_URL, apiKey: BTCPAY_API_KEY, storeId: BTCPAY_STORE_ID }
+    });
+    const mappedStatus = statusPayload?.status || "PENDING";
+    const rawStatus = statusPayload?.rawStatus || mappedStatus;
+    const onchainAddress = statusPayload?.onchainAddress || order.onchainAddress || order.boltzAddress || "";
+    const onchainAmountSats = statusPayload?.onchainAmountSats ?? order.onchainAmountSats ?? order.boltzExpectedAmountSats ?? 0;
+    const timeoutBlockHeight = statusPayload?.timeoutBlockHeight || order.boltzTimeoutBlockHeight || 0;
+    const onchainTxid = statusPayload?.onchainTxid || order.onchainTxid || "";
 
-      if (mapped === "CONFIRMED") {
-        const updated = Orders.markPaidByHash(order.paymentHash);
-        if (updated?.__justPaid && updated?.items?.length) {
-          for (const it of updated.items) Products.consumeStock(it.productId, it.qty || 1);
-        }
-        notifyPaidOnce(updated);
-        try { await dmOrderUpdate(updated, "PAID"); } catch {}
-        try { await sendOrderStatusEmail(updated, "PAID"); } catch {}
-      } else if (mapped === "EXPIRED" && order.status === "PENDING") {
+    if (orderProvider === "boltz") {
+      await handleBoltzStatusSideEffects({ swapId, mappedStatus, rawStatus });
+    } else if (mappedStatus === "CONFIRMED") {
+      const updated =
+        Orders.markPaidBySwapId(swapId) ||
+        Orders.markPaidByHash(order.paymentHash || order.id);
+      if (updated?.__justPaid && updated?.items?.length) {
+        for (const it of updated.items) Products.consumeStock(it.productId, it.qty || 1);
+      }
+      notifyPaidOnce(updated);
+      try { await dmOrderUpdate(updated, "PAID"); } catch {}
+      try { await sendOrderStatusEmail(updated, "PAID"); } catch {}
+    } else if (mappedStatus === "EXPIRED") {
+      if (order.status === "PENDING") {
         Orders.remove(order.id);
       }
-
-      return res.json({
-        status: mapped,
-        rawStatus: raw,
-        onchainAddress: order.boltzAddress || "",
-        onchainAmountSats: order.boltzExpectedAmountSats || 0,
-        timeoutBlockHeight: order.boltzTimeoutBlockHeight || 0
-      });
+    } else if (mappedStatus === "FAILED") {
+      Orders.setStatus(order.id, "FAILED");
     }
-
-    const { swap, mappedStatus, onchainAddress, onchainAmountSats, timeoutBlockHeight } =
-      await boltzSwapStatus({ swapId });
-
-    await handleBoltzStatusSideEffects({
-      swapId,
-      mappedStatus,
-      rawStatus: swap?.status || ""
-    });
 
     res.json({
       status: mappedStatus,
-      rawStatus: swap?.status || "",
-      onchainAddress: onchainAddress || order.boltzAddress || "",
-      onchainAmountSats: onchainAmountSats || order.boltzExpectedAmountSats || 0,
-      timeoutBlockHeight: timeoutBlockHeight || order.boltzTimeoutBlockHeight || 0
+      rawStatus,
+      onchainAddress,
+      onchainAmountSats,
+      timeoutBlockHeight,
+      onchainTxid
     });
   } catch (e) {
     res.status(400).json({ error: String(e.message || e) });
   }
+}
+app.get("/api/onchain/:swapId/status", handleOnchainStatus);
+
+// ---------------------------------------------------------------------
+// Unified payment status (lightning or on-chain)
+// ---------------------------------------------------------------------
+app.get("/api/payments/:id/status", async (req, res) => {
+  const resolved = resolvePaymentById(req.params.id);
+  if (!resolved) return res.status(404).json({ error: "Not found" });
+  if (resolved.type === "onchain") {
+    req.params.swapId = resolved.swapId;
+    return handleOnchainStatus(req, res);
+  }
+  req.params.hash = resolved.hash;
+  return handleInvoiceStatus(req, res);
 });
 
 // ---------------------------------------------------------------------
 /* Provider-agnostic WS → SSE bridge for live status in-browser
    Also cancels order on EXPIRED even if UI is open.                  */
 // ---------------------------------------------------------------------
-app.get("/api/invoices/:hash/stream", async (req, res) => {
+async function handleInvoiceStream(req, res) {
   const paymentHash = req.params.hash;
   const orderForHash = Orders.byPaymentHash(paymentHash);
 
@@ -2216,15 +2323,19 @@ app.get("/api/invoices/:hash/stream", async (req, res) => {
   });
 
   req.on("close", () => closeAll());
-});
+}
+app.get("/api/invoices/:hash/stream", handleInvoiceStream);
 
 // ---------------------------------------------------------------------
 // On-chain (Boltz) SSE bridge
 // ---------------------------------------------------------------------
-app.get("/api/onchain/:swapId/stream", async (req, res) => {
+async function handleOnchainStream(req, res) {
   const swapId = req.params.swapId;
-  const order = Orders.bySwapId(swapId);
+  const order = Orders.bySwapId(swapId) || Orders.get(swapId);
   if (!order) return res.status(404).json({ error: "Not found" });
+  const orderProvider = String(
+    order.onchainProvider || (order.boltzSwapId ? "boltz" : ONCHAIN_PROVIDER) || ""
+  ).toLowerCase();
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
@@ -2234,9 +2345,11 @@ app.get("/api/onchain/:swapId/stream", async (req, res) => {
   const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
   const ping = () => res.write(`: ping\n\n`);
   const hb = setInterval(ping, 20000);
+  const pollMs = Number(process.env.ONCHAIN_MEMPOOL_POLL_MS || (orderProvider === "btcpay" ? 5000 : 15000));
 
   let closed = false;
   let unsub = null;
+  let currentStatus = String(order.onchainStatus || "UNPAID").toUpperCase();
   const closeAll = () => {
     if (closed) return;
     closed = true;
@@ -2248,53 +2361,75 @@ app.get("/api/onchain/:swapId/stream", async (req, res) => {
     try { res.end(); } catch {}
   };
 
-  const emitAndHandle = async ({ mappedStatus, rawStatus, swapPayload }) => {
-    const freshOrder = Orders.bySwapId(swapId) || order;
+  const finalizePaid = async (payload, rawStatus) => {
+    const updated =
+      Orders.markPaidBySwapId(swapId) ||
+      Orders.markPaidByHash(order.paymentHash || order.id);
+    if (updated?.__justPaid && updated?.items?.length) {
+      for (const it of updated.items) Products.consumeStock(it.productId, it.qty || 1);
+    }
+    notifyPaidOnce(updated);
+    try { await dmOrderUpdate(updated, "PAID"); } catch {}
+    try { await sendOrderStatusEmail(updated, "PAID"); } catch {}
+    send({ ...payload, status: "PAID", rawStatus: rawStatus || payload.rawStatus || "invoice.paid" });
+    closeAll();
+  };
+
+  const handleStatus = async (statusPayload) => {
+    if (!statusPayload || closed) return;
+    const mappedStatus = (statusPayload.status || "PENDING").toUpperCase();
+    const rawStatus = statusPayload.rawStatus || mappedStatus;
+    if (mappedStatus === currentStatus && mappedStatus !== "CONFIRMED" && mappedStatus !== "PAID") {
+      return;
+    }
+    currentStatus = mappedStatus;
     const payload = {
       status: mappedStatus,
       rawStatus,
-      onchainAddress: swapPayload?.onchainAddress || freshOrder.boltzAddress || "",
-      onchainAmountSats: swapPayload?.onchainAmountSats ?? freshOrder.boltzExpectedAmountSats,
-      timeoutBlockHeight: swapPayload?.timeoutBlockHeight ?? freshOrder.boltzTimeoutBlockHeight
+      onchainAddress: statusPayload.onchainAddress || order.onchainAddress || order.boltzAddress || "",
+      onchainAmountSats: statusPayload.onchainAmountSats ?? order.onchainAmountSats ?? order.boltzExpectedAmountSats ?? 0,
+      timeoutBlockHeight: statusPayload.timeoutBlockHeight || order.boltzTimeoutBlockHeight || 0
     };
     send(payload);
-    if (ONCHAIN_PROVIDER === "boltz") {
-      await handleBoltzStatusSideEffects({ swapId, mappedStatus, rawStatus });
-    } else {
-      if (mappedStatus === "CONFIRMED") {
-        const updated = Orders.markPaidByHash(freshOrder.paymentHash);
-        if (updated?.__justPaid && updated?.items?.length) {
-          for (const it of updated.items) Products.consumeStock(it.productId, it.qty || 1);
-        }
-        notifyPaidOnce(updated);
-        try { await dmOrderUpdate(updated, "PAID"); } catch {}
-        try { await sendOrderStatusEmail(updated, "PAID"); } catch {}
-      }
-      if (mappedStatus === "EXPIRED") {
-        const pending = Orders.bySwapId(swapId);
-        if (pending && pending.status === "PENDING") {
-          Orders.remove(pending.id);
-        }
-      }
-    }
 
-    const latest = Orders.bySwapId(swapId) || freshOrder;
-    const alreadyPaid = String(latest.status || "").toUpperCase() === "PAID";
-    if (PAYMENT_PROVIDER === "btcpay") {
-      if (mappedStatus === "CONFIRMED" || mappedStatus === "EXPIRED" || alreadyPaid) {
-        if (alreadyPaid && mappedStatus !== "CONFIRMED") {
-          send({ ...payload, status: "CONFIRMED", rawStatus: rawStatus || "invoice.paid" });
-        }
-        closeAll();
-      }
-    } else {
+    if (orderProvider === "boltz") {
+      await handleBoltzStatusSideEffects({ swapId, mappedStatus, rawStatus });
+      const latest = Orders.bySwapId(swapId) || order;
+      const alreadyPaid = String(latest.status || "").toUpperCase() === "PAID";
       if (BOLTZ_FINAL_STATUSES.has(mappedStatus) || alreadyPaid) {
-        // Ensure final PAID is sent before closing
         if (alreadyPaid && mappedStatus !== "PAID") {
           send({ ...payload, status: "PAID", rawStatus: rawStatus || "invoice.paid" });
         }
         closeAll();
       }
+      return;
+    }
+
+    if (mappedStatus === "CONFIRMED") {
+      await finalizePaid(payload, rawStatus);
+      return;
+    }
+    if (mappedStatus === "EXPIRED") {
+      const pending = Orders.bySwapId(swapId);
+      if (pending && pending.status === "PENDING") {
+        Orders.remove(pending.id);
+      }
+      closeAll();
+      return;
+    }
+    if (mappedStatus === "FAILED") {
+      Orders.setStatus(order.id, "FAILED");
+      closeAll();
+      return;
+    }
+
+    const latest = Orders.bySwapId(swapId) || order;
+    const alreadyPaid = String(latest.status || "").toUpperCase() === "PAID";
+    if (alreadyPaid) {
+      if (mappedStatus !== "PAID") {
+        send({ ...payload, status: "PAID", rawStatus: rawStatus || "invoice.paid" });
+      }
+      closeAll();
     }
   };
 
@@ -2303,114 +2438,77 @@ app.get("/api/onchain/:swapId/stream", async (req, res) => {
     if (String(initialOrder?.status || "").toUpperCase() === "PAID") {
       send({
         status: "PAID",
-        rawStatus: initialOrder?.boltzStatus || "invoice.paid",
-        onchainAddress: initialOrder?.boltzAddress || "",
-        onchainAmountSats: initialOrder?.boltzExpectedAmountSats || 0,
+        rawStatus: initialOrder?.onchainStatus || initialOrder?.boltzStatus || "invoice.paid",
+        onchainAddress: initialOrder?.onchainAddress || initialOrder?.boltzAddress || "",
+        onchainAmountSats: initialOrder?.onchainAmountSats || initialOrder?.boltzExpectedAmountSats || 0,
         timeoutBlockHeight: initialOrder?.boltzTimeoutBlockHeight || 0
       });
       return closeAll();
     }
 
-    if (PAYMENT_PROVIDER === "btcpay") {
-      const inv = await btcpay.getInvoice({
-        url: BTCPAY_URL,
-        apiKey: BTCPAY_API_KEY,
-        storeId: BTCPAY_STORE_ID,
-        invoiceId: swapId
-      });
-      const raw = String(inv?.status || "");
-      const mapped = (() => {
-        const st = raw.toLowerCase();
-        if (st === "settled") return "CONFIRMED";
-        if (st === "processing") return "MEMPOOL";
-        if (st === "expired" || st === "invalid") return "EXPIRED";
-        return "PENDING";
-      })();
-      await emitAndHandle({
-        mappedStatus: mapped,
-        rawStatus: raw,
-        swapPayload: {
-          onchainAddress: order.boltzAddress,
-          onchainAmountSats: order.boltzExpectedAmountSats,
-          timeoutBlockHeight: order.boltzTimeoutBlockHeight
-        }
-      });
-      if (mapped === "CONFIRMED" || mapped === "EXPIRED") return;
-    } else {
-      const prime = await boltzSwapStatus({ swapId });
-      await emitAndHandle({
-        mappedStatus: prime.mappedStatus,
-        rawStatus: prime.swap?.status || "",
-        swapPayload: {
-          onchainAddress: prime.onchainAddress,
-          onchainAmountSats: prime.onchainAmountSats,
-          timeoutBlockHeight: prime.timeoutBlockHeight
-        }
-      });
-      if (BOLTZ_FINAL_STATUSES.has(prime.mappedStatus)) return;
+    const prime = await getOnchainStatus(order, {
+      btcpayConfig: { url: BTCPAY_URL, apiKey: BTCPAY_API_KEY, storeId: BTCPAY_STORE_ID }
+    });
+    if (prime) {
+      await handleStatus(prime);
+      if (closed) return;
     }
   } catch {
     // ignore prime failure; SSE will still start
   }
 
-  if (PAYMENT_PROVIDER === "btcpay") {
-    // simple polling fallback for BTCPay on-chain status
-    unsub = setInterval(async () => {
-      try {
-        const inv = await btcpay.getInvoice({
-          url: BTCPAY_URL,
-          apiKey: BTCPAY_API_KEY,
-          storeId: BTCPAY_STORE_ID,
-          invoiceId: swapId
-        });
-        const raw = String(inv?.status || "");
-        const mapped = (() => {
-          const st = raw.toLowerCase();
-          if (st === "settled") return "CONFIRMED";
-          if (st === "processing") return "MEMPOOL";
-          if (st === "expired" || st === "invalid") return "EXPIRED";
-          return "PENDING";
-        })();
-        await emitAndHandle({
-          mappedStatus: mapped,
-          rawStatus: raw,
-          swapPayload: {
-            onchainAddress: order.boltzAddress,
-            onchainAmountSats: order.boltzExpectedAmountSats,
-            timeoutBlockHeight: order.boltzTimeoutBlockHeight
-          }
-        });
-      } catch {
-        // ignore and continue
-      }
-    }, 5000);
-  } else {
+  if (orderProvider === "boltz") {
     unsub = subscribeBoltzSwapStatus({
       swapId,
       onUpdate: async ({ swap, rawStatus, mappedStatus }) => {
-        const { onchainAddress, onchainAmountSats, timeoutBlockHeight } = (() => {
-          const addr = swap?.lockupAddress || swap?.address || order.boltzAddress || "";
-          const amt = Math.max(
-            0,
-            Math.floor(Number((swap?.expectedAmount ?? swap?.expected ?? order.boltzExpectedAmountSats ?? 0)))
-          );
-          const timeout = Math.max(
-            0,
-            Math.floor(Number((swap?.timeoutBlockHeight ?? swap?.lockupTimeoutBlock ?? order.boltzTimeoutBlockHeight ?? 0)))
-          );
-          return { onchainAddress: addr, onchainAmountSats: amt, timeoutBlockHeight: timeout };
-        })();
-
-        await emitAndHandle({
-          mappedStatus,
+        const addr = swap?.lockupAddress || swap?.address || order.onchainAddress || order.boltzAddress || "";
+        const amt = Math.max(
+          0,
+          Math.floor(Number((swap?.expectedAmount ?? swap?.expected ?? order.onchainAmountSats ?? order.boltzExpectedAmountSats ?? 0)))
+        );
+        const timeout = Math.max(
+          0,
+          Math.floor(Number((swap?.timeoutBlockHeight ?? swap?.lockupTimeoutBlock ?? order.boltzTimeoutBlockHeight ?? 0)))
+        );
+        await handleStatus({
+          status: mappedStatus,
           rawStatus,
-          swapPayload: { onchainAddress, onchainAmountSats, timeoutBlockHeight }
+          onchainAddress: addr,
+          onchainAmountSats: amt,
+          timeoutBlockHeight: timeout
         });
       }
     });
+  } else {
+    unsub = setInterval(async () => {
+      try {
+        const latestOrder = Orders.bySwapId(swapId) || order;
+        const statusPayload = await getOnchainStatus(latestOrder, {
+          btcpayConfig: { url: BTCPAY_URL, apiKey: BTCPAY_API_KEY, storeId: BTCPAY_STORE_ID }
+        });
+        await handleStatus(statusPayload);
+      } catch {
+        // ignore and continue
+      }
+    }, pollMs);
   }
 
   req.on("close", () => closeAll());
+}
+app.get("/api/onchain/:swapId/stream", handleOnchainStream);
+
+// ---------------------------------------------------------------------
+// Unified payment stream (lightning or on-chain)
+// ---------------------------------------------------------------------
+app.get("/api/payments/:id/stream", async (req, res) => {
+  const resolved = resolvePaymentById(req.params.id);
+  if (!resolved) return res.status(404).json({ error: "Not found" });
+  if (resolved.type === "onchain") {
+    req.params.swapId = resolved.swapId;
+    return handleOnchainStream(req, res);
+  }
+  req.params.hash = resolved.hash;
+  return handleInvoiceStream(req, res);
 });
 
 // ---------------------------------------------------------------------
@@ -2740,23 +2838,60 @@ if (!TEST_MODE) (function startPendingInvoiceSweeper() {
   async function sweepPendingInvoices() {
     try {
       const all = Orders.all();
-      const pending = Array.isArray(all) ? all.filter(o => o.status === "PENDING" && o.paymentHash) : [];
+      const pending = Array.isArray(all) ? all.filter(o => o.status === "PENDING") : [];
       for (const o of pending) {
         try {
-          if (o.paymentMethod === "onchain" && o.boltzSwapId) {
+          if (o.paymentMethod === "onchain") {
+            const provider = String(
+              o.onchainProvider || (o.boltzSwapId ? "boltz" : ONCHAIN_PROVIDER) || ""
+            ).toLowerCase();
             try {
-              const { swap, mappedStatus } = await boltzSwapStatus({ swapId: o.boltzSwapId });
-              await handleBoltzStatusSideEffects({
-                swapId: o.boltzSwapId,
-                mappedStatus,
-                rawStatus: swap?.status || ""
+              const statusPayload = await getOnchainStatus(o, {
+                btcpayConfig: { url: BTCPAY_URL, apiKey: BTCPAY_API_KEY, storeId: BTCPAY_STORE_ID }
               });
-              if (BOLTZ_FINAL_STATUSES.has(mappedStatus)) {
-                continue;
+              const mappedStatus = statusPayload?.status || "PENDING";
+              const rawStatus = statusPayload?.rawStatus || mappedStatus;
+              if (provider === "boltz") {
+                await handleBoltzStatusSideEffects({
+                  swapId: o.boltzSwapId || o.onchainSwapId,
+                  mappedStatus,
+                  rawStatus
+                });
+                if (BOLTZ_FINAL_STATUSES.has(mappedStatus)) {
+                  continue;
+                }
+              } else {
+                if (mappedStatus === "CONFIRMED") {
+                  const updated =
+                    Orders.markPaidBySwapId(o.onchainId || o.onchainSwapId || o.boltzSwapId) ||
+                    Orders.markPaidByHash(o.paymentHash || o.id);
+                  if (updated?.__justPaid && updated?.items?.length) {
+                    for (const it of updated.items) Products.consumeStock(it.productId, it.qty || 1);
+                  }
+                  notifyPaidOnce(updated);
+                  try { await dmOrderUpdate(updated, "PAID"); } catch {}
+                  try { await sendOrderStatusEmail(updated, "PAID"); } catch {}
+                  continue;
+                }
+                if (mappedStatus === "EXPIRED") {
+                  if (o.status === "PENDING") Orders.remove(o.id);
+                  continue;
+                }
+                if (mappedStatus === "FAILED") {
+                  Orders.setStatus(o.id, "FAILED");
+                  continue;
+                }
               }
             } catch {
               // swallow and fall back to invoice polling
             }
+          }
+
+          if (o.paymentMethod === "onchain") {
+            continue;
+          }
+          if (!o.paymentHash) {
+            continue;
           }
 
           const args =

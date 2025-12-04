@@ -37,21 +37,26 @@ export default function Paid() {
   const isPrep = statusUpper === "PREPARATION" || isShipped;
   const isPaid = statusUpper === "PAID" || isPrep || paymentInFlight;
   const invoiceSats = Math.max(0, Number(order?.totalSats || 0));
-  const onchainAmountSats = Math.max(0, Number(order?.boltzExpectedAmountSats || invoiceSats));
+  const onchainAmountSats = Math.max(
+    0,
+    Number(order?.onchainAmountSats || order?.boltzExpectedAmountSats || invoiceSats)
+  );
   const lightningUri = useMemo(
     () => (order?.paymentRequest ? `lightning:${order.paymentRequest}` : ""),
     [order?.paymentRequest]
   );
   const bip21 = useMemo(() => {
-    if (!order?.boltzAddress) return "";
+    if (order?.onchainBip21) return order.onchainBip21;
+    const addr = order?.onchainAddress || order?.boltzAddress;
+    if (!addr) return "";
     const btc = onchainAmountSats > 0
       ? (onchainAmountSats / 1e8).toFixed(8).replace(/0+$/, "").replace(/\.$/, "")
       : "";
-    return `bitcoin:${order.boltzAddress}${btc ? `?amount=${btc}` : ""}`;
-  }, [order?.boltzAddress, onchainAmountSats]);
+    return `bitcoin:${addr}${btc ? `?amount=${btc}` : ""}`;
+  }, [order?.onchainAddress, order?.boltzAddress, order?.onchainBip21, onchainAmountSats]);
   const canResumePayment =
     isPendingLike &&
-    ((isLightning && !!order?.paymentRequest) || (isOnchain && !!order?.boltzAddress));
+    ((isLightning && !!order?.paymentRequest) || (isOnchain && (!!order?.onchainAddress || !!order?.onchainBip21 || !!order?.boltzAddress)));
 
   // load /api/orders/mine and pick the order by paymentHash
   useEffect(() => {
@@ -63,7 +68,16 @@ export default function Paid() {
         if (cancelled) return;
         const list = Array.isArray(r.data) ? r.data : [];
         setOrders(list);
-        const match = list.find((o) => String(o.paymentHash || "") === String(hash || ""));
+        const match = list.find((o) => {
+          const needle = String(hash || "");
+          const candidates = [
+            String(o.paymentHash || ""),
+            String(o.id || ""),
+            String(o.onchainId || o.onchainSwapId || ""),
+            String(o.boltzSwapId || "")
+          ].filter(Boolean);
+          return candidates.includes(needle);
+        });
         setOrder(match || null);
 
         // prefetch product data for thumbnails
@@ -102,7 +116,7 @@ export default function Paid() {
 
   useEffect(() => {
     const hashRef = order?.paymentHash;
-    const swapRef = order?.boltzSwapId;
+    const swapRef = order?.onchainId || order?.onchainSwapId || order?.boltzSwapId;
     if (!order || !isPendingLike) return;
     if (isOnchain && !swapRef) return;
     if (!isOnchain && !hashRef) return;
@@ -114,10 +128,10 @@ export default function Paid() {
       try {
         let st = "";
         if (isOnchain && swapRef) {
-          const r = await api.get(`/onchain/${swapRef}/status`);
+          const r = await api.get(`/payments/${swapRef}/status`);
           st = String(r.data?.status || "").toUpperCase();
         } else if (hashRef) {
-          const r = await api.get(`/invoices/${hashRef}/status`);
+          const r = await api.get(`/payments/${hashRef}/status`);
           st = String(r.data?.status || "").toUpperCase();
         }
         if (st && st !== statusUpper) {
@@ -133,7 +147,7 @@ export default function Paid() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [order?.id, order?.paymentHash, order?.boltzSwapId, isOnchain, isPendingLike, statusUpper]);
+  }, [order?.id, order?.paymentHash, order?.onchainId, order?.onchainSwapId, order?.boltzSwapId, isOnchain, isPendingLike, statusUpper]);
 
   const storeDate = useMemo(() => {
     if (!order?.createdAt) return "";
@@ -321,9 +335,9 @@ export default function Paid() {
                       </div>
                     )
                   ) : (
-                    bip21 || order?.boltzAddress ? (
+                    bip21 || order?.onchainAddress || order?.boltzAddress ? (
                       <QR
-                        value={bip21 || order?.boltzAddress}
+                        value={bip21 || order?.onchainAddress || order?.boltzAddress}
                         href={bip21 || undefined}
                         asLink
                         className="rounded-xl"
@@ -370,11 +384,11 @@ export default function Paid() {
                   ) : (
                     <>
                       <div className="px-3 py-2 rounded-xl bg-slate-950 ring-1 ring-white/10 font-mono text-xs break-all">
-                        {order?.boltzAddress || "Missing address"}
+                        {order?.onchainAddress || order?.boltzAddress || "Missing address"}
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <button
-                          onClick={() => copy(order?.boltzAddress, "address")}
+                          onClick={() => copy(order?.onchainAddress || order?.boltzAddress, "address")}
                           className="px-3 py-2 rounded-xl bg-slate-800 ring-1 ring-white/10"
                         >
                           {copying.address ? "Copied!" : "Copy address"}

@@ -5,7 +5,10 @@ BoltCanvas is a small, opinionated shop template:
 - A clean public gallery where people can browse your products.
 - A simple admin area where you manage products, texts and orders.
 - Bitcoin-only payments in **sats** (Blink, LND, BTCPay Server, Nostr Wallet Connect, or LNURL), with the option to let buyers pay **on-chain** while you still receive Lightning.
-- **on-chain** payments settle via lightning through BOLTZ. But once set up, neither you nor your users will even notice... Unless BTCPayserver is set and in that case they will settle onchain normally.
+- **on-chain** payments can either:
+  - settle via Lightning through **Boltz** (default),
+  - settle **natively on-chain** via **BTCPay Server**, or
+  - go straight to your own wallet via an **XPUB** (addresses derived from your xpub and tracked via mempool.space / Esplora).
 - **extremely** lightweight.
 
 To have an idea how it look, go here: [MaviLab](https://mavilab.art)
@@ -87,8 +90,9 @@ All the Nostr parts are optional; if you don’t configure them, the shop still 
   The checkout page shows a QR and tracks the invoice until it is paid or expires.
 
 - **On-chain**  
-  - **BTCPay Server:** creates a native on-chain invoice (BIP21) and tracks mempool → confirmation directly in BTCPay.  
-  - **Blink/LND/NWC:** uses Boltz “Submarine swaps” to turn the Lightning invoice into a one-time Bitcoin address/amount. Boltz pays your Lightning invoice once the on-chain tx confirms.
+  - **BTCPay Server (`ONCHAIN_PROVIDER=btcpay`):** creates a native on-chain invoice (BIP21) and tracks mempool → confirmation directly in BTCPay. You receive coins directly on-chain in your BTCPay wallet.  
+  - **XPUB (`ONCHAIN_PROVIDER=xpub`):** derives fresh on-chain addresses from your XPUB/YPUB/VPUB/ZPUB and watches them via an Esplora API (mempool.space by default). Coins go straight to your wallet; the shop marks the order paid when the tx hits mempool / confirms.  
+  - **Boltz (`ONCHAIN_PROVIDER=boltz`, default):** uses Boltz “Submarine swaps” to turn the Lightning invoice into a one-time Bitcoin address/amount. Boltz pays your Lightning invoice once the on-chain tx confirms, so you still receive Lightning.
 
 From the buyer’s point of view: Lightning is instant; on-chain shows a mempool/confirmation progress and then the same receipt.
 
@@ -113,6 +117,7 @@ From the buyer’s point of view: Lightning is instant; on-chain shows a mempool
   - SMTP/IMAP for email updates.
   - Nostr keys if you want Nostr features.
   - ntfy for push-style order notifications (recommended).
+  - An **XPUB** from your Bitcoin wallet if you want pure on-chain payments without Boltz or BTCPay.
 
 ---
 
@@ -127,6 +132,20 @@ The default example config (`server/.env.example`) is designed to be a good star
 - `PAYMENT_PROVIDER=btcpay`: set `BTCPAY_URL`, `BTCPAY_API_KEY`, `BTCPAY_STORE_ID` (+ webhook secret for status updates).
 - `PAYMENT_PROVIDER=nwc` (Nostr Wallet Connect): set `NWC_URL=nostr+walletconnect://...` (include `relay=` and `secret=`). Optionally override relay with `NWC_RELAYS_CSV=wss://relay.example.com`. On-chain still works via Boltz, same as Blink/LND.
 - `PAYMENT_PROVIDER=lnurl` (LNURL-pay + LNURL-verify): set one of `LNURL_LIGHTNING_ADDRESS`, `LNURL_BECH32`, or `LNURL_PAY_URL`. Status is polled via LNURL-verify (no push); on-chain still works via Boltz.
+
+**On-chain provider options**
+
+- `ONCHAIN_PROVIDER=boltz` (default):  
+  Uses Boltz Submarine swaps. You receive Lightning; buyers can still pay a normal on-chain address/amount. Works with any Lightning provider above.
+- `ONCHAIN_PROVIDER=btcpay`:  
+  Uses your BTCPay Server’s on-chain wallet. Set `BTCPAY_URL`, `BTCPAY_API_KEY`, `BTCPAY_STORE_ID`, and configure the webhook (see `.env.example`). Buyers see a BIP21 link; you receive coins directly into BTCPay.
+- `ONCHAIN_PROVIDER=xpub`:  
+  Sends coins directly to addresses derived from your XPUB/YPUB/VPUB/ZPUB. Configure:
+  - `ONCHAIN_XPUB` – your master public key (xpub/ypub/zpub/tpub/vpub).  
+  - `ONCHAIN_XPUB_NETWORK` – `mainnet`, `testnet4`, or `signet`.  
+  - `ONCHAIN_XPUB_ADDRESS_TYPE` – `p2wpkh` (default), `p2sh-p2wpkh`, or `p2pkh`.  
+  - `ONCHAIN_XPUB_API_BASE` – Esplora API base (defaults to mempool.space for the chosen network).  
+  The shop derives a fresh address per order, watches it via the Esplora API (mempool + chain), and marks the order paid once the expected amount is seen.
 
 ### 1. Install and build
 From the project root:
