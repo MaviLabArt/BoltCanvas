@@ -11,7 +11,9 @@ BoltCanvas is a small, opinionated shop template:
   - go straight to your own wallet via an **XPUB** (addresses derived from your xpub and tracked via mempool.space / Esplora).
 - **extremely** lightweight.
 
-To have an idea how it look, go here: [MaviLab](https://mavilab.art)
+Shops using this codebase: 
+- [MaviLab](https://mavilab.art)
+- [Isolabella](https://shop.isolabellart.it.com/)
 
 ---
 
