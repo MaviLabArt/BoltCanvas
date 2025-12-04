@@ -6,7 +6,7 @@ import { deriveRefundKey } from "./boltz.js";
 
 // Choose providers
 // - Lightning: "blink" (default) | "lnd" | "btcpay" | "nwc" | "lnurl"
-// - On-chain: "boltz" (default) | "btcpay"
+// - On-chain: "boltz" (default) | "btcpay" | "xpub"
 export const LIGHTNING_PAYMENT_PROVIDER = String(
   process.env.LIGHTNING_PAYMENT_PROVIDER ||
   process.env.PAYMENT_PROVIDER || // backward compat
@@ -37,6 +37,9 @@ import * as btcpay from "./btcpay.js";
 
 // Boltz (on-chain → Lightning Submarine swaps)
 import * as boltz from "./boltz.js";
+
+// On-chain XPUB provider (Esplora/mempool.space)
+import * as xpubOnchain from "./onchain/xpub.js";
 
 // Shared event bus for BTCPay webhook-driven updates
 const btcpayEmitter = new EventEmitter();
@@ -165,10 +168,12 @@ export async function createOnchainSwapViaBoltz(args = {}) {
       memo,
       expiresIn: args.expiresIn
     });
+    const onchainId = invoice.invoiceId || invoice.paymentHash || "";
     return {
       ...invoice,
       paymentMethod: "onchain",
-      boltzSwapId: invoice.invoiceId || "",
+      onchainId,
+      boltzSwapId: "",
       boltzStatus: "",
       boltzRefundPrivKey: "",
       boltzRefundPubKey: "",
@@ -271,6 +276,120 @@ export async function boltzSwapStatus({ swapId }) {
 
 export function subscribeBoltzSwapStatus({ swapId, onUpdate }) {
   return boltz.subscribeSwapStatus({ swapId, onUpdate });
+}
+
+function resolveOnchainProvider(preferred) {
+  const provider = (preferred || ONCHAIN_PROVIDER || "boltz").toLowerCase();
+  if (provider === "xpub") return "xpub";
+  if (provider === "btcpay") return "btcpay";
+  return "boltz";
+}
+
+export async function createOnchainPaymentForOrder({
+  order,
+  amountSats,
+  memo,
+  webhookUrl,
+  expiresIn,
+  url,
+  apiKey,
+  walletId,
+  relayUrls
+} = {}) {
+  const provider = resolveOnchainProvider(order?.onchainProvider);
+  const sats = Math.max(0, Number(amountSats ?? order?.totalSats ?? 0));
+  if (!order?.id) throw new Error("order.id is required for on-chain payments");
+
+  if (provider === "xpub") {
+    return xpubOnchain.createOnchainPayment({
+      orderId: order.id,
+      amountSats: sats,
+      memo
+    });
+  }
+
+  if (provider === "btcpay") {
+    const invoice = await btcpay.createOnchainInvoice({
+      url,
+      apiKey,
+      storeId: walletId?.storeId || walletId,
+      amount: sats,
+      memo,
+      expiresIn
+    });
+    const onchainId = invoice?.invoiceId || invoice?.paymentHash || `btcpay-${order.id}`;
+    return {
+      ...invoice,
+      paymentMethod: "onchain",
+      onchainId,
+      onchainAddress: invoice?.onchainAddress,
+      onchainAmountSats: invoice?.onchainAmountSats,
+      onchainBip21: invoice?.bip21 || invoice?.paymentRequest || ""
+    };
+  }
+
+  // Default: Boltz
+  return createOnchainSwapViaBoltz({
+    url,
+    apiKey,
+    walletId,
+    relayUrls,
+    amount: sats,
+    memo,
+    webhookUrl,
+    expiresIn
+  });
+}
+
+export async function getOnchainStatus(paymentRow, { btcpayConfig } = {}) {
+  if (!paymentRow) return { status: "FAILED" };
+  const providerHint = paymentRow?.onchainProvider || (paymentRow?.boltzSwapId ? "boltz" : undefined);
+  const provider = resolveOnchainProvider(providerHint);
+  if (provider === "xpub") {
+    // xpub provider already returns the full status payload; just forward it.
+    return await xpubOnchain.getOnchainStatus(paymentRow);
+  }
+
+  if (provider === "btcpay") {
+    const url = btcpayConfig?.url || process.env.BTCPAY_URL || "";
+    const apiKey = btcpayConfig?.apiKey || process.env.BTCPAY_API_KEY || "";
+    const storeId = btcpayConfig?.storeId || process.env.BTCPAY_STORE_ID || "";
+    const invoiceId =
+      paymentRow.onchainId ||
+      paymentRow.paymentHash;
+    const inv = await btcpay.getInvoice({
+      url,
+      apiKey,
+      storeId,
+      invoiceId
+    });
+    const raw = String(inv?.status || "");
+    const mapped = (() => {
+      const st = raw.toLowerCase();
+      if (st === "settled") return "CONFIRMED";
+      if (st === "processing") return "MEMPOOL";
+      if (st === "expired" || st === "invalid") return "EXPIRED";
+      return "PENDING";
+    })();
+    return {
+      status: mapped,
+      rawStatus: raw,
+      onchainAddress: paymentRow.onchainAddress || paymentRow.boltzAddress || "",
+      onchainAmountSats: paymentRow.onchainAmountSats || paymentRow.boltzExpectedAmountSats || 0
+    };
+  }
+
+  const swapId = paymentRow.boltzSwapId || paymentRow.onchainSwapId || paymentRow.onchainId;
+  const { swap, mappedStatus, onchainAddress, onchainAmountSats, timeoutBlockHeight } =
+    await boltzSwapStatus({ swapId });
+
+  return {
+    status: mappedStatus,
+    rawStatus: swap?.status || "",
+    onchainAddress: onchainAddress || paymentRow.onchainAddress || "",
+    onchainAmountSats: onchainAmountSats || paymentRow.onchainAmountSats || 0,
+    timeoutBlockHeight
+  };
 }
 
 /**

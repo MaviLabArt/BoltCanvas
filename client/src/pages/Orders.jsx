@@ -105,7 +105,13 @@ export default function Orders() {
           {orders.map((o) => {
             const thumbs = thumbsForOrder(o);
             const isPending = String(o.status || "").toUpperCase() === "PENDING";
-            const href = o.paymentHash ? `/paid/${o.paymentHash}` : null; // fallback: if no hash, card is not a link
+            const ref =
+              o.paymentHash ||
+              o.onchainId ||
+              o.onchainSwapId ||
+              o.boltzSwapId ||
+              o.id;
+            const href = ref ? `/paid/${ref}` : null;
 
             const Card = ({ children }) =>
               href ? (

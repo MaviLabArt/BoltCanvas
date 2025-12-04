@@ -9,10 +9,12 @@
   },
   "dependencies": {
     "@getalby/sdk": "^7.0.0",
+    "bech32": "^2.0.0",
     "better-sqlite3": "^12.5.0",
     "bip32": "^4.0.0",
     "bip39": "^3.1.0",
-    "bech32": "^2.0.0",
+    "bitcoinjs-lib": "^6.1.7",
+    "bs58check": "^2.1.2",
     "cookie-session": "^2.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",

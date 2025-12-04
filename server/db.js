@@ -110,6 +110,13 @@ CREATE TABLE IF NOT EXISTS nostr_carts (
   data TEXT NOT NULL,
   updatedAt INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS xpub_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  nextIndex INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO xpub_state (id, nextIndex)
+  VALUES (1, 0)
+  ON CONFLICT(id) DO NOTHING;
 `);
 
 // Migrations
@@ -208,6 +215,18 @@ addColumnIfMissing("orders", "boltzSwapTree TEXT DEFAULT ''");
 addColumnIfMissing("orders", "boltzStatus TEXT DEFAULT ''");
 addColumnIfMissing("orders", "lnurlVerifyUrl TEXT DEFAULT ''");
 addColumnIfMissing("orders", "lnurlExpiresAt INTEGER DEFAULT 0");
+addColumnIfMissing("orders", "onchainId TEXT DEFAULT ''");
+addColumnIfMissing("orders", "onchainSwapId TEXT DEFAULT ''");
+addColumnIfMissing("orders", "onchainProvider TEXT DEFAULT ''");
+addColumnIfMissing("orders", "onchainAddress TEXT DEFAULT ''");
+addColumnIfMissing("orders", "onchainAmountSats INTEGER DEFAULT 0");
+addColumnIfMissing("orders", "onchainBip21 TEXT DEFAULT ''");
+addColumnIfMissing("orders", "onchainStatus TEXT DEFAULT ''");
+addColumnIfMissing("orders", "onchainExpiresAt TEXT DEFAULT ''");
+addColumnIfMissing("orders", "onchainMempoolSats INTEGER DEFAULT 0");
+addColumnIfMissing("orders", "onchainConfirmedSats INTEGER DEFAULT 0");
+addColumnIfMissing("orders", "onchainTxid TEXT DEFAULT ''");
+addColumnIfMissing("orders", "xpubIndex INTEGER DEFAULT NULL");
 // NEW: shipping metadata
 addColumnIfMissing("orders", "courier TEXT DEFAULT ''");
 addColumnIfMissing("orders", "tracking TEXT DEFAULT ''");
@@ -945,6 +964,24 @@ function migrateInlineProductImages() {
 }
 migrateInlineProductImages();
 
+const selectXpubIndexStmt = db.prepare(`SELECT nextIndex FROM xpub_state WHERE id=1`);
+const updateXpubIndexStmt = db.prepare(`UPDATE xpub_state SET nextIndex=? WHERE id=1`);
+const ensureXpubStateStmt = db.prepare(`
+  INSERT INTO xpub_state (id, nextIndex) VALUES (1, 0)
+  ON CONFLICT(id) DO NOTHING
+`);
+const allocateNextXpubIndexTx = db.transaction(() => {
+  ensureXpubStateStmt.run();
+  const row = selectXpubIndexStmt.get();
+  const current = Number(row?.nextIndex || 0);
+  updateXpubIndexStmt.run(current + 1);
+  return current;
+});
+
+export function allocateNextXpubIndex() {
+  return allocateNextXpubIndexTx();
+}
+
 export const Products = {
   all({ includeImages = false } = {}) {
     const rows = db
@@ -1366,7 +1403,10 @@ export const Orders = {
     return o ? normalizeOrderRow(o) : null;
   },
   bySwapId(swapId) {
-    const o = db.prepare(`SELECT * FROM orders WHERE boltzSwapId=?`).get(swapId);
+    if (!swapId) return null;
+    const o = db
+      .prepare(`SELECT * FROM orders WHERE onchainId=? OR onchainSwapId=? OR boltzSwapId=?`)
+      .get(swapId, swapId, swapId);
     return o ? normalizeOrderRow(o) : null;
   },
   byClientId(clientId) {
@@ -1376,7 +1416,7 @@ export const Orders = {
     return rows.map(normalizeOrderRow);
   },
   create(order) {
-    const id = makeId();
+    const id = order?.id || makeId();
     const stmt = db.prepare(`
       INSERT INTO orders (
         id, items, subtotalSats, shippingSats, totalSats,
@@ -1384,6 +1424,7 @@ export const Orders = {
         name, surname, address, city, province, postalCode, country,
         contactEmail, contactTelegram, contactNostr, contactPhone,
         status, paymentHash, paymentRequest, lnurlVerifyUrl, lnurlExpiresAt,
+        onchainId, onchainSwapId, onchainProvider, onchainAddress, onchainAmountSats, onchainBip21, onchainStatus, onchainExpiresAt, onchainMempoolSats, onchainConfirmedSats, xpubIndex,
         boltzSwapId, boltzAddress, boltzExpectedAmountSats, boltzTimeoutBlockHeight,
         boltzRefundPrivKey, boltzRefundPubKey, boltzRedeemScript, boltzRescueIndex, boltzSwapTree, boltzStatus,
         createdAt, clientId, notes
@@ -1392,7 +1433,8 @@ export const Orders = {
         ?,
         ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?
       )
@@ -1420,6 +1462,17 @@ export const Orders = {
       order.paymentRequest || null,
       order.lnurlVerifyUrl || "",
       Math.max(0, Math.floor(Number(order.lnurlExpiresAt || 0))),
+      order.onchainId || "",
+      order.onchainSwapId || "",
+      order.onchainProvider || "",
+      order.onchainAddress || "",
+      Math.max(0, Math.floor(Number(order.onchainAmountSats || 0))),
+      order.onchainBip21 || "",
+      order.onchainStatus || "",
+      order.onchainExpiresAt || "",
+      Math.max(0, Math.floor(Number(order.onchainMempoolSats || 0))),
+      Math.max(0, Math.floor(Number(order.onchainConfirmedSats || 0))),
+      numOrNull(order.xpubIndex),
       order.boltzSwapId || "",
       order.boltzAddress || "",
       Math.max(0, Math.floor(Number(order.boltzExpectedAmountSats || 0))),
@@ -1444,6 +1497,80 @@ export const Orders = {
     );
     return this.get(id);
   },
+  attachOnchainPayment(id, payload = {}) {
+    const current = this.get(id);
+    if (!current) return null;
+    const mempool = payload.onchainMempoolSats ?? payload.mempoolReceived ?? current.onchainMempoolSats ?? 0;
+    const confirmed = payload.onchainConfirmedSats ?? payload.confirmedReceived ?? current.onchainConfirmedSats ?? 0;
+    const provider = payload.provider ?? payload.onchainProvider ?? current.onchainProvider ?? "";
+    const incomingId = payload.swapId ?? payload.onchainId ?? payload.onchainSwapId ?? current.onchainId ?? current.onchainSwapId ?? "";
+    const nextOnchainId = provider === "boltz" ? (current.onchainId || "") : incomingId;
+    const nextOnchainSwapId = provider === "boltz"
+      ? (incomingId || current.onchainSwapId || "")
+      : (current.onchainSwapId || "");
+    db.prepare(`
+      UPDATE orders
+         SET onchainId=?,
+             onchainSwapId=?,
+             onchainProvider=?,
+             onchainAddress=?,
+             onchainAmountSats=?,
+             onchainBip21=?,
+             onchainStatus=?,
+             onchainExpiresAt=?,
+             onchainMempoolSats=?,
+             onchainConfirmedSats=?,
+             onchainTxid=?,
+             xpubIndex=?
+       WHERE id=?`)
+      .run(
+        nextOnchainId,
+        nextOnchainSwapId,
+        provider,
+        payload.address ?? payload.onchainAddress ?? current.onchainAddress ?? "",
+        Math.max(
+          0,
+          Math.floor(
+            Number(payload.amountSats ?? payload.onchainAmountSats ?? current.onchainAmountSats ?? 0)
+          )
+        ),
+        payload.bip21 ?? payload.onchainBip21 ?? current.onchainBip21 ?? "",
+        payload.onchainStatus ?? payload.status ?? current.onchainStatus ?? "",
+        payload.onchainExpiresAt ?? payload.expiresAt ?? current.onchainExpiresAt ?? "",
+        Math.max(0, Math.floor(Number(mempool || 0))),
+        Math.max(0, Math.floor(Number(confirmed || 0))),
+        payload.onchainTxid ?? current.onchainTxid ?? "",
+        numOrNull(payload.xpubIndex ?? current.xpubIndex),
+        id
+      );
+    return this.get(id);
+  },
+  setSwapId(id, swapId) {
+    if (!id) return null;
+    db.prepare(`UPDATE orders SET onchainId=? WHERE id=?`).run(swapId || "", id);
+    return this.get(id);
+  },
+  updateOnchainStatus(id, status, extras = {}) {
+    const current = this.get(id);
+    if (!current) return null;
+    const mempool = extras.mempoolReceived ?? extras.onchainMempoolSats ?? current.onchainMempoolSats ?? 0;
+    const confirmed = extras.confirmedReceived ?? extras.onchainConfirmedSats ?? current.onchainConfirmedSats ?? 0;
+    db.prepare(`
+      UPDATE orders
+         SET onchainStatus=?,
+             onchainMempoolSats=?,
+             onchainConfirmedSats=?,
+             onchainTxid=COALESCE(?, onchainTxid)
+       WHERE id=?`)
+      .run(
+        status ?? current.onchainStatus ?? "",
+        Math.max(0, Math.floor(Number(mempool || 0))),
+        Math.max(0, Math.floor(Number(confirmed || 0))),
+        extras.txid ?? null,
+        id
+      );
+    return this.get(id);
+  },
   markPaidByHash(paymentHash) {
     const current = this.byPaymentHash(paymentHash);
     if (!current) return null;
@@ -1462,7 +1589,7 @@ export const Orders = {
     const statusUpper = String(current.status || "").toUpperCase();
     const alreadyPaid = statusUpper === "PAID" || statusUpper === "PREPARATION" || statusUpper === "SHIPPED";
     if (!alreadyPaid) {
-      db.prepare(`UPDATE orders SET status='PAID' WHERE boltzSwapId=?`).run(boltzSwapId);
+      db.prepare(`UPDATE orders SET status='PAID' WHERE onchainId=? OR onchainSwapId=? OR boltzSwapId=?`).run(boltzSwapId, boltzSwapId, boltzSwapId);
     }
     const next = alreadyPaid ? current : this.bySwapId(boltzSwapId);
     if (next) next.__justPaid = !alreadyPaid;
@@ -1492,7 +1619,10 @@ export const Orders = {
     db.prepare(`
       DELETE FROM orders
        WHERE status='PENDING'
-         AND (paymentMethod <> 'onchain' OR boltzSwapId IS NULL OR boltzSwapId = '')
+         AND (paymentMethod <> 'onchain' OR (
+           (onchainId IS NULL OR onchainId = '')
+           AND (boltzSwapId IS NULL OR boltzSwapId = '')
+         ))
          AND createdAt < ?
     `).run(cutoffRegular);
     // Delete Boltz on-chain pending older than extended cutoff
@@ -1519,6 +1649,22 @@ function normalizeOrderRow(o) {
     tracking: o.tracking || "",
     contactPhone: o.contactPhone || "",
     paymentMethod: o.paymentMethod || "lightning",
+    onchainSwapId: o.onchainSwapId || o.boltzSwapId || "",
+    onchainProvider: o.onchainProvider || "",
+    onchainId: (o.onchainProvider === "boltz")
+      ? ""
+      : (o.onchainId || o.onchainSwapId || ""),
+    onchainAddress: o.onchainAddress || o.boltzAddress || "",
+    onchainAmountSats: Number(o.onchainAmountSats || o.boltzExpectedAmountSats || 0),
+    onchainBip21: o.onchainBip21 || "",
+    onchainStatus: o.onchainStatus || "",
+    onchainExpiresAt: o.onchainExpiresAt || "",
+    onchainMempoolSats: Number(o.onchainMempoolSats || 0),
+    onchainConfirmedSats: Number(o.onchainConfirmedSats || 0),
+    onchainTxid: o.onchainTxid || "",
+    xpubIndex: (o.xpubIndex === null || o.xpubIndex === undefined || o.xpubIndex === "")
+      ? null
+      : Number(o.xpubIndex),
     boltzSwapId: o.boltzSwapId || "",
     boltzAddress: o.boltzAddress || "",
     boltzExpectedAmountSats: Number(o.boltzExpectedAmountSats || 0),
