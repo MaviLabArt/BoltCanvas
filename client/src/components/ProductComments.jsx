@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { fetchProductComments, subscribeToProductComments } from "../nostr/read-comments.js";
 import { fetchProfilesForEvents } from "../nostr/profiles.js";
 import { normalizeComments } from "../nostr/normalize.js";
@@ -95,13 +95,14 @@ export default function ProductComments({ productId }) {
   const { settings } = useSettings();
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [coordinates, setCoordinates] = useState("");
   const maxLen = 600;
   const [input, setInput] = useState("");
   const relays = useMemo(() => settings?.nostrRelays, [settings]);
   const storePubkey = useMemo(() => String(settings?.nostrShopPubkey || "").toLowerCase(), [settings]);
   const enabled = nostrCommentsEnabled(settings) && !!storePubkey;
   const blocked = useMemo(() => makeBlockedSets(settings), [settings]);
-  const cancelledRef = React.useRef(false);
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,6 +162,14 @@ export default function ProductComments({ productId }) {
     }
 
     load();
+    // fetch coordinates once for adding `a` tag in comments
+    api.get(`/products/${productId}`)
+      .then((r) => {
+        const coord = r?.data?.nostr?.coordinates || "";
+        if (!cancelled && coord) setCoordinates(coord);
+      })
+      .catch(() => {});
+
     return () => {
       cancelled = true;
       cancelledRef.current = true;
@@ -181,7 +190,8 @@ export default function ProductComments({ productId }) {
         content: input,
         productId,
         relays,
-        storePubkey
+        storePubkey,
+        coordinates
       });
       setInput("");
     } catch (err) {

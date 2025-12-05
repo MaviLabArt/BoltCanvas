@@ -12,6 +12,11 @@ const api = axios.create({
   withCredentials: true
 });
 
+// Provide a global alias to avoid ReferenceError under hardened runtimes that strip globals.
+if (typeof globalThis !== "undefined") {
+  globalThis.api = api;
+}
+
 export function absoluteApiUrl(path = "") {
   const url = String(path || "").trim();
   if (!url) return "";

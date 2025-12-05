@@ -7,7 +7,8 @@ export async function publishProductComment({
   content,
   productId,
   relays,
-  storePubkey
+  storePubkey,
+  coordinates = ""
 } = {}) {
   if (!window?.nostr) throw new Error("Login with Nostr to post");
   if (!storePubkey) throw new Error("Store Nostr key missing; comments are disabled");
@@ -36,7 +37,7 @@ export async function publishProductComment({
   const unsigned = {
     kind: PRODUCT_COMMENT_KIND,
     created_at: Math.floor(Date.now() / 1000),
-    tags: buildProductTags({ productId, storePubkey: storeKey, proof }),
+    tags: buildProductTags({ productId, storePubkey: storeKey, proof, coordinates }),
     content: safeContent,
     pubkey
   };

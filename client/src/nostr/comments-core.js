@@ -21,13 +21,16 @@ export function productXTagValue(productId, storePubkey = "") {
   return `${ns.toLowerCase()}:product:${productId}`;
 }
 
-export function buildProductTags({ productId, storePubkey = "", proof = null }) {
+export function buildProductTags({ productId, storePubkey = "", proof = null, coordinates = "" }) {
   const key = String(storePubkey || "").trim().toLowerCase();
   const tags = [
     ["x", productXTagValue(productId, key)],
     ["k", PRODUCT_COMMENT_VERSION],
     ["client", "lightning-shop"]
   ];
+  if (coordinates) {
+    tags.push(["a", coordinates]);
+  }
   if (proof?.sig && proof?.ts) tags.push(["proof", proof.sig, String(proof.ts)]);
   return tags;
 }

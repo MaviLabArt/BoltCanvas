@@ -347,14 +347,22 @@ export function CartProvider({ children }) {
         if (cancelled) return;
         const map = new Map(fetched);
         setItems((prev) => {
-          const next = prev.map((entry) => {
-            const pid = entry.product?.id;
-            if (!pid || !map.has(pid) || !map.get(pid)) return entry;
-            const merged = snapshotProduct({ ...map.get(pid) });
-            delete merged.__needsShippingHydrate;
-            const out = { product: merged, qty: entry.qty };
-            return out;
-          });
+          const next = prev
+            .map((entry) => {
+              const pid = entry.product?.id;
+              if (!pid) return null;
+              if (map.has(pid) && !map.get(pid)) {
+                // Drop stale product if server returned 404/null
+                return null;
+              }
+              if (map.has(pid) && map.get(pid)) {
+                const merged = snapshotProduct({ ...map.get(pid) });
+                delete merged.__needsShippingHydrate;
+                return { product: merged, qty: entry.qty };
+              }
+              return entry;
+            })
+            .filter(Boolean);
           safePersist(next);
           return next;
         });

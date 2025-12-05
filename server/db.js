@@ -100,6 +100,9 @@ CREATE TABLE IF NOT EXISTS product_nostr_posts (
   teaserLastPublishedAt INTEGER NOT NULL DEFAULT 0,
   teaserLastAck TEXT NOT NULL DEFAULT '[]',
   teaserHashtags TEXT NOT NULL DEFAULT '#shop #lightning #bitcoin',
+  coordinates TEXT NOT NULL DEFAULT '',
+  kind INTEGER NOT NULL DEFAULT 30018,
+  rawContent TEXT NOT NULL DEFAULT '',
   createdAt INTEGER NOT NULL DEFAULT (strftime('%s','now')),
   updatedAt INTEGER NOT NULL DEFAULT (strftime('%s','now')),
   FOREIGN KEY(productId) REFERENCES products(id) ON DELETE CASCADE
@@ -236,6 +239,10 @@ addColumnIfMissing("product_nostr_posts", "teaserLastEventId TEXT NOT NULL DEFAU
 addColumnIfMissing("product_nostr_posts", "teaserLastPublishedAt INTEGER NOT NULL DEFAULT 0");
 addColumnIfMissing("product_nostr_posts", "teaserLastAck TEXT NOT NULL DEFAULT '[]'");
 addColumnIfMissing("product_nostr_posts", `teaserHashtags TEXT NOT NULL DEFAULT '${DEFAULT_TEASER_HASHTAGS}'`);
+addColumnIfMissing("product_nostr_posts", "coordinates TEXT NOT NULL DEFAULT ''");
+addColumnIfMissing("product_nostr_posts", "kind INTEGER NOT NULL DEFAULT 30018");
+addColumnIfMissing("product_nostr_posts", "rawContent TEXT NOT NULL DEFAULT ''");
+addColumnIfMissing("product_nostr_posts", "lastContentHash TEXT NOT NULL DEFAULT ''");
 
 db.exec(`
 CREATE INDEX IF NOT EXISTS idx_products_available_created ON products(available DESC, createdAt DESC);
@@ -292,6 +299,8 @@ if (!sGet.get("lightningAddress")) sSet.run("lightningAddress", "");
 if (!sGet.get("nostrCommentsEnabled")) sSet.run("nostrCommentsEnabled", "true");
 if (!sGet.get("nostrBlockedPubkeys")) sSet.run("nostrBlockedPubkeys", "[]");
 if (!sGet.get("nostrBlockedHashtags")) sSet.run("nostrBlockedHashtags", "[]");
+if (!sGet.get("nostrStallDTag")) sSet.run("nostrStallDTag", "main");
+if (!sGet.get("nostrCurrency")) sSet.run("nostrCurrency", "SATS");
 
 // ── NEW: Theme selector (dark | light | auto) ──
 if (!sGet.get("themeChoice")) sSet.run("themeChoice", "dark");
@@ -502,6 +511,10 @@ function normalizeNostrRow(row) {
   return {
     productId: row.productId,
     dTag: row.dTag || "",
+    coordinates: row.coordinates || "",
+    kind: Number(row.kind || 30018),
+    rawContent: row.rawContent || "",
+    lastContentHash: row.lastContentHash || "",
     title: row.title || "",
     summary: row.summary || "",
     content: row.content || "",
@@ -624,6 +637,14 @@ export const ProductNostrPosts = {
     return normalizeNostrRow(row);
   },
 
+  findByCoordinates(coordinates) {
+    if (!coordinates) return null;
+    const row = db
+      .prepare(`SELECT * FROM product_nostr_posts WHERE coordinates=?`)
+      .get(coordinates);
+    return normalizeNostrRow(row);
+  },
+
   upsert(productId, data = {}) {
     const dTag = normalizeDTag(productId, data.dTag);
     const nowTs = now();
@@ -636,6 +657,20 @@ export const ProductNostrPosts = {
     const mode = sanitizeMode(data.mode);
     const listingStatus = sanitizeListingStatus(data.listingStatus);
     const existing = this.get(productId);
+    const coordinates = String(
+      data.coordinates !== undefined ? data.coordinates : existing?.coordinates || ""
+    ).trim();
+    const kind = Number.isFinite(Number(data.kind))
+      ? Number(data.kind) | 0
+      : (existing?.kind || 30018);
+    const rawContent =
+      data.rawContent !== undefined
+        ? String(data.rawContent || "")
+        : existing?.rawContent || "";
+    const lastContentHash =
+      data.lastContentHash !== undefined
+        ? String(data.lastContentHash || "")
+        : existing?.lastContentHash || "";
     const teaserContent =
       data.teaserContent !== undefined
         ? String(data.teaserContent || "")
@@ -657,6 +692,10 @@ export const ProductNostrPosts = {
                relays=?,
                mode=?,
                listingStatus=?,
+               coordinates=?,
+               kind=?,
+               rawContent=?,
+               lastContentHash=?,
                teaserContent=?,
                teaserHashtags=?,
                updatedAt=?
@@ -671,6 +710,10 @@ export const ProductNostrPosts = {
           JSON.stringify(relays),
           mode,
           listingStatus,
+          coordinates,
+          kind,
+          rawContent,
+          lastContentHash,
           teaserContent,
           teaserHashtags,
           nowTs,
@@ -679,8 +722,8 @@ export const ProductNostrPosts = {
     } else {
       db.prepare(`
         INSERT INTO product_nostr_posts
-          (productId, dTag, title, summary, content, imageUrl, topics, relays, mode, listingStatus, lastEventId, lastKind, lastPublishedAt, lastAck, lastNaddr, teaserContent, teaserLastEventId, teaserLastPublishedAt, teaserLastAck, teaserHashtags, createdAt, updatedAt)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          (productId, dTag, title, summary, content, imageUrl, topics, relays, mode, listingStatus, lastEventId, lastKind, lastPublishedAt, lastAck, lastNaddr, teaserContent, teaserLastEventId, teaserLastPublishedAt, teaserLastAck, teaserHashtags, coordinates, kind, rawContent, lastContentHash, createdAt, updatedAt)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
         .run(
           productId,
           dTag,
@@ -702,6 +745,9 @@ export const ProductNostrPosts = {
           0,
           "[]",
           teaserHashtags,
+          coordinates,
+          kind,
+          rawContent,
           nowTs,
           nowTs
         );
@@ -727,6 +773,20 @@ export const ProductNostrPosts = {
     const lastNaddr = String(data.lastNaddr || "").trim();
 
     const existing = this.get(productId);
+    const coordinates = String(
+      data.coordinates !== undefined ? data.coordinates : existing?.coordinates || ""
+    ).trim();
+    const kind = Number.isFinite(Number(data.kind))
+      ? Number(data.kind) | 0
+      : (existing?.kind || 30018);
+    const rawContent =
+      data.rawContent !== undefined
+        ? String(data.rawContent || "")
+        : existing?.rawContent || "";
+    const lastContentHash =
+      data.lastContentHash !== undefined
+        ? String(data.lastContentHash || "")
+        : existing?.lastContentHash || "";
     const teaserContent =
       data.teaserContent !== undefined
         ? String(data.teaserContent || "")
@@ -755,6 +815,10 @@ export const ProductNostrPosts = {
                lastPublishedAt=?,
                lastAck=?,
                lastNaddr=?,
+               coordinates=?,
+               kind=?,
+               rawContent=?,
+               lastContentHash=?,
                teaserContent=?,
                teaserHashtags=?,
                updatedAt=?
@@ -774,6 +838,10 @@ export const ProductNostrPosts = {
           publishedAt,
           JSON.stringify(ack),
           lastNaddr,
+          coordinates,
+          kind,
+          rawContent,
+          lastContentHash,
           teaserContent,
           teaserHashtags,
           nowTs,
@@ -782,8 +850,8 @@ export const ProductNostrPosts = {
     } else {
       db.prepare(`
         INSERT INTO product_nostr_posts
-          (productId, dTag, title, summary, content, imageUrl, topics, relays, mode, listingStatus, lastEventId, lastKind, lastPublishedAt, lastAck, lastNaddr, teaserContent, teaserLastEventId, teaserLastPublishedAt, teaserLastAck, teaserHashtags, createdAt, updatedAt)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          (productId, dTag, title, summary, content, imageUrl, topics, relays, mode, listingStatus, lastEventId, lastKind, lastPublishedAt, lastAck, lastNaddr, teaserContent, teaserLastEventId, teaserLastPublishedAt, teaserLastAck, teaserHashtags, coordinates, kind, rawContent, lastContentHash, createdAt, updatedAt)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
         .run(
           productId,
           dTag,
@@ -805,6 +873,10 @@ export const ProductNostrPosts = {
           Number(teaserLastPublishedAt || 0),
           teaserLastAck,
           teaserHashtags,
+          coordinates,
+          kind,
+          rawContent,
+          lastContentHash,
           nowTs,
           nowTs
         );
@@ -846,8 +918,8 @@ export const ProductNostrPosts = {
     const relaysJson = JSON.stringify(sanitizedRelays ?? []);
     db.prepare(`
       INSERT INTO product_nostr_posts
-        (productId, dTag, title, summary, content, imageUrl, topics, relays, mode, listingStatus, lastEventId, lastKind, lastPublishedAt, lastAck, lastNaddr, teaserContent, teaserLastEventId, teaserLastPublishedAt, teaserLastAck, teaserHashtags, createdAt, updatedAt)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        (productId, dTag, title, summary, content, imageUrl, topics, relays, mode, listingStatus, lastEventId, lastKind, lastPublishedAt, lastAck, lastNaddr, teaserContent, teaserLastEventId, teaserLastPublishedAt, teaserLastAck, teaserHashtags, coordinates, kind, rawContent, createdAt, updatedAt)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
       .run(
         productId,
         `product:${productId}`,
@@ -869,6 +941,9 @@ export const ProductNostrPosts = {
         0,
         "[]",
         normalizedHashtags !== null ? normalizedHashtags : DEFAULT_TEASER_HASHTAGS,
+        "",
+        30018,
+        "",
         nowTs,
         nowTs
       );
@@ -1783,6 +1858,12 @@ export const Settings = {
       nostrCommentsEnabled,
       nostrBlockedPubkeys: safeParseJSON(map.nostrBlockedPubkeys, []),
       nostrBlockedHashtags: safeParseJSON(map.nostrBlockedHashtags, []),
+      nostrStallDTag: map.nostrStallDTag || "main",
+      nostrCurrency: (map.nostrCurrency || "SATS").toUpperCase(),
+      nostrStallCoordinates: map.nostrStallCoordinates || "",
+      nostrStallLastEventId: map.nostrStallLastEventId || "",
+      nostrStallLastPublishedAt: Number(map.nostrStallLastPublishedAt || 0),
+      nostrStallLastAck: safeParseJSON(map.nostrStallLastAck, []),
       // NEW: Notification templates
       notifyDmTemplate_PAID: map.notifyDmTemplate_PAID || "",
       notifyDmTemplate_PREPARATION: map.notifyDmTemplate_PREPARATION || "",
@@ -1798,6 +1879,17 @@ export const Settings = {
         ? "Thanks for your support,\nYour Shop Name"
         : map.smtpSignature
     };
+  },
+  recordStallPublish({ coordinates, eventId, publishedAt, relayResults } = {}) {
+    const coords = String(coordinates || "").trim();
+    const id = String(eventId || "").trim();
+    const ts = Number(publishedAt || Date.now());
+    const ack = Array.isArray(relayResults) ? JSON.stringify(relayResults) : "[]";
+    sSet.run("nostrStallCoordinates", coords);
+    sSet.run("nostrStallLastEventId", id);
+    sSet.run("nostrStallLastPublishedAt", String(ts));
+    sSet.run("nostrStallLastAck", ack);
+    return this.getAll();
   },
   // Public subset (safe for client)
   getPublic() {
@@ -1864,6 +1956,8 @@ export const Settings = {
     nostrCommentsEnabled,
     nostrBlockedPubkeys,
     nostrBlockedHashtags,
+    nostrStallDTag,
+    nostrCurrency,
     // NEW: notification templates
     notifyDmTemplate_PAID, notifyDmTemplate_PREPARATION, notifyDmTemplate_SHIPPED,
     notifyEmailSubject_PAID, notifyEmailSubject_PREPARATION, notifyEmailSubject_SHIPPED,
@@ -1927,6 +2021,11 @@ export const Settings = {
     if (nostrBlockedHashtags !== undefined) {
       const val = Array.isArray(nostrBlockedHashtags) ? JSON.stringify(nostrBlockedHashtags) : String(nostrBlockedHashtags || "");
       sSet.run("nostrBlockedHashtags", val);
+    }
+    if (nostrStallDTag !== undefined) sSet.run("nostrStallDTag", nostrStallDTag || "main");
+    if (nostrCurrency !== undefined) {
+      const val = String(nostrCurrency || "SATS").toUpperCase();
+      sSet.run("nostrCurrency", val);
     }
     if (nostrCommentsEnabled !== undefined) {
       const val = !!nostrCommentsEnabled;

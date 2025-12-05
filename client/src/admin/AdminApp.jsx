@@ -5,6 +5,7 @@ import Dashboard from "./Dashboard.jsx";
 import Products from "./Products.jsx";
 import Orders from "./Orders.jsx";
 import Settings from "./Settings.jsx";
+import NostrAdmin from "./Nostr.jsx";
 import BulkPricing from "./BulkPricing.jsx";
 import { AdminI18nProvider } from "./i18n.jsx";
 import { useAdmin } from "../store/useAdmin.js";
@@ -34,6 +35,7 @@ export default function AdminApp() {
               <Route path="orders" element={<Orders />} />
               <Route path="pricing" element={<BulkPricing />} />
               <Route path="settings" element={<Settings />} />
+              <Route path="nostr" element={<NostrAdmin />} />
             </Route>
             <Route path="*" element={<div>Not Found</div>} />
           </Routes>

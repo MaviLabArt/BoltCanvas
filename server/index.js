@@ -2,13 +2,15 @@ import "dotenv/config";
 import express from "express";
 import path from "path";
 import fs from "fs";
+import fetch from "node-fetch";
 import { fileURLToPath } from "url";
 import WebSocket from "ws";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import { spawn } from "child_process";
 import crypto from "crypto";
 import sharp from "sharp";
-import { verifyEvent } from "nostr-tools/pure";
+import { verifyEvent, finalizeEvent } from "nostr-tools/pure";
+import { SimplePool } from "nostr-tools/pool";
 
 import { makeCors, sessions, logger, requireAdmin } from "./middleware.js";
 import { Products, Orders, Settings, ProductImages, ProductNostrPosts, NostrCarts, DEFAULT_TEASER_HASHTAGS } from "./db.js";
@@ -48,6 +50,11 @@ import {
   sendDM,
   publishProductTeaser,
   makeCommentProof,
+  publishStall,
+  fetchStallAndProducts,
+  publishProduct,
+  buildCoordinates,
+  KIND_PRODUCT
 } from "./nostr.js";
 
 import { sendOrderStatusEmail, label as statusLabel } from "./email.js";
@@ -149,10 +156,31 @@ const NTFY_PASSWORD = process.env.NTFY_PASSWORD || "";
 const NTFY_PRIORITY = process.env.NTFY_PRIORITY || "high";
 const NTFY_TITLE_PREFIX = process.env.NTFY_TITLE_PREFIX || "";
 const COMMENT_EVENT_KIND = 43115;
+const PLEBEIAN_PUSH_URL = process.env.PLEBEIAN_PUSH_URL || "https://plebeian.market/api/v1/products";
+const PLEBEIAN_AUTH_TOKEN = process.env.PLEBEIAN_AUTH_TOKEN || process.env.PLEBEIAN_API_TOKEN || "";
 
 // A small in-memory guard to avoid duplicate notifies for the same payment
 const notifiedHashes = new Set();
 const notifiedCommentIds = new Set();
+
+async function downloadImageAsDataUrl(url) {
+  const src = String(url || "").trim();
+  if (!src) return "";
+  try {
+    const rsp = await fetch(src);
+    if (!rsp.ok) {
+      console.warn("[nostr-import] image fetch failed", { url: src, status: rsp.status });
+      return "";
+    }
+    const buf = Buffer.from(await rsp.arrayBuffer());
+    const mime = rsp.headers.get("content-type") || "image/jpeg";
+    const b64 = buf.toString("base64");
+    return `data:${mime};base64,${b64}`;
+  } catch (e) {
+    console.warn("[nostr-import] image fetch error", { url: src, error: e?.message || e });
+    return "";
+  }
+}
 
 function verifyBtcpaySignature(rawBody, sigHeader, secret) {
   if (!sigHeader || !secret) return false;
@@ -498,6 +526,206 @@ function ensureImageUrlWithExt(url, ext = "jpg") {
   }
   const suffixed = `${base}.${ext}`;
   return queryParts.length ? `${suffixed}?${queryParts.join("?")}` : suffixed;
+}
+
+function parseDataUrl(raw) {
+  const value = String(raw || "").trim();
+  const match = /^data:([^;]+);base64,(.+)$/i.exec(value);
+  if (!match) return null;
+  try {
+    const mime = match[1] || "image/png";
+    const buf = Buffer.from(match[2], "base64");
+    return { mime, buffer: buf };
+  } catch {
+    return null;
+  }
+}
+
+function normalizeStallImage(req, raw) {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  if (value.startsWith("data:")) {
+    // Serve the data URL via public endpoint to avoid embedding base64 in Nostr
+    return ensureAbsoluteFromReq(req, "/api/public/stall-logo");
+  }
+  const abs = sanitizeExternalUrl(value) || ensureAbsoluteFromReq(req, value);
+  return ensureImageUrlWithExt(abs, "png");
+}
+
+function buildStallPublishArgs(req, settings, relays, geo = "") {
+  const dTag = settings.nostrStallDTag || (settings.storeName ? String(settings.storeName).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "main" : "main");
+  const name = settings.storeName || "Lightning Shop";
+  const description = settings.aboutBody || "";
+  const currency = (settings.nostrCurrency || "SATS").toUpperCase();
+  const rawImage = settings.nostrStallImage || settings.logo || settings.logoLight || settings.logoDark || "";
+  const image = normalizeStallImage(req, rawImage);
+  const shipping = [{
+    id: "pickup",
+    name: "Local Pickup",
+    cost: "0",
+    regions: [],
+    countries: []
+  }];
+  return { dTag, name, description, currency, shipping, image, geo, relays };
+}
+
+function buildNostrHttpAuthHeader({ path, method = "PUT" } = {}) {
+  const keys = getShopKeys();
+  if (!keys) {
+    console.warn("[plebeian] http-auth skipped: no server keys");
+    return null;
+  }
+  const uTag = String(path || "").trim();
+  if (!uTag) return null;
+  try {
+    const authEvent = finalizeEvent(
+      {
+        kind: 27235, // KindHttpAuth
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ["u", uTag],
+          ["method", String(method || "PUT").toUpperCase()]
+        ],
+        content: ""
+      },
+      keys.seckeyBytes
+    );
+    const token = `Nostr ${Buffer.from(JSON.stringify(authEvent)).toString("base64")}`;
+    return { Authorization: token };
+  } catch (err) {
+    console.warn("[plebeian] http-auth build failed", { error: err?.message || err });
+    return null;
+  }
+}
+
+async function pushEventsToPlebeian(events = []) {
+  const url = String(PLEBEIAN_PUSH_URL || "").trim();
+  if (!url) return { skipped: true, reason: "PLEBEIAN_PUSH_URL missing" };
+  console.info("[plebeian] push start", { url, count: Array.isArray(events) ? events.length : 0 });
+
+  const firstEvent = Array.isArray(events) && events.length === 1 ? events[0] : null;
+  const base = url.replace(/\/+$/, "");
+  const authHeader = PLEBEIAN_AUTH_TOKEN ? { Authorization: `Bearer ${PLEBEIAN_AUTH_TOKEN}` } : {};
+
+  function eventCoordinates(ev) {
+    try {
+      const kind = Number(ev?.kind || 0);
+      const pubkey = String(ev?.pubkey || "").trim();
+      if (!kind || !pubkey) return "";
+      const d = Array.isArray(ev?.tags) ? ev.tags.find((t) => Array.isArray(t) && t[0] === "d" && t[1]) : null;
+      const dTag = d ? String(d[1]) : "";
+      if (!dTag) return "";
+      return `${kind}:${pubkey}:${dTag}`;
+    } catch {
+      return "";
+    }
+  }
+
+  // If single product event, try PUT for updates when it already exists.
+  if (firstEvent && Number(firstEvent.kind) === 30018) {
+    const coord = eventCoordinates(firstEvent);
+    if (coord) {
+      const existsUrl = `${base}/${encodeURIComponent(coord)}?exists`;
+      try {
+        const existsResp = await fetch(existsUrl, { method: "GET", headers: { ...authHeader } });
+        const existsText = await existsResp.text();
+        let existsJson = {};
+        try { existsJson = JSON.parse(existsText); } catch {}
+        const exists = existsJson?.exists === true;
+        console.info("[plebeian] exists check", { url: existsUrl, status: existsResp.status, exists });
+        if (exists) {
+          const urlObj = new URL(base);
+          const pathForAuth = `${urlObj.pathname.replace(/\/+$/, "")}/${coord}`;
+          const nostrAuth = buildNostrHttpAuthHeader({ path: pathForAuth, method: "PUT" });
+          if (!nostrAuth) {
+            console.warn("[plebeian] PUT skipped: cannot build Nostr Authorization header");
+            return { ok: false, status: 0, error: "Missing Nostr auth header", method: "PUT" };
+          }
+          try {
+            const putResp = await fetch(`${base}/${encodeURIComponent(coord)}`, {
+              method: "PUT",
+              headers: { "content-type": "application/json", ...nostrAuth },
+              body: JSON.stringify(firstEvent)
+            });
+            const bodyText = await putResp.text();
+            const limited = bodyText.length > 2000 ? `${bodyText.slice(0, 2000)}…` : bodyText;
+            const result = { ok: putResp.ok, status: putResp.status, body: limited, method: "PUT" };
+            console.info("[plebeian] push result", result);
+            return result;
+          } catch (err) {
+            const result = { ok: false, status: 0, error: err?.message || String(err), method: "PUT" };
+            console.warn("[plebeian] push failed", result);
+            return result;
+          }
+        }
+      } catch (err) {
+        console.warn("[plebeian] exists check failed", { error: err?.message || err });
+      }
+    }
+  }
+
+  try {
+    const rsp = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...authHeader },
+      body: JSON.stringify(events)
+    });
+    const text = await rsp.text();
+    const limited = text.length > 2000 ? `${text.slice(0, 2000)}…` : text;
+    const result = { ok: rsp.ok, status: rsp.status, body: limited };
+    console.info("[plebeian] push result", result);
+    return result;
+  } catch (err) {
+    const result = { ok: false, status: 0, error: err?.message || String(err) };
+    console.warn("[plebeian] push failed", result);
+    return result;
+  }
+}
+
+function plebeianProductUrl(coord) {
+  const base = new URL(PLEBEIAN_PUSH_URL);
+  const path = base.pathname.replace(/\/+$/, "").replace(/\/products\/?$/i, "/products") || "/api/v1/products";
+  return `${base.origin}${path}/${encodeURIComponent(coord)}`;
+}
+
+function plebeianStallUrl(coord) {
+  const base = new URL(PLEBEIAN_PUSH_URL);
+  const path = base.pathname
+    .replace(/\/+$/, "")
+    .replace(/\/products\/?$/i, "/stalls")
+    .replace(/\/stalls\/?$/i, "/stalls") || "/api/v1/stalls";
+  return `${base.origin}${path}/${encodeURIComponent(coord)}`;
+}
+
+async function ensureStallLinkedOnStartup() {
+  if (TEST_MODE) return;
+  try {
+    const settings = Settings.getAll();
+    if (settings.nostrStallCoordinates || settings.nostrStallLastEventId) return;
+    const pubkeyHex = getShopPubkey();
+    if (!pubkeyHex) return;
+    const stallDTag = settings.nostrStallDTag || "main";
+    const relays = nostrRelays();
+    if (!relays.length) return;
+    console.info("[nostr-startup] attempting stall link from relays", { pubkeyHex, stallDTag, relays });
+    const catalog = await fetchStallAndProducts({ pubkeyHex, relays, stallDTag });
+    const coordsObj = catalog?.stall?.coordinates || {};
+    const coordinates = coordsObj.coordinates || catalog?.stall?.coordinates || "";
+    const event = catalog?.stall?.event;
+    if (coordinates && event?.id) {
+      Settings.recordStallPublish({
+        coordinates,
+        eventId: event.id,
+        publishedAt: (event.created_at || Math.floor(Date.now() / 1000)) * 1000,
+        relayResults: catalog?.relays || relays
+      });
+      console.info("[nostr-startup] stall linked", { coordinates, eventId: event.id });
+    } else {
+      console.info("[nostr-startup] no stall found on relays");
+    }
+  } catch (err) {
+    console.warn("[nostr-startup] failed to link stall", { error: err?.message || err });
+  }
 }
 
 function makeImageVersionQuery(version, idx) {
@@ -856,7 +1084,13 @@ function mapNostrConfigForResponse(product, row, {
     teaserLastEventId: row?.teaserLastEventId || "",
     teaserLastPublishedAt: row?.teaserLastPublishedAt || 0,
     teaserLastAck,
-    lastNaddr: row?.lastNaddr || ""
+    lastNaddr: row?.lastNaddr || "",
+    coordinates: row?.coordinates || "",
+    dTag: row?.dTag || "",
+    lastEventId: row?.lastEventId || "",
+    lastPublishedAt: row?.lastPublishedAt || 0,
+    lastContentHash: row?.lastContentHash || "",
+    lastAck: Array.isArray(row?.lastAck) ? row.lastAck : []
   };
 }
 
@@ -870,6 +1104,433 @@ function nostrRelays() {
     return ["wss://relay.damus.io", "wss://nos.lol"];
   }
 }
+
+// ────────────────────────────────────────────────────────────────────
+// NOSTR: Stall publishing (kind 30017)
+// ────────────────────────────────────────────────────────────────────
+app.post("/api/admin/nostr/stall/publish", requireAdmin, async (req, res) => {
+  try {
+    const settings = Settings.getAll();
+    const fallbackRelays = nostrRelays();
+    const body = req.body || {};
+    const relaysOverride = Array.isArray(body.relays) ? parseRelaysInput(body.relays) : null;
+    const relays = (relaysOverride && relaysOverride.length) ? relaysOverride : fallbackRelays;
+    const geo = typeof body.geo === "string" ? body.geo.trim() : "";
+    if (!relays.length) {
+      return res.status(400).json({ error: "No relays configured" });
+    }
+
+    const publishResult = await publishStall(buildStallPublishArgs(req, settings, relays, geo));
+
+    Settings.recordStallPublish({
+      coordinates: publishResult.coordinates,
+      eventId: publishResult.event.id,
+      publishedAt: publishResult.createdAt * 1000,
+      relayResults: publishResult.relayResults
+    });
+
+    res.json({
+      ok: true,
+      eventId: publishResult.event.id,
+      kind: publishResult.event.kind,
+      coordinates: publishResult.coordinates,
+      relays: publishResult.relays,
+      relayResults: publishResult.relayResults,
+      event: publishResult.event
+    });
+  } catch (e) {
+    res.status(400).json({ error: String(e?.message || e) });
+  }
+});
+
+// NOSTR: Product publishing (kind 30018)
+app.post("/api/admin/products/:id/nostr/publish", requireAdmin, async (req, res) => {
+  try {
+    const product = Products.get(req.params.id, { includeImages: false });
+    if (!product) return res.status(404).json({ error: "Not found" });
+    const settings = Settings.getAll();
+    const nostrMeta = ProductNostrPosts.get(product.id) || {};
+    const body = req.body || {};
+    const relaysOverride = Array.isArray(body.relays) ? parseRelaysInput(body.relays) : null;
+    const relays = (relaysOverride && relaysOverride.length) ? relaysOverride : nostrRelays();
+    const force = !!body.force;
+    if (!relays.length) {
+      return res.status(400).json({ error: "No relays configured" });
+    }
+
+    // Build a default image URL for Nostr payload (mirrors public catalog)
+    const count = Math.max(0, Number(product.imageCount || 0));
+    const idx = Number.isInteger(product.mainImageIndex) ? product.mainImageIndex : 0;
+    const safeIdx = Math.min(Math.max(0, idx | 0), Math.max(0, count - 1));
+    const imageUrls = [];
+    for (let i = 0; i < count; i += 1) {
+      const vtag = makeImageVersionQuery(product.imageVersion, i);
+      imageUrls.push(ensureAbsoluteFromReq(req, `/api/products/${product.id}/image/${i}.jpg${vtag}`));
+    }
+    const versionTag = makeImageVersionQuery(product.imageVersion, safeIdx);
+    const defaultImageUrl = imageUrls[safeIdx] || (count ? ensureAbsoluteFromReq(req, `/api/products/${product.id}/image/${safeIdx}.jpg${versionTag}`) : "");
+
+    const publishResult = await publishProduct({
+      product,
+      settings,
+      nostrMeta,
+      relays,
+      force,
+      fallbackImages: imageUrls.length ? imageUrls : (defaultImageUrl ? [defaultImageUrl] : [])
+    });
+    const collision = ProductNostrPosts.findByCoordinates(publishResult.coordinates);
+    if (collision && collision.productId !== product.id) {
+      return res.status(409).json({
+        error: `Coordinates already used by product ${collision.productId}`,
+        coordinates: publishResult.coordinates,
+        productId: collision.productId
+      });
+    }
+
+    if (publishResult.skipped) {
+      return res.json({
+        ok: true,
+        skipped: true,
+        reason: publishResult.reason || "unchanged",
+        coordinates: publishResult.coordinates,
+        contentHash: publishResult.contentHash
+      });
+    }
+
+    ProductNostrPosts.recordPublish(product.id, {
+      dTag: publishResult.dTag,
+      title: product.title,
+      summary: product.description || "",
+      content: publishResult.event?.content || "",
+      imageUrl: nostrMeta.imageUrl || "",
+      topics: nostrMeta.topics || [],
+      relays: publishResult.relays,
+      mode: "live",
+      listingStatus: product.available ? "available" : "sold",
+      lastEventId: publishResult.event.id,
+      lastKind: publishResult.event.kind,
+      lastPublishedAt: publishResult.createdAt * 1000,
+      lastAck: publishResult.relayResults,
+      lastNaddr: "",
+      coordinates: publishResult.coordinates,
+      kind: publishResult.event.kind,
+      rawContent: publishResult.event.content || "",
+      lastContentHash: publishResult.contentHash
+    });
+    const nostrRow = ProductNostrPosts.get(product.id);
+
+    let plebeianPush = null;
+    try {
+      plebeianPush = await pushEventsToPlebeian([publishResult.event]);
+    } catch (err) {
+      plebeianPush = { ok: false, error: err?.message || String(err) };
+    }
+
+    res.json({
+      ok: true,
+      eventId: publishResult.event.id,
+      kind: publishResult.event.kind,
+      coordinates: publishResult.coordinates,
+      relays: publishResult.relays,
+      relayResults: publishResult.relayResults,
+      event: publishResult.event,
+      nostr: nostrRow,
+      plebeianPush
+    });
+  } catch (e) {
+    res.status(400).json({ error: String(e?.message || e) });
+  }
+});
+
+// NOSTR: Refresh all products (republish if changed)
+app.post("/api/admin/nostr/products/refresh", requireAdmin, async (req, res) => {
+  try {
+    const settings = Settings.getAll();
+    const relays = nostrRelays();
+    if (!relays.length) {
+      return res.status(400).json({ error: "No relays configured" });
+    }
+    const shopPubkey = getShopPubkey();
+    if (!shopPubkey) {
+      return res.status(400).json({ error: "Missing SHOP_NOSTR_NSEC / server pubkey" });
+    }
+
+    const products = Products.all({ includeImages: false }) || [];
+    const filters = [];
+    const mapByDTag = new Map();
+    for (const product of products) {
+      const nostrMeta = ProductNostrPosts.get(product.id) || {};
+      const dTag = nostrMeta?.dTag || `product:${product.id}`;
+      mapByDTag.set(dTag, {
+        product,
+        nostrMeta
+      });
+      filters.push({
+        kinds: [KIND_PRODUCT],
+        authors: [shopPubkey],
+        "#d": [dTag],
+        limit: 1
+      });
+    }
+
+    const pool = new SimplePool({ enableReconnect: false });
+    const latest = new Map(); // dTag -> { created_at, id }
+    try {
+      let events = [];
+      const batchSize = 20;
+      const batches = [];
+      for (let i = 0; i < filters.length; i += batchSize) {
+        batches.push(filters.slice(i, i + batchSize));
+      }
+
+      for (const batch of batches) {
+        let batchEvents = [];
+        if (typeof pool.querySync === "function") {
+          const results = await Promise.all(
+            batch.map((f) => pool.querySync(relays, f).catch(() => []))
+          );
+          batchEvents = results.flat();
+        } else if (typeof pool.list === "function") {
+          batchEvents = await pool.list(relays, batch);
+        } else {
+          throw new Error("SimplePool does not support list/querySync");
+        }
+        events = events.concat(batchEvents || []);
+      }
+
+      for (const ev of events || []) {
+        const dTag = Array.isArray(ev.tags) ? (ev.tags.find((t) => t[0] === "d")?.[1] || "") : "";
+        if (!dTag) continue;
+        const prev = latest.get(dTag);
+        if (!prev || (ev.created_at || 0) > (prev.created_at || 0)) {
+          latest.set(dTag, { created_at: ev.created_at, id: ev.id });
+        }
+      }
+    } finally {
+      try { pool.close(relays); } catch {}
+    }
+
+    const results = [];
+    for (const [dTag, ctx] of mapByDTag.entries()) {
+      const { product, nostrMeta } = ctx;
+      const remote = latest.get(dTag);
+      const localTs = Number(nostrMeta?.lastPublishedAt || 0);
+      const remoteMs = remote?.created_at ? remote.created_at * 1000 : 0;
+      const hasNewer = remoteMs && remoteMs > localTs;
+      results.push({
+        productId: product.id,
+        dTag,
+        lastPublishedAt: localTs,
+        remoteCreatedAt: remoteMs,
+        remoteEventId: remote?.id || "",
+        remoteIsNewer: hasNewer
+      });
+    }
+
+    res.json({ ok: true, relays, results });
+  } catch (e) {
+    res.status(400).json({ error: String(e?.message || e) });
+  }
+});
+
+// Import stall + products from Nostr into local DB
+app.post("/api/admin/nostr/import", requireAdmin, async (req, res) => {
+  try {
+    const settings = Settings.getAll();
+    const body = req.body || {};
+
+    const pubkeyHex = getShopPubkey();
+    if (!pubkeyHex) {
+      return res.status(400).json({ error: "Missing SHOP_NOSTR_NSEC / server pubkey" });
+    }
+
+    console.info("[nostr-import] start", { pubkeyHex });
+
+    const stallDTag = String(body.stallDTag || settings.nostrStallDTag || "main").trim() || "main";
+    const relaysOverride = Array.isArray(body.relays) ? parseRelaysInput(body.relays) : null;
+    const relays = (relaysOverride && relaysOverride.length) ? relaysOverride : nostrRelays();
+    if (!relays.length) {
+      return res.status(400).json({ error: "No relays configured" });
+    }
+
+    console.info("[nostr-import] resolved", {
+      pubkeyHex,
+      stallDTag,
+      relays
+    });
+
+    const catalog = await fetchStallAndProducts({
+      pubkeyHex,
+      relays,
+      stallDTag
+    });
+
+    const updatedSettings = [];
+    function normalizeStallContent(content) {
+      if (!content || typeof content !== "object") return null;
+      const name = String(content.name || "").trim();
+      const description = typeof content.description === "string" ? content.description : "";
+      const currency = String(content.currency || settings.nostrCurrency || "SATS").toUpperCase();
+      if (!name) return null;
+      return { name, description, currency };
+    }
+
+    if (catalog.stall) {
+      const stall = catalog.stall;
+      const c = normalizeStallContent(stall.content || {});
+      if (!c) {
+        console.warn("[nostr-import] stall content invalid, skipping settings update", { eventId: stall.event.id });
+      } else {
+        const coords = stall.coordinates || {};
+        const nextStoreName = c.name || settings.storeName;
+        const nextAboutBody = c.description || settings.aboutBody || "";
+        const nextCurrency = c.currency || settings.nostrCurrency || "SATS";
+        Settings.setAll({
+          storeName: nextStoreName,
+          aboutBody: nextAboutBody,
+          nostrCurrency: nextCurrency,
+          nostrStallDTag: coords.tagD || stallDTag
+      });
+      Settings.recordStallPublish({
+        coordinates: coords.coordinates || "",
+        eventId: stall.event.id,
+        publishedAt: (stall.event.created_at || Math.floor(Date.now() / 1000)) * 1000,
+        relayResults: []
+      });
+      updatedSettings.push("stall");
+      console.info("[nostr-import] stall imported", {
+        storeName: nextStoreName,
+        nostrCurrency: nextCurrency,
+        nostrStallDTag: coords.tagD || stallDTag
+      });
+      }
+    }
+
+    const createdProducts = [];
+    const updatedProducts = [];
+    function normalizeImportedProductContent(raw, coords) {
+      try {
+        const name = String(raw?.name || coords?.tagD || raw?.id || "").trim();
+        if (!name) return null;
+        const description = typeof raw?.description === "string" ? raw.description : "";
+        const price = Math.max(0, Math.floor(Number(raw?.price || 0)));
+        const qtyRaw = raw?.quantity;
+        const quantity = Number.isFinite(Number(qtyRaw)) ? Math.max(0, Math.floor(Number(qtyRaw))) : undefined;
+        const isUnique = quantity === 1;
+        const images = Array.isArray(raw?.images) ? raw.images.map((u) => String(u || "").trim()).filter(Boolean) : [];
+        const gallery = Array.isArray(raw?.gallery) ? raw.gallery.map((u) => String(u || "").trim()).filter(Boolean) : images;
+        const specs = Array.isArray(raw?.specs)
+          ? raw.specs
+              .filter((pair) => Array.isArray(pair) && pair.length >= 2)
+              .map(([k, v]) => [String(k || "").slice(0, 64), String(v || "").slice(0, 256)])
+              .filter((pair) => pair[0] && pair[1])
+              .slice(0, 12)
+          : [];
+        return { name, description, price, quantity, isUnique, images: gallery, specs };
+      } catch {
+        return null;
+      }
+    }
+
+    for (const p of catalog.products || []) {
+      const coords = p.coordinates || {};
+      const norm = normalizeImportedProductContent(p.content || {}, coords);
+      if (!norm) {
+        console.warn("[nostr-import] skipping product: invalid content", { eventId: p.event.id });
+        continue;
+      }
+      const { name, description, price, quantity, isUnique, images: rawImages } = norm;
+      const images = [];
+      for (const url of rawImages) {
+        const dataUrl = await downloadImageAsDataUrl(url);
+        if (dataUrl) images.push(dataUrl);
+      }
+
+      const incomingMs = Math.max(0, (p.event.created_at || 0) * 1000);
+
+      const existingByCoords = ProductNostrPosts.findByCoordinates(coords.coordinates || "");
+      if (existingByCoords) {
+        console.info("[nostr-import] skipping existing product", { coordinates: coords.coordinates });
+        continue;
+      }
+
+      console.info("[nostr-import] creating product", {
+        sourceId: p.event.id,
+        coordinates: coords.coordinates,
+        title: name,
+        priceSats: price,
+        quantityAvailable: quantity,
+        imageUrls: rawImages,
+        imagesStored: images.length
+      });
+
+      const product = Products.create({
+        title: name,
+        subtitle: "",
+        description,
+        longDescription: description,
+        priceSats: price,
+        images,
+        mainImageIndex: 0,
+        widthCm: null,
+        heightCm: null,
+        depthCm: null,
+        showDimensions: false,
+        shippingZoneOverrides: [],
+        isUnique,
+        quantityAvailable: quantity
+      });
+
+      ProductNostrPosts.recordPublish(product.id, {
+        dTag: coords.tagD,
+        title: name,
+        summary: description,
+        content: JSON.stringify(p.content || {}),
+        imageUrl: rawImages[0] || "",
+        topics: [],
+        relays: catalog.relays || relays,
+        mode: "live",
+        listingStatus: quantity === 0 ? "sold" : "available",
+        lastEventId: p.event.id,
+        lastKind: p.event.kind,
+        lastPublishedAt: incomingMs || (p.event.created_at || Math.floor(Date.now() / 1000)) * 1000,
+        lastAck: [],
+        lastNaddr: "",
+        coordinates: coords.coordinates || "",
+        kind: p.event.kind,
+        rawContent: p.event.content || ""
+      });
+
+      createdProducts.push({
+        id: product.id,
+        title: product.title,
+        sourceEventId: p.event.id,
+        sourceCoordinates: coords.coordinates || "",
+        imageCount: images.length
+      });
+    }
+
+    console.info("[nostr-import] completed", {
+      pubkey: catalog.pubkey,
+      relays: catalog.relays,
+      stallImported: updatedSettings.includes("stall"),
+      productsImported: createdProducts.length
+    });
+
+    res.json({
+      ok: true,
+      pubkey: catalog.pubkey,
+      relays: catalog.relays,
+      stallImported: updatedSettings.includes("stall"),
+      productsImported: createdProducts.length,
+      products: createdProducts,
+      productsUpdated: updatedProducts
+    });
+  } catch (e) {
+    console.error("[nostr-import] failed", e?.message || e);
+    res.status(400).json({ error: String(e?.message || e) });
+  }
+});
 
 /** DM helper (best effort). Uses admin-editable templates if present. */
 async function dmOrderUpdate(order, rawStatus) {
@@ -1027,6 +1688,22 @@ app.get("/api/public-settings", (req, res) => {
   const nostrShopPubkey = getShopPubkey();
   res.json({ ...Settings.getPublic(), nostrShopPubkey });
 });
+// Expose the stall logo when stored as a data URL (for Nostr publishing)
+app.get("/api/public/stall-logo", (req, res) => {
+  try {
+    const settings = Settings.getAll();
+    const rawImage = settings.nostrStallImage || settings.logo || settings.logoLight || settings.logoDark || "";
+    const parsed = parseDataUrl(rawImage);
+    if (!parsed || !parsed.buffer?.length) {
+      return res.status(404).end();
+    }
+    res.set("Content-Type", parsed.mime || "image/png");
+    res.set("Cache-Control", "public, max-age=86400, immutable");
+    res.send(parsed.buffer);
+  } catch (err) {
+    res.status(500).json({ error: String(err?.message || err) });
+  }
+});
 app.get("/api/payments/config", (req, res) => {
   res.json({
     provider: PAYMENT_PROVIDER,
@@ -1085,7 +1762,11 @@ app.get("/api/products/:id", (req, res) => {
 
   const absImageUrls = imageUrls.map((u) => ensureAbsoluteFromReq(req, u));
   const absThumbUrls = thumbUrls.map((u) => ensureAbsoluteFromReq(req, u));
-  res.json({ ...p, imageUrls, thumbUrls, absImageUrls, absThumbUrls });
+  const shopPubkey = getShopPubkey();
+  const nostrRow = ProductNostrPosts.get(p.id);
+  const dTag = nostrRow?.dTag || `product:${p.id}`;
+  const coordinates = (shopPubkey && dTag) ? buildCoordinates(KIND_PRODUCT, shopPubkey, dTag) : "";
+  res.json({ ...p, imageUrls, thumbUrls, absImageUrls, absThumbUrls, nostr: { coordinates } });
 });
 
 // Binary image endpoints (full + thumbnail)
@@ -1224,7 +1905,21 @@ app.get("/api/admin/products", requireAdmin, (req, res) => {
   const pageSizeParam = Number.parseInt(req.query.pageSize, 10);
 
   if (!Number.isFinite(pageParam) || !Number.isFinite(pageSizeParam)) {
-    return res.json(Products.all({ includeImages: true }));
+    const all = Products.all({ includeImages: true }) || [];
+    const withNostr = all.map((p) => {
+      const nostrRow = ProductNostrPosts.get(p.id);
+      return { ...p, nostr: nostrRow ? {
+        dTag: nostrRow.dTag || "",
+        coordinates: nostrRow.coordinates || "",
+        lastEventId: nostrRow.lastEventId || "",
+        lastPublishedAt: nostrRow.lastPublishedAt || 0,
+        lastContentHash: nostrRow.lastContentHash || "",
+        lastAck: Array.isArray(nostrRow.lastAck) ? nostrRow.lastAck : [],
+        teaserLastEventId: nostrRow.teaserLastEventId || "",
+        teaserLastPublishedAt: nostrRow.teaserLastPublishedAt || 0
+      } : null };
+    });
+    return res.json(withNostr);
   }
 
   const pageSize = Math.min(100, Math.max(1, pageSizeParam));
@@ -1247,6 +1942,19 @@ app.get("/api/admin/products", requireAdmin, (req, res) => {
       if (Number.isFinite(p.quantityAvailable)) return Math.max(0, p.quantityAvailable);
       return null;
     })();
+    const nostrRow = ProductNostrPosts.get(p.id);
+    const nostr = nostrRow
+      ? {
+          dTag: nostrRow.dTag || "",
+          coordinates: nostrRow.coordinates || "",
+          lastEventId: nostrRow.lastEventId || "",
+          lastPublishedAt: nostrRow.lastPublishedAt || 0,
+          lastContentHash: nostrRow.lastContentHash || "",
+          lastAck: Array.isArray(nostrRow.lastAck) ? nostrRow.lastAck : [],
+          teaserLastEventId: nostrRow.teaserLastEventId || "",
+          teaserLastPublishedAt: nostrRow.teaserLastPublishedAt || 0
+        }
+      : null;
     return {
       id: p.id,
       title: p.title,
@@ -1270,7 +1978,8 @@ app.get("/api/admin/products", requireAdmin, (req, res) => {
       heightCm: p.heightCm,
       depthCm: p.depthCm,
       showDimensions: p.showDimensions,
-      shippingZoneOverrides: Array.isArray(p.shippingZoneOverrides) ? p.shippingZoneOverrides : []
+      shippingZoneOverrides: Array.isArray(p.shippingZoneOverrides) ? p.shippingZoneOverrides : [],
+      nostr
     };
   });
 
@@ -1411,6 +2120,9 @@ app.post("/api/admin/products/:id/nostr/teaser/publish", requireAdmin, async (re
       ProductNostrPosts.setTeaser(product.id, updatePayload);
     }
     const config = ProductNostrPosts.get(product.id);
+    const dTag = config?.dTag || `product:${product.id}`;
+    const shopPubkey = getShopPubkey();
+    const coordinates = config?.coordinates || (shopPubkey ? buildCoordinates(KIND_PRODUCT, shopPubkey, dTag) : "");
     const teaserContent = String(config?.teaserContent || "").trim();
     const normalizedImageUrl = ensureImageUrlWithExt(config?.imageUrl || defaultImageUrl);
     const hashtags = normalizeTeaserHashtags(config?.teaserHashtags, defaultHashtags);
@@ -1436,7 +2148,8 @@ app.post("/api/admin/products/:id/nostr/teaser/publish", requireAdmin, async (re
       imageMime: derivedMime,
       imageAlt: product.title || "",
       imageDim: "",
-      productUrl
+      productUrl,
+      coordinates
     });
 
     const publishedRow = ProductNostrPosts.recordTeaserPublish(product.id, {
@@ -2802,6 +3515,8 @@ if (!TEST_MODE) {
     console.log(`Server listening on http://0.0.0.0:${PORT}`);
   });
   if (spaProxy) server.on("upgrade", spaProxy.upgrade);
+  // On startup, if stall coordinates are missing, try to fetch from relays and link them.
+  ensureStallLinkedOnStartup();
 }
 
 // ---------------------------------------------------------------------

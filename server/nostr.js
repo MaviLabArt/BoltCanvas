@@ -24,10 +24,17 @@ try {
 }
 
 // ------------------------------
-// Small helpers
+// Small helpers & PR-event constants
 // ------------------------------
 const HEX64 = /^[0-9a-f]{64}$/i;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Parameterized replaceable kinds (NIP-33), aligned with plebeian.market
+export const PR_KIND_MIN = 30000;
+export const PR_KIND_MAX = 40000;
+export const KIND_STALL = 30017;
+export const KIND_PRODUCT = 30018;
+export const KIND_AUCTION = 30020;
 
 function isHex64(s) {
   return typeof s === "string" && HEX64.test(s);
@@ -38,6 +45,159 @@ function uniq(a) {
 }
 
 let _loggedRelays = false;
+
+// ------------------------------
+// Coordinate helpers (kind:pubkey:d-tag)
+// ------------------------------
+
+export function parseCoordinatesString(input) {
+  const raw = String(input || "");
+  const parts = raw.split(":");
+  const result = {
+    tagD: raw
+  };
+
+  if (parts.length >= 3) {
+    let tagDIndex = parts.length - 1;
+    while (tagDIndex >= 0 && !parts[tagDIndex]) {
+      tagDIndex -= 1;
+    }
+    if (tagDIndex >= 0) {
+      result.tagD = parts[tagDIndex];
+    }
+
+    for (let i = 0; i < tagDIndex; i += 1) {
+      const part = parts[i];
+      if (!result.kind) {
+        const kindNumber = Number(part);
+        if (!Number.isNaN(kindNumber) && kindNumber >= PR_KIND_MIN && kindNumber < PR_KIND_MAX) {
+          result.kind = kindNumber;
+          continue;
+        }
+      }
+      if (!result.pubkey && isHex64(part)) {
+        result.pubkey = part.toLowerCase();
+      }
+    }
+
+    if (result.kind && result.pubkey && result.tagD) {
+      result.coordinates = `${result.kind}:${result.pubkey}:${result.tagD}`;
+    }
+  }
+
+  return result;
+}
+
+export function getEventCoordinates(event) {
+  if (!event) return null;
+  const kind = Number(event.kind || 0);
+  const pubkey = String(event.pubkey || "").toLowerCase();
+  const tags = Array.isArray(event.tags) ? event.tags : [];
+  const dTag = tags.find((t) => Array.isArray(t) && t[0] === "d");
+  const tagD = dTag && typeof dTag[1] === "string" ? dTag[1] : "";
+
+  if (!kind || kind < PR_KIND_MIN || kind >= PR_KIND_MAX || !pubkey || !tagD) {
+    console.warn(
+      "[nostr] getEventCoordinates: invalid event",
+      {
+        id: event.id,
+        kind: event.kind,
+        pubkey: event.pubkey,
+        hasD: !!tagD
+      }
+    );
+    return null;
+  }
+
+  const coordinatesString = `${kind}:${pubkey}:${tagD}`;
+  const parsed = parseCoordinatesString(coordinatesString);
+
+  if (parsed.coordinates && parsed.tagD) {
+    return {
+      coordinates: parsed.coordinates,
+      kind,
+      pubkey,
+      tagD: parsed.tagD
+    };
+  }
+
+  return null;
+}
+
+export function buildCoordinates(kind, pubkey, dTag) {
+  const k = Number(kind || 0);
+  const pk = String(pubkey || "").toLowerCase();
+  const d = String(dTag || "").trim();
+  if (!k || k < PR_KIND_MIN || k >= PR_KIND_MAX || !pk || !d) return "";
+  return `${k}:${pk}:${d}`;
+}
+
+function hashContent(obj) {
+  try {
+    const json = JSON.stringify(obj || {});
+    return createHash("sha1").update(json).digest("hex");
+  } catch {
+    return "";
+  }
+}
+
+function normalizeProductDTag(productId, raw) {
+  const fallbackBase = String(productId || "").trim() || "product";
+  let input = String(raw || "").trim();
+  if (!input) input = fallbackBase;
+  // Strip legacy "product:" prefix to keep dTag a simple slug
+  input = input.replace(/^product:/i, "");
+  const cleaned = input.replace(/\s+/g, "-").replace(/[^A-Za-z0-9._-]/g, "");
+  if (!cleaned) return fallbackBase;
+  return cleaned.slice(0, 256);
+}
+
+function validateProductContentShape(content) {
+  const errors = [];
+  const out = { ...content };
+
+  out.name = String(out.name || "").trim();
+  if (!out.name) errors.push("name is required");
+
+  out.description = typeof out.description === "string" ? out.description : "";
+  out.currency = String(out.currency || "SATS").toUpperCase();
+  out.price = Math.max(0, Math.floor(Number(out.price || 0)));
+  if (out.quantity !== undefined && out.quantity !== null) {
+    const q = Number(out.quantity);
+    out.quantity = Number.isFinite(q) ? Math.max(0, Math.floor(q)) : undefined;
+  }
+
+  out.images = Array.isArray(out.images) ? out.images.map((u) => String(u || "").trim()).filter(Boolean) : [];
+
+  out.specs = Array.isArray(out.specs)
+    ? out.specs
+        .filter((pair) => Array.isArray(pair) && pair.length >= 2)
+        .map(([k, v]) => [String(k || "").slice(0, 64), String(v || "").slice(0, 256)])
+        .filter((pair) => pair[0] && pair[1])
+        .slice(0, 12)
+    : [];
+
+  out.shipping = Array.isArray(out.shipping)
+    ? out.shipping
+        .map((s, idx) => ({
+            id: String(s?.id || `ship-${idx + 1}`).slice(0, 128),
+            name: String(s?.name || s?.id || "Shipping").slice(0, 128),
+            cost: String(Math.max(0, Math.floor(Number(s?.cost ?? 0)))),
+            regions: Array.isArray(s?.regions) ? s.regions : null,
+            countries: Array.isArray(s?.countries) ? s.countries : null
+          }))
+        .slice(0, 16)
+    : [];
+
+  delete out.gallery; // schema is strict: omit gallery entirely
+
+  if (errors.length) {
+    const err = new Error(`Invalid product event: ${errors.join(", ")}`);
+    err.name = "ProductEventValidationError";
+    throw err;
+  }
+  return out;
+}
 
 // ------------------------------
 // Server keys (from env), cached
@@ -430,7 +590,36 @@ function _shouldSendAndMark(toPubkeyHex, message) {
   return { should: true, key };
 }
 
-async function publishAndWait(relay, event, timeoutMs = 8000) {
+const PUBLISH_TIMEOUT_MS = Math.max(15000, Number(process.env.NOSTR_PUBLISH_TIMEOUT_MS || 15000));
+const publishPool = new SimplePool({ enablePing: true, enableReconnect: true });
+
+function attachRelayLogging(relay, label) {
+  if (!relay || relay._lsLogAttached) return;
+  const prevOnclose = relay.onclose;
+  relay.onclose = (reason) => {
+    console.warn("[nostr] relay closed", { relay: relay.url, label, reason });
+    try { prevOnclose?.(reason); } catch {}
+  };
+  const prevOnerror = relay.onerror;
+  relay.onerror = (err) => {
+    console.warn("[nostr] relay error", { relay: relay.url, label, error: err?.message || err });
+    try { prevOnerror?.(err); } catch {}
+  };
+  relay._lsLogAttached = true;
+}
+
+function logEventDebug(label, event) {
+  try {
+    const content = (() => {
+      try { return JSON.parse(event?.content || ""); } catch { return event?.content; }
+    })();
+    console.info("[nostr] publish payload", { label, event, content });
+  } catch {
+    // ignore logging failures
+  }
+}
+
+async function publishAndWait(relay, event, timeoutMs = PUBLISH_TIMEOUT_MS) {
   let timer;
   const to = new Promise((_, rej) => {
     timer = setTimeout(() => rej(new Error("publish timeout")), timeoutMs);
@@ -463,6 +652,36 @@ async function publishAndWait(relay, event, timeoutMs = 8000) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function publishWithPool(relays, event, { stopOnFirstOk = false, label = "publish" } = {}) {
+  const relayList = normalizeRelayList(relays);
+  const results = [];
+  let lastError = null;
+
+  for (const url of relayList) {
+    try {
+      const relay = await publishPool.ensureRelay(url, { connectionTimeout: Math.min(PUBLISH_TIMEOUT_MS - 500, PUBLISH_TIMEOUT_MS) });
+      attachRelayLogging(relay, label);
+      console.info("[nostr] relay connected", { relay: relay.url, label });
+      await publishAndWait(relay, event, PUBLISH_TIMEOUT_MS);
+      console.info("[nostr] publish ok", { relay: url, label });
+      results.push({ relay: url, ok: true, error: "" });
+      if (stopOnFirstOk) break;
+    } catch (err) {
+      lastError = err;
+      console.error("[nostr] publish failed", {
+        relay: url,
+        label,
+        message: err?.message,
+        stack: err?.stack,
+        cause: err?.cause
+      });
+      results.push({ relay: url, ok: false, error: err?.message || "publish failed" });
+    }
+  }
+
+  return { results, lastError };
 }
 
 export async function sendDM({ toPubkeyHex, message, relays }) {
@@ -513,37 +732,22 @@ export async function sendDM({ toPubkeyHex, message, relays }) {
   };
   const event = finalizeEvent(unsigned, keys.seckeyBytes);
   const valid = verifyEvent(event);
-  console.info("[nostr] sendDM: event finalized", { id: event.id, valid });
+  console.info("[nostr] sendDM: event finalized", {
+    id: event.id,
+    valid,
+    created_at: event.created_at,
+    tags: event.tags
+  });
   if (!valid) throw new Error("DM event verification failed");
+  logEventDebug("dm", event);
 
-  // Try relays sequentially, closing each gracefully
-  const results = [];
-  let lastError = null;
-  for (const url of relayList) {
-    let relay = null;
-    try {
-      console.info("[nostr] sendDM: connecting relay", { url });
-      relay = await Relay.connect(url);
-      await publishAndWait(relay, event, 8000);
-
-      // Give the socket a beat before closing to avoid noisy close warnings
-      await sleep(150);
-      try { relay.close(); } catch {}
-      await sleep(20);
-
-      console.info("[nostr] sendDM: publish ok", { url });
-      results.push({ relay: url, ok: true, error: "" });
-      return { ok: true, relay: url, deduped: false, key, results };
-    } catch (e) {
-      lastError = e;
-      console.error("[nostr] sendDM: publish failed", { url, error: e?.message || e });
-      results.push({ relay: url, ok: false, error: e?.message || "publish failed" });
-      try { relay?.close(); } catch {}
-      // Continue to next relay
-    }
+  // Try relays sequentially (pool keeps connections alive)
+  const { results, lastError } = await publishWithPool(relayList, event, { stopOnFirstOk: true, label: "dm" });
+  const okRelay = results.find((r) => r.ok);
+  if (okRelay) {
+    return { ok: true, relay: okRelay.relay, deduped: false, key, results };
   }
 
-  // If we reach here, all relays failed.
   const msg = lastError?.message || "All relays failed";
   console.error("[nostr] sendDM: failed on all relays", { msg, results });
   throw new Error(msg);
@@ -586,6 +790,367 @@ function extractTopicsFromContent(content) {
   return topics;
 }
 
+export async function publishStall({
+  dTag,
+  name,
+  description,
+  currency = "SATS",
+  shipping = [],
+  relays = [],
+  image = "",
+  geo = ""
+} = {}) {
+  const keys = getShopKeys();
+  if (!keys) throw new Error("Server Nostr keys not configured");
+
+  const stallD = String(dTag || "main").trim() || "main";
+  const stallName = String(name || "").trim() || "Lightning Shop";
+  const stallDescription = String(description || "").trim();
+  const stallCurrency = String(currency || "SATS").trim().toUpperCase() || "SATS";
+
+  const relayList = normalizeRelayList(relays);
+  if (!relayList.length) throw new Error("No relays provided");
+
+  const created_at = Math.floor(Date.now() / 1000);
+  const pubkey = keys.pubkeyHex;
+  const coordinates = buildCoordinates(KIND_STALL, pubkey, stallD);
+
+  const tags = [["d", stallD]];
+  const geoTag = String(geo || "").trim();
+  if (geoTag) tags.push(["g", geoTag]);
+  const stallImage = String(image || "").trim();
+  if (stallImage) tags.push(["image", stallImage]);
+
+  const safeShipping = Array.isArray(shipping)
+    ? shipping.map((s, idx) => ({
+        id: String(s?.id || `method-${idx + 1}`),
+        name: String(s?.name || "").trim() || "Shipping",
+        cost: String(s?.cost ?? "0"),
+        regions: Array.isArray(s?.regions) ? s.regions : [],
+        countries: Array.isArray(s?.countries) ? s.countries : []
+      }))
+    : [];
+
+  const contentObj = {
+    id: stallD,
+    name: stallName,
+    description: stallDescription,
+    currency: stallCurrency,
+    shipping: safeShipping,
+    ...(stallImage ? { image: stallImage } : {})
+  };
+
+  const event = finalizeEvent(
+    {
+      kind: KIND_STALL,
+      created_at,
+      pubkey,
+      tags,
+      content: JSON.stringify(contentObj)
+    },
+    keys.seckeyBytes
+  );
+
+  const valid = verifyEvent(event);
+  console.info("[nostr] publishStall: event finalized", {
+    id: event.id,
+    valid,
+    coordinates,
+    created_at: event.created_at,
+    tags: event.tags
+  });
+  if (!valid) {
+    throw new Error("Stall event verification failed");
+  }
+  logEventDebug("stall", event);
+
+  const { results: relayResults, lastError } = await publishWithPool(relayList, event, { label: "stall" });
+
+  const anyOk = relayResults.some((r) => r.ok);
+  if (!anyOk) {
+    throw new Error(lastError?.message || "All relays failed");
+  }
+
+  return {
+    event,
+    coordinates,
+    relays: relayList,
+    relayResults,
+    createdAt: created_at
+  };
+}
+
+export function buildProductEvent({
+  product,
+  settings,
+  nostrMeta,
+  stallCoordinates,
+  stallDTag,
+  pubkeyHex,
+  fallbackImages = []
+} = {}) {
+  if (!product) throw new Error("Product is required");
+  const dTag = normalizeProductDTag(product.id, nostrMeta?.dTag);
+  const coordinates = buildCoordinates(KIND_PRODUCT, pubkeyHex, dTag);
+  const stallId = stallCoordinates;
+  const price = Math.max(0, Math.floor(Number(product.priceSats || 0)));
+  const qtyRaw = Number(product.quantityAvailable);
+  const qty = Number.isFinite(qtyRaw) ? Math.max(0, qtyRaw) : (product.isUnique ? (product.available ? 1 : 0) : null);
+  const qtyOut = qty === null ? undefined : qty;
+  const currency = String(settings?.nostrCurrency || "SATS").toUpperCase();
+  const imageUrl = nostrMeta?.imageUrl ? String(nostrMeta.imageUrl).trim() : "";
+  const topics = Array.isArray(nostrMeta?.topics) ? nostrMeta.topics : [];
+  const galleryInput = Array.isArray(nostrMeta?.gallery) ? nostrMeta.gallery : [];
+  const gallery = uniq([imageUrl, ...galleryInput, ...fallbackImages].filter(Boolean));
+
+  const specs = [];
+  const dims = [product.widthCm, product.heightCm, product.depthCm]
+    .map((v) => (v === null || v === undefined ? "" : String(v)))
+    .filter((v) => v !== "");
+  if (dims.length) {
+    specs.push(["dimensions", `${dims.join(" x ")} cm`]);
+  }
+
+  // Skip per-product shipping to avoid FK issues on remote ingest; stall shipping covers defaults.
+  const shipping = [];
+
+  const content = validateProductContentShape({
+    id: dTag || undefined,
+    stall_id: stallDTag || stallId || undefined,
+    name: product.title || "",
+    type: "simple",
+    description: product.longDescription || product.description || "",
+    images: gallery.slice(0, 8),
+    currency,
+    price,
+    quantity: qtyOut,
+    specs,
+    shipping
+  });
+
+  const tags = [["d", dTag]];
+  if (stallCoordinates) {
+    tags.push(["a", stallCoordinates]);
+  }
+  for (const t of topics) {
+    if (t) tags.push(["t", String(t)]);
+  }
+
+  const contentHash = hashContent(content);
+  return { coordinates, tags, content, contentHash, dTag };
+}
+
+export async function publishProduct({
+  product,
+  settings,
+  nostrMeta = {},
+  relays = [],
+  force = false,
+  fallbackImages = []
+} = {}) {
+  const keys = getShopKeys();
+  if (!keys) throw new Error("Server Nostr keys not configured");
+  const relayList = normalizeRelayList(relays);
+  if (!relayList.length) throw new Error("No relays provided");
+
+  const stallDTag = settings?.nostrStallDTag || "main";
+  const stallCoords =
+    settings?.nostrStallCoordinates ||
+    buildCoordinates(KIND_STALL, keys.pubkeyHex, stallDTag);
+
+  const { coordinates, tags, content, contentHash, dTag } = buildProductEvent({
+    product,
+    settings,
+    nostrMeta,
+    stallCoordinates: stallCoords,
+    stallDTag,
+    pubkeyHex: keys.pubkeyHex,
+    fallbackImages
+  });
+
+  if (!force && nostrMeta?.lastContentHash && nostrMeta.lastContentHash === contentHash && nostrMeta.lastEventId) {
+    return {
+      skipped: true,
+      reason: "unchanged",
+      coordinates,
+      contentHash
+    };
+  }
+
+  const created_at = Math.floor(Date.now() / 1000);
+  const event = finalizeEvent(
+    {
+      kind: KIND_PRODUCT,
+      created_at,
+      pubkey: keys.pubkeyHex,
+      tags,
+      content: JSON.stringify(content)
+    },
+    keys.seckeyBytes
+  );
+
+  const valid = verifyEvent(event);
+  console.info("[nostr] publishProduct: event finalized", {
+    id: event.id,
+    valid,
+    coordinates,
+    dTag,
+    created_at: event.created_at,
+    tags: event.tags
+  });
+  if (!valid) {
+    throw new Error("Product event verification failed");
+  }
+  logEventDebug("product", event);
+
+  const { results: relayResults, lastError } = await publishWithPool(relayList, event, { label: "product" });
+
+  const anyOk = relayResults.some((r) => r.ok);
+  if (!anyOk) {
+    throw new Error(lastError?.message || "All relays failed");
+  }
+
+  return {
+    event,
+    coordinates,
+    relays: relayList,
+    relayResults,
+    contentHash,
+    dTag,
+    createdAt: created_at
+  };
+}
+
+// ---------------------------------------------------------------------
+// Nostr catalog fetch (stall + products) for import
+// ---------------------------------------------------------------------
+
+export async function fetchStallAndProducts({ pubkeyHex, relays, stallDTag } = {}) {
+  const pk = String(pubkeyHex || "").trim().toLowerCase();
+  if (!pk || !isHex64(pk)) {
+    throw new Error("Invalid pubkey for Nostr import");
+  }
+  const relayList = normalizeRelayList(Array.isArray(relays) ? relays : []);
+  if (!relayList.length) {
+    throw new Error("No relays provided for Nostr import");
+  }
+
+  const pool = new SimplePool({ enableReconnect: false });
+  try {
+    console.info("[nostr-import] fetchStallAndProducts start", {
+      pubkey: pk,
+      relays: relayList,
+      stallDTag
+    });
+    const filters = [
+      { kinds: [KIND_STALL], authors: [pk] },
+      { kinds: [KIND_PRODUCT], authors: [pk] }
+    ];
+    let events = [];
+    if (typeof pool.querySync === "function") {
+      const results = await Promise.all(
+        filters.map((f) => pool.querySync(relayList, f).catch(() => []))
+      );
+      const dedup = new Map();
+      for (const ev of results.flat()) {
+        if (ev && ev.id) dedup.set(ev.id, ev);
+      }
+      events = Array.from(dedup.values());
+    } else if (typeof pool.list === "function") {
+      events = await pool.list(relayList, filters);
+    } else {
+      throw new Error("SimplePool does not support querySync or list");
+    }
+    console.info("[nostr-import] querying relays with filters", filters);
+    const stalls = [];
+    const products = [];
+
+    for (const ev of events || []) {
+      if (!ev || typeof ev.kind !== "number") continue;
+      if (ev.kind === KIND_STALL) stalls.push(ev);
+      else if (ev.kind === KIND_PRODUCT) products.push(ev);
+    }
+
+    const targetD = stallDTag ? String(stallDTag).trim() : "";
+    let selectedStall = null;
+
+    // First pass: prefer stall matching the requested d-tag (if any)
+    for (const ev of stalls) {
+      const coords = getEventCoordinates(ev);
+      if (!coords) continue;
+      if (targetD && coords.tagD !== targetD) continue;
+      if (!selectedStall || (ev.created_at || 0) > (selectedStall.event.created_at || 0)) {
+        selectedStall = { event: ev, coordinates: coords };
+      }
+    }
+
+    // Fallback: if nothing matched the requested d-tag, pick the latest stall for this pubkey
+    if (!selectedStall && targetD) {
+      for (const ev of stalls) {
+        const coords = getEventCoordinates(ev);
+        if (!coords) continue;
+        if (!selectedStall || (ev.created_at || 0) > (selectedStall.event.created_at || 0)) {
+          selectedStall = { event: ev, coordinates: coords };
+        }
+      }
+      if (selectedStall) {
+        console.info("[nostr-import] stall fallback without dTag match", {
+          requestedDTag: targetD,
+          chosenDTag: selectedStall.coordinates?.tagD
+        });
+      }
+    }
+
+    let stall = null;
+    if (selectedStall) {
+      let stallContent;
+      try {
+        stallContent = JSON.parse(selectedStall.event.content || "{}");
+      } catch {
+        stallContent = {};
+      }
+      stall = {
+        event: selectedStall.event,
+        coordinates: selectedStall.coordinates,
+        content: stallContent
+      };
+    }
+
+    const normalizedProducts = [];
+    for (const ev of products) {
+      const coords = getEventCoordinates(ev);
+      if (!coords) continue;
+      let productContent;
+      try {
+        productContent = JSON.parse(ev.content || "{}");
+      } catch {
+        productContent = {};
+      }
+      normalizedProducts.push({
+        event: ev,
+        coordinates: coords,
+        content: productContent
+      });
+    }
+
+    const result = {
+      pubkey: pk,
+      stall,
+      products: normalizedProducts,
+      relays: relayList
+    };
+    console.info("[nostr-import] fetchStallAndProducts done", {
+      pubkey: pk,
+      relays: relayList,
+      hasStall: !!stall,
+      products: normalizedProducts.length
+    });
+    return result;
+  } finally {
+    try { pool.close(relayList); } catch {}
+  }
+}
+
 export async function publishProductTeaser({
   content = "",
   relays = [],
@@ -593,7 +1158,8 @@ export async function publishProductTeaser({
   imageMime = "image/jpeg",
   imageAlt = "",
   imageDim = "",
-  productUrl = ""
+  productUrl = "",
+  coordinates = ""
 }) {
   const keys = getShopKeys();
   if (!keys) throw new Error("Server Nostr keys not configured");
@@ -638,6 +1204,11 @@ export async function publishProductTeaser({
   for (const topic of topics) {
     tags.push(["t", topic]);
   }
+  if (coordinates) {
+    const aTag = ["a", coordinates];
+    if (relayList[0]) aTag.push(relayList[0]);
+    tags.push(aTag);
+  }
 
   if (!finalContent) {
     throw new Error("Teaser content is empty");
@@ -654,23 +1225,20 @@ export async function publishProductTeaser({
     keys.seckeyBytes
   );
 
-  const relayResults = [];
-  let lastError = null;
-
-  for (const url of relayList) {
-    let relay = null;
-    try {
-      relay = await Relay.connect(url);
-      await publishAndWait(relay, event, 8000);
-      relayResults.push({ relay: url, ok: true, error: "" });
-    } catch (err) {
-      relayResults.push({ relay: url, ok: false, error: err?.message || "publish failed" });
-      lastError = err;
-    } finally {
-      try { relay?.close(); } catch {}
-      await sleep(20);
-    }
+  const valid = verifyEvent(event);
+  console.info("[nostr] publishProductTeaser: event finalized", {
+    id: event.id,
+    valid,
+    coordinates,
+    created_at: event.created_at,
+    tags: event.tags
+  });
+  if (!valid) {
+    throw new Error("Teaser event verification failed");
   }
+  logEventDebug("teaser", event);
+
+  const { results: relayResults, lastError } = await publishWithPool(relayList, event, { label: "teaser" });
 
   const anyOk = relayResults.some((r) => r.ok);
   if (!anyOk) {
