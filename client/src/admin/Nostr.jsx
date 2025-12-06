@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { nip19 } from "nostr-tools";
 import AsyncButton from "../components/AsyncButton.jsx";
 import api from "../services/api.js";
 import { useAdminI18n } from "./i18n.jsx";
@@ -166,12 +167,31 @@ export default function NostrAdmin() {
     }
   }
 
+  const buildNaddr = (coordinates, relays) => {
+    const raw = String(coordinates || "");
+    const parts = raw.split(":");
+    if (parts.length < 3) return "";
+    const kind = Number(parts[0]);
+    const pubkey = parts[1];
+    const dTag = parts.slice(2).join(":");
+    if (!kind || !pubkey || !dTag) return "";
+    try {
+      const base = { kind, pubkey, identifier: dTag };
+      const relayList = Array.isArray(relays) ? relays.filter((r) => r && r.startsWith("ws")) : [];
+      if (relayList.length) base.relays = relayList;
+      return nip19.naddrEncode(base);
+    } catch {
+      return "";
+    }
+  };
+
   const stallPublished = !!(settings?.nostrStallLastEventId || settings?.nostrStallCoordinates);
   const stallInfo = stallPublished ? {
     name: settings?.storeName || "",
     coordinates: settings?.nostrStallCoordinates || "",
     eventId: settings?.nostrStallLastEventId || "",
-    publishedAt: settings?.nostrStallLastPublishedAt || 0
+    publishedAt: settings?.nostrStallLastPublishedAt || 0,
+    naddr: buildNaddr(settings?.nostrStallCoordinates, settings?.nostrRelays)
   } : null;
 
   return (
@@ -231,6 +251,11 @@ export default function NostrAdmin() {
                 {stallInfo?.coordinates ? (
                   <div className="break-all">
                     {t("Coordinate", "Coordinates")}: {stallInfo.coordinates}
+                  </div>
+                ) : null}
+                {stallInfo?.naddr ? (
+                  <div className="break-all">
+                    {t("Naddr", "Naddr")}: {stallInfo.naddr}
                   </div>
                 ) : null}
                 {stallInfo?.eventId ? (

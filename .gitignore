@@ -123,6 +123,14 @@ client/logs/
 nginx/*.local.conf
 *.local.nginx.conf
 
+# ─────────────────────────────────────────
+# Markdown
+# ─────────────────────────────────────────
+*.md        # ignore all markdown files (i use them locally to take notes)
+!README.md  # but keep README.md
+!readme.md  # and keep readme.md (lowercase)
+
+
 # Platform folders
 .vercel/
 .netlify/
