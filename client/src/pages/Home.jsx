@@ -27,7 +27,8 @@ const DEFAULT_SETTINGS = {
   commissionTitle: "Commissions & Contact",
   commissionBody: "Open to custom requests - share your idea and I will reply with options.",
   commissionCtaLabel: "Write to me",
-  commissionCtaHref: "/about"
+  commissionCtaHref: "/about",
+  embedCode: ""
 };
 
 export default function Home() {
@@ -239,6 +240,25 @@ export default function Home() {
             </Link>
           </div>
         </div>
+      )}
+
+      {/* --- Embedded Code Section --- */}
+      {settings && settings.embedCode && (
+        <div
+          className="mt-6 rounded-3xl p-6 bg-slate-900 ring-1 ring-white/10 max-w-6xl mx-auto"
+          dangerouslySetInnerHTML={{ __html: settings.embedCode }}
+        />
+      )}
+      {/* Add custom styles to ensure the Moonstr iframe has proper height */}
+      {settings && settings.embedCode && (
+        <style dangerouslySetInnerHTML={{
+          __html: `
+            #moonstr-npub17nd4yu9anyd3004pumgrtazaacujjxwzj36thtqsxskjy0r5urgqf6950x {
+              min-height: 1000px !important;
+              height: 1000px !important;
+            }
+          `
+        }} />
       )}
 
       <RecentCommentsStrip products={ordered} />

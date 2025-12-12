@@ -2,34 +2,36 @@ import cookieSession from "cookie-session";
 import cors from "cors";
 import morgan from "morgan";
 
-export function makeCors(origin) {
-  // Allow a boolean or function in production, string in dev. Credentials are needed for admin cookie.
+// Extremely permissive CORS: reflect any Origin and allow credentials.
+export function makeCors() {
   return cors({
-    origin,
+    origin: (origin, cb) => cb(null, origin || "*"),
     credentials: true
   });
 }
 
 export function sessions(secret) {
+  const prod = process.env.NODE_ENV === "production";
+
+  // For localhost, use lax sameSite to avoid cookie rejection
   const baseOpts = {
     name: "lasess",
     secret,
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: "lax", // use lax for better localhost compatibility
     path: "/",
     maxAge: 7 * 24 * 3600 * 1000
   };
+
   const secureSession = cookieSession({ ...baseOpts, secure: true });
   const insecureSession = cookieSession({ ...baseOpts, secure: false });
 
   return function sessionMiddleware(req, res, next) {
-    const host = String(req.headers.host || "").split(":")[0];
-    const isLocalHost = host === "127.0.0.1" || host === "localhost";
-    const prod = process.env.NODE_ENV === "production";
+    const currentHost = String(req.headers.host || "").split(":")[0];
+    const currentIsLocalHost = currentHost === "127.0.0.1" || currentHost === "localhost";
 
-    // In production, use secure cookies for real hosts, but allow
-    // plain HTTP cookies when accessing via 127.0.0.1 / localhost.
-    if (prod && !isLocalHost) {
+    // Keep secure cookies on real hosts; allow insecure for local dev.
+    if (prod && !currentIsLocalHost) {
       return secureSession(req, res, next);
     }
     return insecureSession(req, res, next);

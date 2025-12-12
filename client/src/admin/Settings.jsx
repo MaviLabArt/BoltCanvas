@@ -95,6 +95,9 @@ export default function Settings() {
     commissionCtaLabel: "Write to me",
     commissionCtaHref: "/about",
 
+    // --- NEW: Embedded Code ---
+    embedCode: "",
+
     // --- NEW: Nostr & Lightning ---
     nostrNpub: "",
     nostrNip05: "",
@@ -839,6 +842,28 @@ export default function Settings() {
             placeholder={t("Link (es. /about o mailto:)", "Link (e.g. /about or mailto:)")}
           />
         </div>
+      </div>
+
+      {/* --- EMBEDDED CODE --- */}
+      <div className="mt-8">
+        <div className="text-lg font-semibold mb-2">
+          {t("Codice Embed", "Embedded Code")}
+        </div>
+        <div className="mb-3 text-sm text-white/60">
+          {t("Aggiungi codice embed personalizzato (es. widget social, form contatto, etc.). Verrà mostrato tra 'Commissioni & Contatti' e 'Cosa dicono i nostri clienti'.", "Add custom embed code (e.g. social widget, contact form, etc.). It will be displayed between 'Commissions & Contact' and 'What our customers say'.")}
+        </div>
+        <textarea
+          rows={8}
+          className="w-full px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10 font-mono text-sm"
+          placeholder={t("Incolla qui il tuo codice embed...", "Paste your embed code here...")}
+          value={s.embedCode}
+          onChange={(e) =>
+            setS({ ...s, embedCode: e.target.value })
+          }
+        />
+        <HelpBox>
+          {t("Il codice inserito verrà renderizzato così com'è. Assicurati che sia sicuro e proveniente da fonti attendibili.", "The inserted code will be rendered as-is. Make sure it's secure and from trusted sources.")}
+        </HelpBox>
       </div>
 
       {/* --- SHIPPING PRESET --- */}

@@ -1862,6 +1862,8 @@ app.put("/api/admin/settings", requireAdmin, (req, res) => {
     shippingTitle, shippingBullet1, shippingBullet2, shippingBullet3,
     shippingZones,
     commissionTitle, commissionBody, commissionCtaLabel, commissionCtaHref,
+    // NEW: Embedded Code
+    embedCode,
     // NEW Nostr/LN
     nostrNpub, nostrNip05, nostrRelays, lightningAddress, nostrDefaultHashtags, nostrCommentsEnabled,
     nostrBlockedPubkeys, nostrBlockedHashtags,
@@ -1885,6 +1887,8 @@ app.put("/api/admin/settings", requireAdmin, (req, res) => {
       shippingTitle, shippingBullet1, shippingBullet2, shippingBullet3,
       shippingZones,
       commissionTitle, commissionBody, commissionCtaLabel, commissionCtaHref,
+      // NEW: Embedded Code
+      embedCode,
       nostrNpub, nostrNip05, nostrRelays, lightningAddress, nostrDefaultHashtags, nostrCommentsEnabled,
       nostrBlockedPubkeys, nostrBlockedHashtags,
       themeChoice, themeTokens,

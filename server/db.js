@@ -1838,6 +1838,8 @@ export const Settings = {
         : map.commissionBody,
       commissionCtaLabel: map.commissionCtaLabel || "Write to me",
       commissionCtaHref: map.commissionCtaHref || "/about",
+      // NEW: Embedded Code
+      embedCode: map.embedCode || "",
       // NEW:
       nostrNpub: map.nostrNpub || "",
       nostrNip05: map.nostrNip05 || "",
@@ -1929,6 +1931,8 @@ export const Settings = {
       commissionBody: full.commissionBody,
       commissionCtaLabel: full.commissionCtaLabel,
       commissionCtaHref: full.commissionCtaHref,
+      // NEW: Embedded Code
+      embedCode: full.embedCode,
       nostrNpub: full.nostrNpub,
       nostrNip05: full.nostrNip05,
       nostrRelays: full.nostrRelays,
@@ -1947,6 +1951,8 @@ export const Settings = {
     shippingTitle, shippingBullet1, shippingBullet2, shippingBullet3,
     shippingZones, shippingMode, shippingDomesticCountry, shippingDomesticPriceSats, shippingContinentPrices, shippingOverrides,
     commissionTitle, commissionBody, commissionCtaLabel, commissionCtaHref,
+    // NEW: Embedded Code
+    embedCode,
     // NEW:
     nostrNpub, nostrNip05, nostrRelays, lightningAddress,
     // NEW: theme
@@ -2007,6 +2013,8 @@ export const Settings = {
     if (commissionBody !== undefined) sSet.run("commissionBody", commissionBody || "");
     if (commissionCtaLabel !== undefined) sSet.run("commissionCtaLabel", commissionCtaLabel || "");
     if (commissionCtaHref !== undefined) sSet.run("commissionCtaHref", commissionCtaHref || "/about");
+    // NEW: Embedded Code
+    if (embedCode !== undefined) sSet.run("embedCode", embedCode || "");
     // NEW:
     if (nostrNpub !== undefined) sSet.run("nostrNpub", nostrNpub || "");
     if (nostrNip05 !== undefined) sSet.run("nostrNip05", nostrNip05 || "");
