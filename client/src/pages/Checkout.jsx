@@ -36,7 +36,7 @@ export default function Checkout() {
     surname: "",
     address: "",
     postalCode: "",
-    country: "IT",
+    country: "",
     contactEmail: "",
     contactTelegram: "",
     contactNostr: "",
@@ -319,6 +319,10 @@ export default function Checkout() {
       alert("Please enter your province or state.");
       return;
     }
+    if (!String(form.country || "").trim()) {
+      alert("Please select your country.");
+      return;
+    }
     if (!String(form.contactPhone || "").trim()) {
       alert("Phone number is required for the courier.");
       return;
@@ -409,6 +413,9 @@ export default function Checkout() {
             value={form.country}
             onChange={(e) => setForm({ ...form, country: e.target.value })}
           >
+            <option value="" disabled>
+              Country
+            </option>
             {COUNTRIES.map((c) => (
               <option key={c.code} value={c.code}>
                 {c.name}
