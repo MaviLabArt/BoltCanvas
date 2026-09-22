@@ -8,6 +8,7 @@ import { ImapFlow } from "imapflow";
 import { Settings } from "./db.js";
 
 const _sentKeys = new Map(); // key -> timestamp
+const _inFlight = new Set();
 const TTL = 10 * 60 * 1000; // 10 minutes
 
 // Read-only mail transport config from environment (signature is from DB)
@@ -38,8 +39,8 @@ function shouldSend(orderId, status) {
   const key = dedupKey(orderId, status);
   const now = Date.now();
   for (const [k, ts] of _sentKeys) if (now - ts > TTL) _sentKeys.delete(k);
-  if (_sentKeys.has(key)) return false;
-  _sentKeys.set(key, now);
+  if (_sentKeys.has(key) || _inFlight.has(key)) return false;
+  _inFlight.add(key);
   return true;
 }
 
@@ -168,7 +169,7 @@ async function appendToSent(rawBuffer) {
     // 1) Discover special-use \Sent if not explicitly configured
     if (!sentMailbox) {
       try {
-        for await (const box of client.list()) {
+        for (const box of await client.list()) {
           if (box.specialUse === "\\Sent") {
             sentMailbox = box.path; // iCloud/Gmail/O365 pick-up
             break;
@@ -233,6 +234,7 @@ async function appendToSent(rawBuffer) {
  * Also (optionally) appends to the Sent mailbox via IMAP.
  */
 export async function sendOrderStatusEmail(order, status) {
+  let deliveryKey;
   try {
     if (!order || !order.contactEmail) return;
 
@@ -240,15 +242,14 @@ export async function sendOrderStatusEmail(order, status) {
     const s = Settings.getAll();
     if (!MAIL.enabled) return;
 
-    if (!shouldSend(order.id, status)) return; // idempotency guard
-
     const fromAddr = String(MAIL.fromAddress || "").trim();
     if (!fromAddr) return; // can't send without visible From:
+    if (!shouldSend(order.id, status)) return;
+    deliveryKey = dedupKey(order.id, status);
 
     const { subject, text, html } = buildBodies(order, status, s);
 
     // Build the message once into a Buffer so we can IMAP-append it later.
-    const builder = nodemailer.createTransport({ streamTransport: true, buffer: true });
     const mail = {
       from: MAIL.fromName ? `"${MAIL.fromName}" <${fromAddr}>` : fromAddr,
       to: order.contactEmail,
@@ -261,7 +262,9 @@ export async function sendOrderStatusEmail(order, status) {
         to: order.contactEmail
       }
     };
-    const compiled = await builder.sendMail(mail);
+    const compiled = MAIL.saveToSent
+      ? await nodemailer.createTransport({ streamTransport: true, buffer: true }).sendMail(mail)
+      : null;
     const raw = compiled?.message; // Buffer with CRLF line endings
 
     // Real SMTP send
@@ -272,6 +275,7 @@ export async function sendOrderStatusEmail(order, status) {
       auth: (MAIL.user || MAIL.pass) ? { user: MAIL.user, pass: MAIL.pass } : undefined
     });
     await transporter.sendMail(mail);
+    _sentKeys.set(deliveryKey, Date.now());
 
     // Optional: append to Sent via IMAP
     try { await appendToSent(raw); } catch (e) {
@@ -279,6 +283,8 @@ export async function sendOrderStatusEmail(order, status) {
     }
   } catch (e) {
     console.warn("[email] sendOrderStatusEmail failed:", e?.message || e);
+  } finally {
+    if (deliveryKey) _inFlight.delete(deliveryKey);
   }
 }
 

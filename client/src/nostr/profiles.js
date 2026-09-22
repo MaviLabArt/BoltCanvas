@@ -1,6 +1,28 @@
 import { fetchEventsOnce } from "./comments-core.js";
 
+const requests = new Map();
+const CACHE_TTL_MS = 60_000;
+const MAX_CACHE_ENTRIES = 100;
+
 export async function fetchProfilesForEvents(events, relays) {
+  const pubkeys = [...new Set((events || []).map((e) => e.pubkey).filter(Boolean))].sort();
+  if (!pubkeys.length) return {};
+  const key = JSON.stringify([relays, pubkeys]);
+  const cached = requests.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.promise;
+
+  const entry = { expiresAt: Date.now() + CACHE_TTL_MS };
+  entry.promise = loadProfiles(events, relays).catch((error) => {
+    if (requests.get(key) === entry) requests.delete(key);
+    throw error;
+  });
+  requests.delete(key);
+  requests.set(key, entry);
+  if (requests.size > MAX_CACHE_ENTRIES) requests.delete(requests.keys().next().value);
+  return entry.promise;
+}
+
+async function loadProfiles(events, relays) {
   const pubkeys = Array.from(
     new Set((events || []).map((e) => e.pubkey).filter(Boolean))
   );

@@ -20,12 +20,12 @@ const VERSIONS = {
 };
 
 function decodeVersion(xpub) {
-  const buf = bs58check.decode(xpub);
+  const buf = Buffer.from(bs58check.decode(xpub));
   return buf.readUInt32BE(0);
 }
 
 function normalizeToStandardXpub(raw) {
-  const buf = bs58check.decode(raw);
+  const buf = Buffer.from(bs58check.decode(raw));
   const ver = buf.readUInt32BE(0);
   const body = buf.slice(4);
 

@@ -1,4 +1,4 @@
-import { bytesToHex } from "@noble/hashes/utils";
+import { bytesToHex } from "@noble/hashes/utils.js";
 import { BunkerSigner as NBunkerSigner, toBunkerURL } from "nostr-tools/nip46";
 
 export class NostrConnectionSigner {

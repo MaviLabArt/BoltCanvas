@@ -1,6 +1,9 @@
 {
   "name": "lightning-shop-server",
   "private": true,
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "type": "module",
   "scripts": {
     "dev": "nodemon index.js",
@@ -8,35 +11,35 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@getalby/sdk": "^7.0.0",
+    "@getalby/sdk": "^8.0.3",
     "bech32": "^2.0.0",
-    "better-sqlite3": "^12.5.0",
-    "bip32": "^4.0.0",
+    "better-sqlite3": "^13.0.3",
+    "bip32": "^5.0.1",
     "bip39": "^3.1.0",
-    "bitcoinjs-lib": "^6.1.7",
-    "bs58check": "^2.1.2",
+    "bitcoinjs-lib": "^7.0.2",
+    "bs58check": "^4.0.0",
     "cookie-session": "^2.0.0",
-    "cors": "^2.8.5",
-    "dotenv": "^17.2.3",
-    "express": "^5.1.0",
-    "http-proxy-middleware": "^3.0.5",
-    "imapflow": "1.0.76",
-    "light-bolt11-decoder": "^3.0.0",
-    "morgan": "^1.10.0",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.2",
+    "express": "^5.2.1",
+    "http-proxy-middleware": "^4.2.0",
+    "imapflow": "^2.0.5",
+    "light-bolt11-decoder": "^3.2.0",
+    "morgan": "^1.12.1",
     "node-fetch": "^3.3.2",
-    "nodemailer": "^7.0.11",
-    "nostr-tools": "^2.18.2",
-    "sharp": "^0.34.5",
-    "svix": "^1.25.0",
+    "nodemailer": "^10.0.10",
+    "nostr-tools": "^2.25.2",
+    "sharp": "^0.35.4",
+    "svix": "^2.5.0",
     "tiny-secp256k1": "^2.2.4",
-    "ws": "^8.18.0"
+    "ws": "^8.21.3"
   },
   "overrides": {
     "secp256k1": "5.0.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.11",
-    "supertest": "^7.1.4",
-    "vitest": "^4.0.14"
+    "nodemon": "^3.1.14",
+    "supertest": "^7.2.2",
+    "vitest": "^5.0.1"
   }
 }

@@ -1,6 +1,6 @@
-import { schnorr } from "@noble/curves/secp256k1";
-import { sha256 } from "@noble/hashes/sha256";
-import { utf8ToBytes } from "@noble/hashes/utils";
+import { schnorr } from "@noble/curves/secp256k1.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { utf8ToBytes, hexToBytes } from "@noble/hashes/utils.js";
 import { extractProductIdFromTags } from "./comments-core.js";
 
 const HEX64 = /^[0-9a-f]{64}$/i;
@@ -24,7 +24,7 @@ export function verifyCommentProof(ev, storePubkey) {
   if (!productId) return false;
   const msg = buildCommentProofMessage(key, productId, ts);
   try {
-    return !!schnorr.verify(sig, sha256(utf8ToBytes(msg)), key);
+    return !!schnorr.verify(hexToBytes(sig), sha256(utf8ToBytes(msg)), hexToBytes(key));
   } catch {
     return false;
   }

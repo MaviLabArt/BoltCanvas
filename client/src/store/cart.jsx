@@ -336,6 +336,7 @@ export function CartProvider({ children }) {
           ids.map(async (id) => {
             try {
               const resp = await api.get(`/products/${id}`, {
+                params: { images: "urls" },
                 headers: { "cache-control": "no-cache" }
               });
               return [id, resp.data];
@@ -386,6 +387,7 @@ export function CartProvider({ children }) {
       if (hydrateIfMissing) {
         try {
           const resp = await api.get(`/products/${product.id}`, {
+            params: { images: "urls" },
             headers: { "cache-control": "no-cache" }
           });
           if (resp?.data) {

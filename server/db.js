@@ -299,8 +299,6 @@ if (!sGet.get("lightningAddress")) sSet.run("lightningAddress", "");
 if (!sGet.get("nostrCommentsEnabled")) sSet.run("nostrCommentsEnabled", "true");
 if (!sGet.get("nostrBlockedPubkeys")) sSet.run("nostrBlockedPubkeys", "[]");
 if (!sGet.get("nostrBlockedHashtags")) sSet.run("nostrBlockedHashtags", "[]");
-if (!sGet.get("nostrStallDTag")) sSet.run("nostrStallDTag", "main");
-if (!sGet.get("nostrCurrency")) sSet.run("nostrCurrency", "SATS");
 
 // ── NEW: Theme selector (dark | light | auto) ──
 if (!sGet.get("themeChoice")) sSet.run("themeChoice", "dark");
@@ -1860,12 +1858,6 @@ export const Settings = {
       nostrCommentsEnabled,
       nostrBlockedPubkeys: safeParseJSON(map.nostrBlockedPubkeys, []),
       nostrBlockedHashtags: safeParseJSON(map.nostrBlockedHashtags, []),
-      nostrStallDTag: map.nostrStallDTag || "main",
-      nostrCurrency: (map.nostrCurrency || "SATS").toUpperCase(),
-      nostrStallCoordinates: map.nostrStallCoordinates || "",
-      nostrStallLastEventId: map.nostrStallLastEventId || "",
-      nostrStallLastPublishedAt: Number(map.nostrStallLastPublishedAt || 0),
-      nostrStallLastAck: safeParseJSON(map.nostrStallLastAck, []),
       // NEW: Notification templates
       notifyDmTemplate_PAID: map.notifyDmTemplate_PAID || "",
       notifyDmTemplate_PREPARATION: map.notifyDmTemplate_PREPARATION || "",
@@ -1881,17 +1873,6 @@ export const Settings = {
         ? "Thanks for your support,\nYour Shop Name"
         : map.smtpSignature
     };
-  },
-  recordStallPublish({ coordinates, eventId, publishedAt, relayResults } = {}) {
-    const coords = String(coordinates || "").trim();
-    const id = String(eventId || "").trim();
-    const ts = Number(publishedAt || Date.now());
-    const ack = Array.isArray(relayResults) ? JSON.stringify(relayResults) : "[]";
-    sSet.run("nostrStallCoordinates", coords);
-    sSet.run("nostrStallLastEventId", id);
-    sSet.run("nostrStallLastPublishedAt", String(ts));
-    sSet.run("nostrStallLastAck", ack);
-    return this.getAll();
   },
   // Public subset (safe for client)
   getPublic() {
@@ -1962,8 +1943,6 @@ export const Settings = {
     nostrCommentsEnabled,
     nostrBlockedPubkeys,
     nostrBlockedHashtags,
-    nostrStallDTag,
-    nostrCurrency,
     // NEW: notification templates
     notifyDmTemplate_PAID, notifyDmTemplate_PREPARATION, notifyDmTemplate_SHIPPED,
     notifyEmailSubject_PAID, notifyEmailSubject_PREPARATION, notifyEmailSubject_SHIPPED,
@@ -2029,11 +2008,6 @@ export const Settings = {
     if (nostrBlockedHashtags !== undefined) {
       const val = Array.isArray(nostrBlockedHashtags) ? JSON.stringify(nostrBlockedHashtags) : String(nostrBlockedHashtags || "");
       sSet.run("nostrBlockedHashtags", val);
-    }
-    if (nostrStallDTag !== undefined) sSet.run("nostrStallDTag", nostrStallDTag || "main");
-    if (nostrCurrency !== undefined) {
-      const val = String(nostrCurrency || "SATS").toUpperCase();
-      sSet.run("nostrCurrency", val);
     }
     if (nostrCommentsEnabled !== undefined) {
       const val = !!nostrCommentsEnabled;

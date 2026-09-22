@@ -54,7 +54,7 @@ export default function ProductDetail() {
   // Fetch product
   useEffect(() => {
     api
-      .get(`/products/${id}`)
+      .get(`/products/${id}`, { params: { images: "urls" } })
       .then((r) => {
         const data = r.data || {};
         const absImages = Array.isArray(data.absImageUrls) ? data.absImageUrls : data.imageUrls;

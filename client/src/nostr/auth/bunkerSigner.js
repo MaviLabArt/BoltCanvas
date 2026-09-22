@@ -1,4 +1,4 @@
-import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { generateSecretKey } from "nostr-tools";
 import { BunkerSigner as NBunkerSigner, parseBunkerInput } from "nostr-tools/nip46";
 

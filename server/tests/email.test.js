@@ -18,6 +18,7 @@ vi.mock("../db.js", () => ({
 
 async function loadEmail() {
   process.env.SMTP_ENABLED = "true";
+  process.env.SMTP_SAVE_TO_SENT = "false";
   process.env.SMTP_FROM_ADDRESS = "shop@example.com";
   process.env.SMTP_HOST = "smtp.example.com";
   process.env.SMTP_USER = "";
@@ -57,7 +58,24 @@ describe("email", () => {
     await email.sendOrderStatusEmail(order, "PAID");
     await email.sendOrderStatusEmail(order, "PAID");
 
-    expect(createTransport).toHaveBeenCalledTimes(2); // builder + smtp for first call
-    expect(sendMail).toHaveBeenCalledTimes(2); // builder + smtp
+    expect(createTransport).toHaveBeenCalledTimes(1);
+    expect(sendMail).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows retry after SMTP failure and deduplicates successful delivery", async () => {
+    const email = await loadEmail();
+    const order = { id: "retry", contactEmail: "buyer@example.com", items: [] };
+    sendMail.mockRejectedValueOnce(new Error("SMTP unavailable"));
+    await email.sendOrderStatusEmail(order, "PAID");
+    await email.sendOrderStatusEmail(order, "PAID");
+    await email.sendOrderStatusEmail(order, "PAID");
+    expect(sendMail).toHaveBeenCalledTimes(2);
+  });
+
+  it("suppresses concurrent sends for the same order and status", async () => {
+    const email = await loadEmail();
+    const order = { id: "concurrent", contactEmail: "buyer@example.com", items: [] };
+    await Promise.all([email.sendOrderStatusEmail(order, "PAID"), email.sendOrderStatusEmail(order, "PAID")]);
+    expect(sendMail).toHaveBeenCalledTimes(1);
   });
 });

@@ -102,7 +102,7 @@ From the buyer’s point of view: Lightning is instant; on-chain shows a mempool
 
 ## What you need to run it
 
-- Node.js. Have a look here if you have not installed it yet [Node.js installation guide](https://nodejs.org/en/download)
+- Node.js 22.22.2+, 24.15.0+, or 26+ for client development and tests (server requires 22.12+). See the [Node.js installation guide](https://nodejs.org/en/download).
 - One of:
   - A **Blink** account (recommended): API key can be generated here [Create a Blink API key](https://dashboard.blink.sv/api-keys) . 
   - Your own **LND** node: REST URL + macaroon + TLS details (for expert and self sovreign users 💪).

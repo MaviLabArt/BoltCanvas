@@ -27,7 +27,6 @@ export default function Dashboard() {
         <Tab to="/admin/dashboard/orders">{t("Ordini", "Orders")}</Tab>
         <Tab to="/admin/dashboard/pricing">{t("Prezzi", "Pricing")}</Tab>
         <Tab to="/admin/dashboard/settings">{t("Impostazioni", "Settings")}</Tab>
-        <Tab to="/admin/dashboard/nostr">{t("Nostr", "Nostr")}</Tab>
       </div>
       <Outlet />
     </>

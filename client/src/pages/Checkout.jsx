@@ -35,6 +35,8 @@ export default function Checkout() {
     name: "",
     surname: "",
     address: "",
+    city: "",
+    province: "",
     postalCode: "",
     country: "",
     contactEmail: "",
@@ -146,20 +148,23 @@ export default function Checkout() {
   // --- Guard to ensure PAID/EXPIRED are handled only once per invoice ---
   const resolvedRef = useRef(false);
 
-  // Reset invoice when switching payment method
-  useEffect(() => {
+  // Reset only for an explicit user choice, never while restoring a payment.
+  function changePaymentMethod(method) {
+    if (method === paymentMethod) return;
     resolvedRef.current = false;
     setInv(null);
     setStatus("");
     setShowPay(false);
-  }, [paymentMethod]);
+    clearActivePayment();
+    setPaymentMethod(method);
+  }
 
   // Force Lightning if on-chain is not allowed for this total
   useEffect(() => {
-    if (paymentMethod === "onchain" && !onchainAllowed) {
+    if (!inv && paymentMethod === "onchain" && !onchainAllowed) {
       setPaymentMethod("lightning");
     }
-  }, [paymentMethod, onchainAllowed]);
+  }, [paymentMethod, onchainAllowed, inv]);
 
   // NEW: hold a pending navigation to /paid/:hash if the tab is hidden when payment completes
   const pendingNavHashRef = useRef(null);
@@ -216,15 +221,16 @@ export default function Checkout() {
     resolvedRef.current = false; // reset on new invoice
     let es;
     let fallbackTimer;
+    let disposed = false;
 
-    const startPollingFallback = (fromError = false) => {
+    const startPollingFallback = () => {
       if (resolvedRef.current) return;
       clearTimeout(fallbackTimer);
-      if (fromError) setSseConnected(false);
       const poll = async () => {
-        if (resolvedRef.current) return;
+        if (disposed || resolvedRef.current) return;
         try {
           const r = await api.get(`/payments/${paymentId}/status`);
+          if (disposed || resolvedRef.current) return;
           const st = String(r.data?.status || "").toUpperCase();
           setStatus(st);
           if (st === "PAID" || (isOnchain && st === "CONFIRMED")) {
@@ -233,20 +239,23 @@ export default function Checkout() {
           }
           if (st === "EXPIRED" || st === "FAILED") return handleExpired(st);
         } catch {}
-        fallbackTimer = setTimeout(poll, isOnchain ? 5000 : 3000);
+        if (!disposed && !resolvedRef.current) {
+          fallbackTimer = setTimeout(poll, isOnchain ? 5000 : 3000);
+        }
       };
       poll();
     };
 
     // Always run a lightweight poll alongside SSE so UI reflects mempool/confirm even if events are blocked.
-    startPollingFallback(false);
+    setSseConnected(false);
+    startPollingFallback();
 
     try {
       const url = `${API_BASE}/payments/${paymentId}/stream`;
       es = new EventSource(url, { withCredentials: true });
-      es.onopen = () => setSseConnected(true);
+      es.onopen = () => { if (!disposed) setSseConnected(true); };
       es.onmessage = (evt) => {
-        if (resolvedRef.current) return;
+        if (disposed || resolvedRef.current) return;
         try {
           const payload = JSON.parse(evt.data);
           if (!payload?.status) return;
@@ -261,17 +270,18 @@ export default function Checkout() {
       };
       es.onerror = () => {
         // When the server closes after PAID/EXPIRED, browsers fire 'error'.
-        // Only start fallback if we haven't already resolved.
+        // The existing polling loop continues without starting a second one.
         try {
           es.close();
         } catch {}
-        if (!resolvedRef.current) startPollingFallback(true);
+        if (!disposed) setSseConnected(false);
       };
     } catch {
-      startPollingFallback(true);
+      setSseConnected(false);
     }
 
     return () => {
+      disposed = true;
       try {
         es?.close();
       } catch {}
@@ -483,7 +493,7 @@ export default function Checkout() {
             <button
               type="button"
               className={`px-3 py-2 rounded-2xl ring-1 ${paymentMethod === "lightning" ? "bg-indigo-500/90 ring-indigo-400/60 text-white" : "bg-slate-900 ring-white/10 text-white/80"}`}
-              onClick={() => setPaymentMethod("lightning")}
+              onClick={() => changePaymentMethod("lightning")}
             >
               Lightning (fast)
             </button>
@@ -491,7 +501,7 @@ export default function Checkout() {
               type="button"
               className={`px-3 py-2 rounded-2xl ring-1 ${paymentMethod === "onchain" ? "bg-emerald-600/80 ring-emerald-400/60 text-white" : "bg-slate-900 ring-white/10 text-white/80"} ${!onchainAllowed ? "opacity-50 cursor-not-allowed" : ""}`}
               onClick={() => {
-                if (onchainAllowed) setPaymentMethod("onchain");
+                if (onchainAllowed) changePaymentMethod("onchain");
               }}
               disabled={!onchainAllowed}
             >

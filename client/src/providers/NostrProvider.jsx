@@ -6,7 +6,7 @@ import { BunkerSigner } from "../nostr/auth/bunkerSigner.js";
 import { NostrConnectionSigner } from "../nostr/auth/nostrConnectionSigner.js";
 import { NpubSigner } from "../nostr/auth/npubSigner.js";
 import LoginDialog from "../components/nostr/LoginDialog.jsx";
-import { bytesToHex } from "@noble/hashes/utils";
+import { bytesToHex } from "@noble/hashes/utils.js";
 import * as nip19 from "nostr-tools/nip19";
 import * as nip49 from "nostr-tools/nip49";
 

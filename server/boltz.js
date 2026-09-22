@@ -114,7 +114,7 @@ export function deriveRefundKey(index, {
   const pub = ecc.pointFromScalar(priv, true);
   return {
     rescueIndex: index,
-    refundPrivateKey: priv.toString("hex"),
+    refundPrivateKey: Buffer.from(priv).toString("hex"),
     refundPublicKey: Buffer.from(pub || []).toString("hex")
   };
 }
