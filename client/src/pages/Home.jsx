@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS = {
   heroLine: "Quality pieces made for you and shipped with care.",
   radiusScale: "3xl",
   productsHeading: "Featured Products",
+  featuredProductId: "",
   // new editable settings used by the hero / teaser / story arc
   aboutTitle: "About Us",
   aboutBody: "Use this space to introduce who you are, what you create, and how you work. Update it with your story and what customers can expect.",
@@ -52,6 +53,10 @@ export default function Home() {
   const ordered = useMemo(() => products.slice(), [products]);
   const available = useMemo(() => ordered.filter((p) => p.available), [ordered]);
   const sold = useMemo(() => ordered.filter((p) => !p.available), [ordered]);
+  const featuredProduct = useMemo(() => {
+    const id = String(settings?.featuredProductId || "");
+    return id ? ordered.find((p) => String(p.id) === id) || null : null;
+  }, [ordered, settings]);
 
   const teaserText = useMemo(() => {
     if (!settings) return "";
@@ -161,6 +166,22 @@ export default function Home() {
                 />
               </div>
             ) : null}
+          </div>
+        </div>
+      )}
+
+      {featuredProduct && !loading && !loadError && (
+        <div className="mx-auto mb-10 max-w-5xl px-1 sm:px-2">
+          <div className="mb-4 text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] opacity-60">
+              {settings.themeChoice === "light" ? "Selected artwork" : "Selected artwork"}
+            </p>
+            <h2 className="heading mt-2 text-2xl sm:text-3xl font-semibold tracking-tight">
+              {featuredProduct.title || featuredProduct.name}
+            </h2>
+          </div>
+          <div className="mx-auto max-w-3xl">
+            <ProductCard p={featuredProduct} radiusScale={settings.radiusScale} />
           </div>
         </div>
       )}

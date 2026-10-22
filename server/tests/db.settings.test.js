@@ -10,12 +10,14 @@ describe("db: settings", () => {
 
     Settings.setAll({
       storeName: "Test Store",
+      featuredProductId: "artwork-test-123",
       heroLine: "Hello!",
       shippingZones: [{ id: "z1", countries: ["IT"], priceSats: 10 }],
       nostrCommentsEnabled: false
     });
     const next = Settings.getAll();
     expect(next.storeName).toBe("Test Store");
+    expect(next.featuredProductId).toBe("artwork-test-123");
     expect(next.heroLine).toBe("Hello!");
     expect(next.shippingZones[0].id).toBe("z1");
     expect(next.nostrCommentsEnabled).toBe(false);

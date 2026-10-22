@@ -45,23 +45,27 @@ export default function Header() {
   useEffect(() => {
     try {
       const root = document.documentElement;
-      const df = s.displayFont || "space-grotesk";
-      const bf = s.bodyFont || "inter";
+      const displayFonts = {
+        "space-grotesk": '"Space Grotesk", sans-serif',
+        "fraunces": '"Fraunces", serif',
+        "playfair-display": '"Playfair Display", serif',
+        "cormorant-garamond": '"Cormorant Garamond", serif',
+        "lora": '"Lora", serif'
+      };
+      const bodyFonts = {
+        "inter": '"Inter", sans-serif',
+        "dm-sans": '"DM Sans", sans-serif',
+        "lato": '"Lato", sans-serif',
+        "manrope": '"Manrope", sans-serif',
+        "source-sans-3": '"Source Sans 3", sans-serif'
+      };
       root.style.setProperty(
         "--font-display",
-        df === "fraunces"
-          ? '"Fraunces", serif'
-          : df === "space-grotesk"
-            ? '"Space Grotesk", sans-serif'
-            : "system-ui"
+        displayFonts[s.displayFont] || displayFonts["space-grotesk"]
       );
       root.style.setProperty(
         "--font-body",
-        bf === "geist"
-          ? '"Geist", system-ui'
-          : bf === "inter"
-            ? '"Inter", sans-serif'
-            : "system-ui"
+        bodyFonts[s.bodyFont] || bodyFonts["inter"]
       );
     } catch {}
   }, [s.displayFont, s.bodyFont]);
@@ -192,7 +196,7 @@ export default function Header() {
 
   return (
     <>
-      <header className="sticky top-0 z-20 backdrop-blur-sm supports-[backdrop-filter]:bg-white/5 bg-black/20 border-b border-white/10">
+      <header className="sticky top-0 z-20 text-[#F5F0E6] backdrop-blur-sm bg-[#292B2A]/95 supports-[backdrop-filter]:bg-[#292B2A]/90 border-b border-[#B8734F]/40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             {/* Left: Home button (logo only; hidden on detail/cart/checkout/orders) */}
@@ -201,13 +205,13 @@ export default function Header() {
             ) : (
               <button
                 onClick={() => nav("/")}
-                className="text-left flex items-center justify-center h-10 w-10 rounded-xl bg-slate-900 ring-1 ring-white/10 hover:ring-indigo-400/60 transition"
+                className="text-left flex items-center justify-center h-10 w-10 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 hover:ring-[#B8734F]/70 transition"
                 title="Home"
                 aria-label="Home"
               >
                 <svg
                   viewBox="0 0 24 24"
-                  className="h-6 w-6 text-white/90"
+                  className="h-6 w-6 text-[#F5F0E6]"
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="1.6"
@@ -227,7 +231,7 @@ export default function Header() {
               {hasOrders && (
                 <Link
                   to="/orders"
-                  className="inline-flex items-center px-3 py-2 rounded-xl bg-slate-900 ring-1 ring-white/10 focus-visible:ring-2 focus-visible:ring-indigo-400"
+                  className="inline-flex items-center px-3 py-2 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F]"
                   title="My Orders"
                 >
                   Orders
@@ -236,9 +240,9 @@ export default function Header() {
 
               <Link
                 to="/cart"
-                className={`relative inline-flex items-center px-3 py-2 rounded-xl bg-slate-900 ring-1 ring-white/10 focus-visible:ring-2 focus-visible:ring-indigo-400 transition-transform duration-300 ease-out ${
+                className={`relative inline-flex items-center px-3 py-2 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F] transition-transform duration-300 ease-out ${
                   flashCart
-                    ? "scale-110 ring-2 ring-indigo-400 shadow-[0_8px_30px_rgba(99,102,241,0.45)]"
+                    ? "scale-110 ring-2 ring-[#B8734F] shadow-[0_8px_30px_rgba(184,115,79,0.35)]"
                     : ""
                 }`}
                 title="Cart"
@@ -246,7 +250,7 @@ export default function Header() {
                 Cart ({count})
                 {flashCart && (
                   <span
-                    className="pointer-events-none absolute -top-1.5 -right-1.5 inline-flex h-4 w-4 rounded-full bg-indigo-300/90 animate-ping"
+                    className="pointer-events-none absolute -top-1.5 -right-1.5 inline-flex h-4 w-4 rounded-full bg-[#C4815E]/90 animate-ping"
                     aria-hidden
                   />
                 )}
@@ -254,8 +258,8 @@ export default function Header() {
 
               {/* Nostr auth (desktop) */}
               {nostrPk ? (
-                <div className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 ring-1 ring-white/10">
-                  <div className="h-8 w-8 rounded-full overflow-hidden bg-slate-800 ring-1 ring-white/10 flex items-center justify-center text-xs font-semibold">
+                <div className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35">
+                  <div className="h-8 w-8 rounded-full overflow-hidden bg-[#3A3C39] ring-1 ring-[#B8734F]/35 flex items-center justify-center text-xs font-semibold">
                     {nostrProfile?.picture ? (
                       <img src={nostrProfile.picture} alt={nostrProfile.name || "avatar"} className="h-full w-full object-cover" loading="lazy" />
                     ) : (
@@ -267,7 +271,7 @@ export default function Header() {
                   </div>
                   <button
                     onClick={signOutNostr}
-                    className="text-xs px-2 py-1 rounded-lg bg-slate-800 ring-1 ring-white/10"
+                    className="text-xs px-2 py-1 rounded-lg bg-[#3A3C39] ring-1 ring-[#B8734F]/35"
                     title="Sign out of Nostr"
                   >
                     Sign out
@@ -276,7 +280,7 @@ export default function Header() {
               ) : (
                 <button
                   onClick={signInWithNostr}
-                  className="hidden sm:inline-flex items-center px-3 py-2 rounded-xl bg-indigo-500/90 hover:bg-indigo-500 ring-1 ring-white/10 focus-visible:ring-2 focus-visible:ring-indigo-400"
+                  className="hidden sm:inline-flex items-center px-3 py-2 rounded-xl bg-[#B8734F] text-[#292B2A] hover:bg-[#C4815E] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F]"
                   title="Login with Nostr"
                 >
                   Login with Nostr
@@ -290,7 +294,7 @@ export default function Header() {
                   <div className="relative sm:hidden">
                     <button
                       onClick={() => setMobileNostrMenuOpen((v) => !v)}
-                      className="h-10 w-10 rounded-full overflow-hidden bg-slate-900 ring-1 ring-white/10 flex items-center justify-center text-xs font-semibold"
+                      className="h-10 w-10 rounded-full overflow-hidden bg-[#292B2A] ring-1 ring-[#B8734F]/35 flex items-center justify-center text-xs font-semibold"
                       title="Account menu"
                       aria-label="Account menu"
                     >
@@ -301,13 +305,13 @@ export default function Header() {
                       )}
                     </button>
                     {mobileNostrMenuOpen && (
-                      <div className="absolute right-0 mt-2 w-48 rounded-xl bg-slate-900 ring-1 ring-white/10 shadow-lg p-3 z-30">
+                      <div className="absolute right-0 mt-2 w-48 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 shadow-lg p-3 z-30">
                         <div className="text-sm font-medium truncate" title={npubFull || nostrPk}>
                           {nostrProfile?.name || npubShort || "You"}
                         </div>
                         <button
                           onClick={() => { setMobileNostrMenuOpen(false); signOutNostr(); }}
-                          className="mt-2 w-full text-left text-xs px-3 py-2 rounded-lg bg-slate-800 ring-1 ring-white/10"
+                          className="mt-2 w-full text-left text-xs px-3 py-2 rounded-lg bg-[#3A3C39] ring-1 ring-[#B8734F]/35"
                         >
                           Sign out
                         </button>
@@ -317,7 +321,7 @@ export default function Header() {
                 ) : (
                   <button
                     onClick={signInWithNostr}
-                    className="sm:hidden inline-flex items-center px-3 py-2 rounded-xl bg-indigo-500/90 hover:bg-indigo-500 ring-1 ring-white/10 focus-visible:ring-2 focus-visible:ring-indigo-400 text-xs font-medium"
+                    className="sm:hidden inline-flex items-center px-3 py-2 rounded-xl bg-[#B8734F] text-[#292B2A] hover:bg-[#C4815E] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F] text-xs font-medium"
                     title="Nostr Login"
                     aria-label="Nostr Login"
                   >
@@ -326,8 +330,8 @@ export default function Header() {
                 )
               ) : (
                 nostrPk ? (
-                  <div className="sm:hidden inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-900 ring-1 ring-white/10">
-                    <div className="h-8 w-8 rounded-full overflow-hidden bg-slate-800 ring-1 ring-white/10 flex items-center justify-center text-xs font-semibold">
+                  <div className="sm:hidden inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35">
+                    <div className="h-8 w-8 rounded-full overflow-hidden bg-[#3A3C39] ring-1 ring-[#B8734F]/35 flex items-center justify-center text-xs font-semibold">
                       {nostrProfile?.picture ? (
                         <img src={nostrProfile.picture} alt={nostrProfile.name || "avatar"} className="h-full w-full object-cover" loading="lazy" />
                       ) : (
@@ -339,7 +343,7 @@ export default function Header() {
                     </div>
                     <button
                       onClick={signOutNostr}
-                      className="text-xs px-2 py-1 rounded-lg bg-slate-800 ring-1 ring-white/10"
+                      className="text-xs px-2 py-1 rounded-lg bg-[#3A3C39] ring-1 ring-[#B8734F]/35"
                       title="Sign out of Nostr"
                     >
                       Sign out
@@ -348,7 +352,7 @@ export default function Header() {
                 ) : (
                   <button
                     onClick={signInWithNostr}
-                    className="sm:hidden inline-flex items-center px-3 py-2 rounded-xl bg-indigo-500/90 hover:bg-indigo-500 ring-1 ring-white/10 focus-visible:ring-2 focus-visible:ring-indigo-400"
+                    className="sm:hidden inline-flex items-center px-3 py-2 rounded-xl bg-[#B8734F] text-[#292B2A] hover:bg-[#C4815E] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F]"
                     title="Nostr Login"
                   >
                     Nostr Login
@@ -368,7 +372,7 @@ export default function Header() {
             {storeLabel ? (
               storeLabel
             ) : (
-              <span className="inline-block h-4 w-16 bg-slate-800 rounded" aria-hidden />
+              <span className="inline-block h-4 w-16 bg-[#3A3C39] rounded" aria-hidden />
             )}
           </h1>
         </div>

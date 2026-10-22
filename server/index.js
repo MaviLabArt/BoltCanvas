@@ -1170,8 +1170,10 @@ app.put("/api/admin/settings", requireAdmin, (req, res) => {
     logoLight,
     favicon,
     productsHeading,
+    featuredProductId,
     heroLine,
     radiusScale,
+    displayFont, bodyFont,
     // NEW:
     aboutTitle, aboutBody, aboutImage,
     heroCtaLabel, heroCtaHref,
@@ -1197,7 +1199,8 @@ app.put("/api/admin/settings", requireAdmin, (req, res) => {
   } = req.body || {};
   res.json(
     Settings.setAll({
-      storeName, contactNote, logo, logoDark, logoLight, favicon, productsHeading, heroLine, radiusScale,
+      storeName, contactNote, logo, logoDark, logoLight, favicon, productsHeading, featuredProductId, heroLine, radiusScale,
+      displayFont, bodyFont,
       aboutTitle, aboutBody, aboutImage,
       heroCtaLabel, heroCtaHref,
       shippingTitle, shippingBullet1, shippingBullet2, shippingBullet3,

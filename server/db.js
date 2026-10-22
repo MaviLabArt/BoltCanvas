@@ -1809,10 +1809,13 @@ export const Settings = {
       logoLight: map.logoLight || "",
       favicon: map.favicon || "",
       productsHeading: map.productsHeading || "Featured Products",
+      featuredProductId: map.featuredProductId || "",
       heroLine: map.heroLine === undefined
         ? "Quality pieces made for you and shipped with care."
         : map.heroLine,
       radiusScale: map.radiusScale || "3xl",
+      displayFont: map.displayFont || "space-grotesk",
+      bodyFont: map.bodyFont || "inter",
       aboutTitle: map.aboutTitle || "About Us",
       aboutBody: map.aboutBody === undefined
         ? "Use this space to introduce who you are, what you create, and how you work. Update it with your story and what customers can expect."
@@ -1891,8 +1894,11 @@ export const Settings = {
       logoLight: full.logoLight,
       favicon: full.favicon,
       productsHeading: full.productsHeading,
+      featuredProductId: full.featuredProductId,
       heroLine: full.heroLine,
       radiusScale: full.radiusScale,
+      displayFont: full.displayFont,
+      bodyFont: full.bodyFont,
       aboutTitle: full.aboutTitle,
       aboutBody: full.aboutBody,
       aboutImage: full.aboutImage,
@@ -1927,7 +1933,8 @@ export const Settings = {
     };
   },
   setAll({
-    storeName, contactNote, logo, logoDark, logoLight, favicon, productsHeading, heroLine, radiusScale,
+    storeName, contactNote, logo, logoDark, logoLight, favicon, productsHeading, featuredProductId, heroLine, radiusScale,
+    displayFont, bodyFont,
     aboutTitle, aboutBody, aboutImage, heroCtaLabel, heroCtaHref,
     shippingTitle, shippingBullet1, shippingBullet2, shippingBullet3,
     shippingZones, shippingMode, shippingDomesticCountry, shippingDomesticPriceSats, shippingContinentPrices, shippingOverrides,
@@ -1957,8 +1964,11 @@ export const Settings = {
     if (logoLight !== undefined) sSet.run("logoLight", logoLight || "");
     if (favicon !== undefined) sSet.run("favicon", favicon || "");
     if (productsHeading !== undefined) sSet.run("productsHeading", productsHeading || "");
+    if (featuredProductId !== undefined) sSet.run("featuredProductId", String(featuredProductId || ""));
     if (heroLine !== undefined) sSet.run("heroLine", heroLine || "");
     if (radiusScale !== undefined) sSet.run("radiusScale", radiusScale || "3xl");
+    if (displayFont !== undefined) sSet.run("displayFont", displayFont || "space-grotesk");
+    if (bodyFont !== undefined) sSet.run("bodyFont", bodyFont || "inter");
     if (aboutTitle !== undefined) sSet.run("aboutTitle", aboutTitle || "");
     if (aboutBody !== undefined) sSet.run("aboutBody", aboutBody || "");
     if (aboutImage !== undefined) sSet.run("aboutImage", aboutImage || "");
