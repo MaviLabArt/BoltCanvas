@@ -196,12 +196,12 @@ export default function ProductDetail() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div>
-          <div className="rounded-3xl overflow-hidden bg-slate-900 ring-1 ring-white/10 aspect-square">
+          <div className="rounded-3xl overflow-hidden aspect-square">
             {hasImages && mainImgsAbs[active] ? (
               <img
                 src={mainImgsAbs[active]}
                 alt={p.title}
-                className="w-full h-full object-contain bg-black/40 cursor-zoom-in"
+                className="w-full h-full object-contain bg-transparent cursor-zoom-in"
                 loading="eager"
                 onClick={() => setLightbox(true)}
               />

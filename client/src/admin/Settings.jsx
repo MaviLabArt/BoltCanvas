@@ -898,14 +898,11 @@ export default function Settings() {
             setS({ ...s, commissionTitle: e.target.value })
           }
         />
-        <textarea
-          rows={4}
-          className="mb-2 w-full px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10"
-          placeholder={t("Testo", "Body text")}
-          value={s.commissionBody}
-          onChange={(e) =>
-            setS({ ...s, commissionBody: e.target.value })
-          }
+        <MarkdownEditor
+          value={s.commissionBody || ""}
+          onChange={(val) => setS({ ...s, commissionBody: val })}
+          placeholder={t("Testo delle commissioni: puoi usare Markdown", "Commission text: Markdown supported")}
+          showPreview={false}
         />
         <div className="grid sm:grid-cols-2 gap-3">
           <input

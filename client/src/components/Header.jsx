@@ -225,12 +225,12 @@ export default function Header() {
             )}
 
             {/* Right controls */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3">
               {/* About removed from header */}
 
               <Link
                 to="/gallery"
-                className="inline-flex items-center px-3 py-2 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F]"
+                className="inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap px-3 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F]"
                 title="Gallery"
               >
                 Gallery
@@ -239,7 +239,7 @@ export default function Header() {
               {hasOrders && (
                 <Link
                   to="/orders"
-                  className="inline-flex items-center px-3 py-2 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F]"
+                  className="inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap px-3 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F]"
                   title="My Orders"
                 >
                   Orders
@@ -248,7 +248,7 @@ export default function Header() {
 
               <Link
                 to="/cart"
-                className={`relative inline-flex items-center px-3 py-2 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F] transition-transform duration-300 ease-out ${
+                className={`relative inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap px-3 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F] transition-transform duration-300 ease-out ${
                   flashCart
                     ? "scale-110 ring-2 ring-[#B8734F] shadow-[0_8px_30px_rgba(184,115,79,0.35)]"
                     : ""
@@ -266,7 +266,7 @@ export default function Header() {
 
               {/* Nostr auth (desktop) */}
               {nostrPk ? (
-                <div className="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35">
+                <div className="hidden lg:inline-flex h-10 items-center gap-2 px-3 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35">
                   <div className="h-8 w-8 rounded-full overflow-hidden bg-[#3A3C39] ring-1 ring-[#B8734F]/35 flex items-center justify-center text-xs font-semibold">
                     {nostrProfile?.picture ? (
                       <img src={nostrProfile.picture} alt={nostrProfile.name || "avatar"} className="h-full w-full object-cover" loading="lazy" />
@@ -288,7 +288,7 @@ export default function Header() {
               ) : (
                 <button
                   onClick={signInWithNostr}
-                  className="hidden sm:inline-flex items-center px-3 py-2 rounded-xl bg-[#B8734F] text-[#292B2A] hover:bg-[#C4815E] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F]"
+                  className="hidden lg:inline-flex h-10 items-center px-3 rounded-xl bg-[#B8734F] text-[#292B2A] hover:bg-[#C4815E] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F]"
                   title="Login with Nostr"
                 >
                   Login with Nostr
@@ -299,7 +299,7 @@ export default function Header() {
               {/* Mobile: when Orders exists, use compact avatar + popover; else keep default */}
               {hasOrders ? (
                 nostrPk ? (
-                  <div className="relative sm:hidden">
+                  <div className="relative lg:hidden">
                     <button
                       onClick={() => setMobileNostrMenuOpen((v) => !v)}
                       className="h-10 w-10 rounded-full overflow-hidden bg-[#292B2A] ring-1 ring-[#B8734F]/35 flex items-center justify-center text-xs font-semibold"
@@ -329,7 +329,7 @@ export default function Header() {
                 ) : (
                   <button
                     onClick={signInWithNostr}
-                    className="sm:hidden inline-flex items-center px-3 py-2 rounded-xl bg-[#B8734F] text-[#292B2A] hover:bg-[#C4815E] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F] text-xs font-medium"
+                    className="lg:hidden inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap px-2 rounded-xl bg-[#B8734F] text-[#292B2A] hover:bg-[#C4815E] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F] text-xs font-medium"
                     title="Nostr Login"
                     aria-label="Nostr Login"
                   >
@@ -338,29 +338,37 @@ export default function Header() {
                 )
               ) : (
                 nostrPk ? (
-                  <div className="sm:hidden inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35">
-                    <div className="h-8 w-8 rounded-full overflow-hidden bg-[#3A3C39] ring-1 ring-[#B8734F]/35 flex items-center justify-center text-xs font-semibold">
+                  <div className="relative lg:hidden">
+                    <button
+                      onClick={() => setMobileNostrMenuOpen((v) => !v)}
+                      className="h-10 w-10 rounded-full overflow-hidden bg-[#292B2A] ring-1 ring-[#B8734F]/35 flex items-center justify-center text-xs font-semibold"
+                      title="Account menu"
+                      aria-label="Account menu"
+                    >
                       {nostrProfile?.picture ? (
                         <img src={nostrProfile.picture} alt={nostrProfile.name || "avatar"} className="h-full w-full object-cover" loading="lazy" />
                       ) : (
                         <span>{(nostrProfile?.name || npubShort || "Hi").slice(0, 2)}</span>
                       )}
-                    </div>
-                    <div className="text-sm" title={npubFull || nostrPk}>
-                      Hi {nostrProfile?.name || npubShort || "there"}!
-                    </div>
-                    <button
-                      onClick={signOutNostr}
-                      className="text-xs px-2 py-1 rounded-lg bg-[#3A3C39] ring-1 ring-[#B8734F]/35"
-                      title="Sign out of Nostr"
-                    >
-                      Sign out
                     </button>
+                    {mobileNostrMenuOpen && (
+                      <div className="absolute right-0 mt-2 w-48 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 shadow-lg p-3 z-30">
+                        <div className="text-sm font-medium truncate" title={npubFull || nostrPk}>
+                          {nostrProfile?.name || npubShort || "You"}
+                        </div>
+                        <button
+                          onClick={() => { setMobileNostrMenuOpen(false); signOutNostr(); }}
+                          className="mt-2 w-full text-left text-xs px-3 py-2 rounded-lg bg-[#3A3C39] ring-1 ring-[#B8734F]/35"
+                        >
+                          Sign out
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <button
                     onClick={signInWithNostr}
-                    className="sm:hidden inline-flex items-center px-3 py-2 rounded-xl bg-[#B8734F] text-[#292B2A] hover:bg-[#C4815E] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F]"
+                    className="lg:hidden inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap px-2 rounded-xl bg-[#B8734F] text-[#292B2A] hover:bg-[#C4815E] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F] text-xs font-medium"
                     title="Nostr Login"
                   >
                     Nostr Login

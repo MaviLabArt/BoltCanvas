@@ -154,13 +154,21 @@ export default function Home() {
                   {teaserText}
                 </div>
               )}
-              <div className="mt-2">
+              <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2">
                 <Link
                   to="/about"
                   className="inline-block underline underline-offset-4 hover:opacity-90 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-400"
                 >
                   Read more →
                 </Link>
+                {settings && (settings.commissionTitle || settings.commissionBody) && (
+                  <Link
+                    to="/commissions"
+                    className="inline-block underline underline-offset-4 hover:opacity-90 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-400"
+                  >
+                    Commissions →
+                  </Link>
+                )}
               </div>
             </div>
 
@@ -253,23 +261,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* --- Story arc: commission / contact callout --- */}
-      {settings && (settings.commissionTitle || settings.commissionBody) && (
-        <div className="mt-6 rounded-3xl p-6 bg-slate-900 ring-1 ring-white/10 max-w-3xl mx-auto text-center">
-          <div className="text-lg font-semibold">{settings.commissionTitle || "Commissions & Contact"}</div>
-          {settings.commissionBody && (
-            <p className="mt-2 text-white/80 whitespace-pre-wrap">{settings.commissionBody}</p>
-          )}
-          <div className="mt-4">
-            <Link
-              to={settings.commissionCtaHref || "/about"}
-              className="px-4 py-2 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 ring-1 ring-white/10"
-            >
-              {settings.commissionCtaLabel || "Write to me"}
-            </Link>
-          </div>
-        </div>
-      )}
 
       {/* --- Embedded Code Section --- */}
       {settings && settings.embedCode && (
