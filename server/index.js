@@ -12,6 +12,7 @@ import { createBufferCache } from "./buffer-cache.js";
 import { verifyEvent } from "nostr-tools/pure";
 
 import { makeCors, sessions, logger, requireAdmin } from "./middleware.js";
+import { createAdminLoginLimiter } from "./admin-login-limiter.js";
 import { Products, Orders, Settings, ProductImages, ProductNostrPosts, NostrCarts, DEFAULT_TEASER_HASHTAGS } from "./db.js";
 import { isEurope } from "./countries.js";
 import { makeId, now } from "./utils.js";
@@ -58,6 +59,7 @@ import { createNtfySender } from "./ntfy.js";
 import { verifySvixSignature } from "./svix.js";
 
 const app = express();
+const adminLoginLimiter = createAdminLoginLimiter();
 // Disable ETag generation to avoid 304s on status endpoints (we rely on fresh payloads)
 app.set("etag", false);
 const TEST_MODE = process.env.NODE_ENV === "test";
@@ -82,14 +84,15 @@ const FALLBACK_INDEX_HTML = [
 ].join("\n");
 let cachedIndexHtml = "";
 
-// In dev, restrict to Vite origin; in prod, reflect request origin (true) to keep cookies working.
+// In development, allow Vite origins by default.
+// In production, require explicitly configured CORS_ORIGIN.
 const rawCorsOrigin = process.env.CORS_ORIGIN;
 const parsedCorsOrigins = rawCorsOrigin
   ? rawCorsOrigin.split(",").map((o) => o.trim()).filter(Boolean)
   : null;
 const CORS_ORIGIN = (parsedCorsOrigins && parsedCorsOrigins.length)
   ? parsedCorsOrigins
-  : (DEV ? ["http://localhost:5173", "http://127.0.0.1:5173"] : true);
+  : (DEV ? ["http://localhost:5173", "http://127.0.0.1:5173"] : []);
 
 // Blink-specific env (used when PAYMENT_PROVIDER === "blink")
 const BLINK_GRAPHQL_URL = process.env.BLINK_GRAPHQL_URL;
@@ -1147,11 +1150,13 @@ app.put("/api/cart", (req, res) => {
 // ---------------------------------------------------------------------
 // Admin auth
 // ---------------------------------------------------------------------
-app.post("/api/admin/login", (req, res) => {
+app.post("/api/admin/login", adminLoginLimiter.middleware, (req, res) => {
   const { pin } = req.body || {};
   if (String(pin || "") !== String(ADMIN_PIN)) {
+    adminLoginLimiter.recordFailure(req);
     return res.status(401).json({ ok: false, error: "Invalid PIN" });
   }
+  adminLoginLimiter.reset(req);
   req.session.admin = true;
   res.json({ ok: true });
 });

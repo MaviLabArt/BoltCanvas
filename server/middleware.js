@@ -2,14 +2,24 @@ import cookieSession from "cookie-session";
 import cors from "cors";
 import morgan from "morgan";
 
-// Extremely permissive CORS: reflect any Origin and allow credentials.
-export function makeCors() {
+// Allow only explicitly configured origins. Requests without Origin do not need CORS.
+export function makeCors(allowedOrigins = []) {
+  const allowed = new Set(
+    Array.isArray(allowedOrigins)
+      ? allowedOrigins
+      : typeof allowedOrigins === "string"
+        ? allowedOrigins.split(",").map((origin) => origin.trim()).filter(Boolean)
+        : []
+  );
+
   return cors({
-    origin: (origin, cb) => cb(null, origin || "*"),
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, false);
+      return cb(null, allowed.has(origin));
+    },
     credentials: true
   });
 }
-
 export function sessions(secret) {
   const prod = process.env.NODE_ENV === "production";
 
