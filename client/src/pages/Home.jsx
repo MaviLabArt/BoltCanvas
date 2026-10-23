@@ -51,11 +51,19 @@ export default function Home() {
 
   // Preserve server-provided order (already respects availability + manual displayOrder)
   const ordered = useMemo(() => products.slice(), [products]);
-  const available = useMemo(() => ordered.filter((p) => p.available), [ordered]);
-  const sold = useMemo(() => ordered.filter((p) => !p.available), [ordered]);
+  const available = useMemo(
+    () => ordered.filter((p) => p.artworkStatus === "for_sale" && p.available),
+    [ordered]
+  );
+  const sold = useMemo(
+    () => ordered.filter((p) => p.artworkStatus === "sold"),
+    [ordered]
+  );
   const featuredProduct = useMemo(() => {
     const id = String(settings?.featuredProductId || "");
-    return id ? ordered.find((p) => String(p.id) === id) || null : null;
+    return id
+      ? ordered.find((p) => String(p.id) === id && p.artworkStatus === "for_sale" && p.available) || null
+      : null;
   }, [ordered, settings]);
 
   const teaserText = useMemo(() => {

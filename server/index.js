@@ -1038,7 +1038,7 @@ app.get("/api/payments/config", (req, res) => {
 app.get("/api/products", (req, res) => {
   const list = Products.allPublic() || [];
   const etagKey = list.map((p) => p.cacheTag).join("|");
-  const etag = strongEtag(`products:v3:${etagKey}`);
+  const etag = strongEtag(`products:v4:${etagKey}`);
   const alreadyFresh = req.headers["if-none-match"] && req.headers["if-none-match"] === etag;
 
   res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=60");
@@ -1082,7 +1082,10 @@ app.get("/api/products/:id", (req, res) => {
   const nostrRow = ProductNostrPosts.get(p.id);
   const dTag = nostrRow?.dTag || `product:${p.id}`;
   const coordinates = (shopPubkey && dTag) ? buildCoordinates(KIND_PRODUCT, shopPubkey, dTag) : "";
-  res.json({ ...p, imageUrls, thumbUrls, absImageUrls, absThumbUrls, nostr: { coordinates } });
+  const publicProduct = p.artworkStatus === "for_sale"
+    ? p
+    : (({ priceSats, ...rest }) => rest)(p);
+  res.json({ ...publicProduct, imageUrls, thumbUrls, absImageUrls, absThumbUrls, nostr: { coordinates } });
 });
 
 // Binary image endpoints (full + thumbnail)
@@ -1228,7 +1231,7 @@ app.get("/api/admin/products", requireAdmin, (req, res) => {
   const pageSizeParam = Number.parseInt(req.query.pageSize, 10);
 
   if (!Number.isFinite(pageParam) || !Number.isFinite(pageSizeParam)) {
-    const all = Products.all({ includeImages: true }) || [];
+    const all = Products.allForAdmin({ includeImages: true }) || [];
     const withNostr = all.map((p) => {
       const nostrRow = ProductNostrPosts.get(p.id);
       return { ...p, nostr: nostrRow ? {
@@ -1250,7 +1253,7 @@ app.get("/api/admin/products", requireAdmin, (req, res) => {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(Math.max(1, pageParam), totalPages);
   const offset = (page - 1) * pageSize;
-  const rows = Products.page({ offset, limit: pageSize });
+  const rows = Products.pageForAdmin({ offset, limit: pageSize });
 
   const items = rows.map((p) => {
     const count = Math.max(0, Number(p.imageCount || 0));
@@ -1590,7 +1593,8 @@ app.post("/api/admin/products", requireAdmin, (req, res) => {
     showDimensions,
     hidden,
     isUnique,
-    quantityAvailable
+    quantityAvailable,
+    artworkStatus
   } = req.body || {};
   if (!title || !priceSats || !images?.length) {
     return res.status(400).json({ error: "title, priceSats, images required" });
@@ -1609,7 +1613,8 @@ app.post("/api/admin/products", requireAdmin, (req, res) => {
     showDimensions: showDimensions !== undefined ? !!showDimensions : true,
     shippingZoneOverrides: Array.isArray(shippingZoneOverrides) ? shippingZoneOverrides : [],
     isUnique: isUnique !== undefined ? !!isUnique : undefined,
-    quantityAvailable: quantityAvailable
+    quantityAvailable: quantityAvailable,
+    artworkStatus: artworkStatus
   });
   if (available === false) Products.update(created.id, { available: false });
   if (hidden === true) Products.update(created.id, { hidden: true });
@@ -1632,6 +1637,7 @@ app.put("/api/admin/products/:id", requireAdmin, (req, res) => {
     patch.shippingZoneOverrides = Array.isArray(req.body.shippingZoneOverrides) ? req.body.shippingZoneOverrides : [];
   }
   if (req.body.available !== undefined) patch.available = !!req.body.available;
+  if (req.body.artworkStatus !== undefined) patch.artworkStatus = req.body.artworkStatus;
   if (req.body.hidden !== undefined) patch.hidden = !!req.body.hidden;
   if (req.body.showDimensions !== undefined) patch.showDimensions = !!req.body.showDimensions;
   if (req.body.isUnique !== undefined) patch.isUnique = !!req.body.isUnique;
@@ -1725,7 +1731,7 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
     const country = sanitizedCustomer.country;
     const loaded = items.map(({ productId, qty }) => {
       const p = Products.get(productId, { includeImages: false });
-      if (!p || !p.available || p.hidden) throw new Error(`Item not available: ${productId}`);
+      if (!p || p.artworkStatus !== "for_sale" || !p.available || p.hidden) throw new Error(`Item not available: ${productId}`);
       const q = Math.max(1, Math.floor(qty || 1));
       const maxAllowed = maxPurchasableForProduct(p);
       if (maxAllowed <= 0) throw new Error(`Item not available: ${productId}`);

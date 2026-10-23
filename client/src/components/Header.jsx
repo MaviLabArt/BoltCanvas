@@ -228,6 +228,14 @@ export default function Header() {
             <div className="flex items-center gap-3">
               {/* About removed from header */}
 
+              <Link
+                to="/gallery"
+                className="inline-flex items-center px-3 py-2 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F]"
+                title="Gallery"
+              >
+                Gallery
+              </Link>
+
               {hasOrders && (
                 <Link
                   to="/orders"

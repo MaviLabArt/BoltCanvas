@@ -16,6 +16,18 @@ import { absoluteApiUrl } from "../services/api.js";
 export default function ProductCard({ p, radiusScale = "3xl" }) {
   const reduce = useReducedMotion();
   const showDimensions = p?.showDimensions !== false;
+  const artworkStatus = p?.artworkStatus || "unclassified";
+  const isForSale = artworkStatus === "for_sale" && !!p?.available;
+  const statusLabels = {
+    sold: "SOLD",
+    gifted: "GIFTED",
+    personal_collection: "PERSONAL COLLECTION",
+    unclassified: "UNCLASSIFIED",
+    for_sale: "FOR SALE"
+  };
+  const statusLabel = artworkStatus === "for_sale" && !p?.available
+    ? "NOT AVAILABLE"
+    : (statusLabels[artworkStatus] || "UNCLASSIFIED");
 
   // Prefer server-cached URLs & thumbs when available, fall back to existing fields
   const mainRaw =
@@ -56,7 +68,7 @@ export default function ProductCard({ p, radiusScale = "3xl" }) {
       initial={reduce ? false : { opacity: 0, y: 10 }}
       animate={reduce ? {} : { opacity: 1, y: 0 }}
       className={`text-left ${cardRadius} overflow-hidden bg-slate-900 ring-1 ring-white/10`}
-      aria-label={`${p.title || "Untitled"}, ${formatSats(p.priceSats)} sats`}
+      aria-label={`${p.title || "Untitled"}${isForSale ? `, ${formatSats(p.priceSats)} sats` : `, ${statusLabel}`}`}
     >
       <Link to={`/product/${p.id}`} className="block group">
         <div className={`aspect-[4/3] bg-black/40 relative ${cardRadius} overflow-hidden`}>
@@ -71,18 +83,18 @@ export default function ProductCard({ p, radiusScale = "3xl" }) {
             <div className="w-full h-full grid place-items-center text-white/40">No image</div>
           )}
 
-          {/* Price pill in top-right inside image */}
-          <div className="absolute top-3 right-3">
-            <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-[#292B2A]/95 text-[#F5F0E6] backdrop-blur-sm ring-1 ring-[#B8734F]">
-              {formatSats(p.priceSats)} sats
-            </span>
-          </div>
+          {isForSale && (
+            <div className="absolute top-3 right-3">
+              <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-[#292B2A]/95 text-[#F5F0E6] backdrop-blur-sm ring-1 ring-[#B8734F]">
+                {formatSats(p.priceSats)} sats
+              </span>
+            </div>
+          )}
 
-          {/* SOLD overlay preserves original behavior */}
-          {!p.available && (
-            <div className="absolute inset-0 bg-black/60 grid place-items-center">
-              <span className="px-3 py-1 rounded-xl bg-white/10 ring-1 ring-white/20 text-white sold-overlay">
-                SOLD
+          {!isForSale && (
+            <div className="absolute bottom-3 right-3">
+              <span className="px-2.5 py-1 text-[10px] sm:text-xs font-semibold tracking-wide rounded-full bg-[#292B2A]/90 text-[#F5F0E6] ring-1 ring-[#B8734F]/60">
+                {statusLabel}
               </span>
             </div>
           )}
@@ -100,8 +112,9 @@ export default function ProductCard({ p, radiusScale = "3xl" }) {
         <div className="p-4">
           <div className="flex items-center gap-2">
             <div className="font-medium truncate" title={p.title}>{p.title || "Untitled"}</div>
-            {/* keep a11y: visually-hidden duplicate price for screen readers (optional) */}
-            <span className="sr-only">{formatSats(p.priceSats)} sats</span>
+            {isForSale && (
+              <span className="sr-only">{formatSats(p.priceSats)} sats</span>
+            )}
           </div>
 
           {p.subtitle ? (

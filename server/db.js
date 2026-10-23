@@ -122,6 +122,15 @@ INSERT INTO xpub_state (id, nextIndex)
   ON CONFLICT(id) DO NOTHING;
 `);
 
+// Allowed artwork statuses
+const ARTWORK_STATUSES = new Set([
+  "for_sale",
+  "sold",
+  "gifted",
+  "personal_collection",
+  "unclassified"
+]);
+
 // Migrations
 addColumnIfMissing("products", "subtitle TEXT DEFAULT ''");
 addColumnIfMissing("products", "longDescription TEXT DEFAULT ''");
@@ -138,46 +147,7 @@ addColumnIfMissing("products", "displayOrder INTEGER NOT NULL DEFAULT 0");
 addColumnIfMissing("products", "isUnique INTEGER NOT NULL DEFAULT 1");
 addColumnIfMissing("products", "quantityAvailable INTEGER DEFAULT 1");
 addColumnIfMissing("products", "lastSoldAt INTEGER NOT NULL DEFAULT 0");
-// Backfill lastSoldAt for existing sold items (run once on startup)
-try {
-  db.prepare(`
-    UPDATE products
-       SET lastSoldAt = CASE
-         WHEN lastSoldAt IS NULL OR lastSoldAt = 0 THEN createdAt
-         ELSE lastSoldAt
-       END
-     WHERE available = 0
-       AND (quantityAvailable = 0 OR isUnique = 1)
-  `).run();
-} catch {}
-
-// Backfill lastSoldAt using latest PAID order timestamp for sold items
-try {
-  const paidOrders = db.prepare(`SELECT createdAt, items FROM orders WHERE status='PAID'`).all();
-  const latestByProduct = new Map();
-  for (const row of paidOrders) {
-    let items = [];
-    try { items = JSON.parse(row.items || "[]"); } catch {}
-    if (!Array.isArray(items)) continue;
-    for (const it of items) {
-      const pid = String(it?.productId || "").trim();
-      if (!pid) continue;
-      const ts = Number(row.createdAt || 0);
-      const prev = latestByProduct.get(pid) || 0;
-      if (ts > prev) latestByProduct.set(pid, ts);
-    }
-  }
-  const soldRows = db.prepare(`SELECT id, lastSoldAt FROM products WHERE available=0`).all();
-  const updateStmt = db.prepare(`UPDATE products SET lastSoldAt=? WHERE id=?`);
-  for (const p of soldRows) {
-    const candidate = latestByProduct.get(p.id);
-    const current = Number(p.lastSoldAt || 0);
-    if (candidate && candidate > current) {
-      updateStmt.run(candidate, p.id);
-    }
-  }
-} catch {}
-
+addColumnIfMissing("products", "artworkStatus TEXT NOT NULL DEFAULT 'unclassified'");
 const zeroDisplayOrder = db.prepare(`SELECT COUNT(*) AS cnt FROM products WHERE displayOrder=0`).get();
 if (zeroDisplayOrder?.cnt > 0) {
   const rowsForOrdering = db
@@ -1088,6 +1058,27 @@ export const Products = {
     return rows.map((row) => normalizeProductRow(row, { includeImages: false }));
   },
 
+  allForAdmin({ includeImages = true } = {}) {
+    const rows = db
+      .prepare(`
+        SELECT * FROM products
+        ORDER BY displayOrder DESC, createdAt DESC
+      `)
+      .all();
+    return rows.map((row) => normalizeProductRow(row, { includeImages }));
+  },
+
+  pageForAdmin({ offset = 0, limit = 24 } = {}) {
+    const rows = db
+      .prepare(`
+        SELECT * FROM products
+        ORDER BY displayOrder DESC, createdAt DESC
+        LIMIT ? OFFSET ?
+      `)
+      .all(limit, offset);
+    return rows.map((row) => normalizeProductRow(row, { includeImages: false }));
+  },
+
   allFull() {
     return this.all({ includeImages: true });
   },
@@ -1096,10 +1087,7 @@ export const Products = {
     const rows = db
       .prepare(`
         SELECT * FROM products
-        ORDER BY
-          available DESC,
-          CASE WHEN available=1 THEN displayOrder ELSE 0 END DESC,
-          CASE WHEN available=1 THEN createdAt ELSE COALESCE(lastSoldAt, createdAt) END DESC
+        ORDER BY displayOrder DESC, createdAt DESC
       `)
       .all();
     return rows
@@ -1139,7 +1127,8 @@ export const Products = {
         id: n.id,
         title: n.title,
         subtitle: n.subtitle,
-        priceSats: n.priceSats,
+        ...(n.artworkStatus === "for_sale" ? { priceSats: n.priceSats } : {}),
+        artworkStatus: n.artworkStatus,
         isUnique: !!n.isUnique,
         quantityAvailable: n.quantityAvailable,
         available: derivedAvailable,
@@ -1168,7 +1157,8 @@ export const Products = {
           n.createdAt || 0,
           n.displayOrder || 0,
           n.lastSoldAt || 0,
-          n.priceSats,
+          n.artworkStatus,
+          n.artworkStatus === "for_sale" ? n.priceSats : "",
           safeIdx,
           n.imageVersion || "",
           textTag,
@@ -1204,8 +1194,10 @@ export const Products = {
     shippingZoneOverrides = [],
     isUnique = true,
     quantityAvailable = undefined,
+    artworkStatus = "for_sale",
   }) {
     const normalizedImages = normalizeImageInputs(images);
+    const nextArtworkStatus = ARTWORK_STATUSES.has(artworkStatus) ? artworkStatus : "for_sale";
     const imagePayload = prepareImagePayload(normalizedImages, { preNormalized: normalizedImages });
     const safeMainIdx = clampImageIndex(mainImageIndex, imagePayload.length);
     const id = makeId();
@@ -1220,8 +1212,8 @@ export const Products = {
       `INSERT INTO products
        (id, title, description, priceSats, images, available, hidden, createdAt, displayOrder,
         subtitle, longDescription, mainImageIndex, widthCm, heightCm, depthCm, showDimensions,
-        shippingZoneOverrides, imageVersion, imageCount, isUnique, quantityAvailable, lastSoldAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        shippingZoneOverrides, imageVersion, imageCount, isUnique, quantityAvailable, lastSoldAt, artworkStatus)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       title,
@@ -1244,7 +1236,8 @@ export const Products = {
       0, // imageCount
       uniqueFlag ? 1 : 0,
       qtyValue,
-      0
+      0,
+      nextArtworkStatus
     );
     ProductImages.replaceAll(id, imagePayload);
     return this.get(id);
@@ -1300,14 +1293,18 @@ export const Products = {
       }
     }
 
-    const nextLastSold = (!nextAvailable && cur.available) ? now() : (cur.lastSoldAt || 0);
+    const nextLastSold = cur.lastSoldAt || 0;
+    const requestedStatus = patch.artworkStatus;
+    const nextArtworkStatus = requestedStatus !== undefined && ARTWORK_STATUSES.has(requestedStatus)
+      ? requestedStatus
+      : (ARTWORK_STATUSES.has(cur.artworkStatus) ? cur.artworkStatus : "unclassified");
 
     db.prepare(
       `UPDATE products
          SET title=?, description=?, priceSats=?, images=?, available=?, hidden=?,
              subtitle=?, longDescription=?, mainImageIndex=?,
              widthCm=?, heightCm=?, depthCm=?, showDimensions=?,
-             shippingZoneOverrides=?, isUnique=?, quantityAvailable=?, lastSoldAt=?
+             shippingZoneOverrides=?, isUnique=?, quantityAvailable=?, lastSoldAt=?, artworkStatus=?
        WHERE id=?`
     ).run(
       patch.title ?? cur.title,
@@ -1327,6 +1324,7 @@ export const Products = {
       nextIsUnique ? 1 : 0,
       nextQuantity,
       nextLastSold,
+      nextArtworkStatus,
       id
     );
 
@@ -1352,15 +1350,20 @@ export const Products = {
     }
 
     const currentQty = Number.isFinite(product.quantityAvailable) ? Math.max(0, product.quantityAvailable) : (product.isUnique ? 1 : 0);
+    if (currentQty <= 0) return product;
+
     const nextQty = product.isUnique ? 0 : Math.max(0, currentQty - decrement);
-    const nextAvailable = product.isUnique ? 0 : (nextQty > 0 ? 1 : 0);
+    const nextAvailable = nextQty > 0 ? 1 : 0;
+    const exhausted = currentQty > 0 && nextQty === 0;
+    const becomesSold = exhausted && product.artworkStatus === "for_sale";
+    const nextStatus = becomesSold ? "sold" : product.artworkStatus;
+    const soldAt = becomesSold ? now() : (product.lastSoldAt || 0);
 
-    const soldAt = nextAvailable ? product.lastSoldAt || 0 : now();
-
-    db.prepare(`UPDATE products SET quantityAvailable=?, available=?, lastSoldAt=? WHERE id=?`).run(
+    db.prepare(`UPDATE products SET quantityAvailable=?, available=?, lastSoldAt=?, artworkStatus=? WHERE id=?`).run(
       nextQty,
       nextAvailable,
       soldAt,
+      nextStatus,
       id
     );
     return this.get(id, { includeImages: false });
@@ -1376,10 +1379,7 @@ export const Products = {
     const allRows = db
       .prepare(`
         SELECT id FROM products
-        ORDER BY
-          available DESC,
-          CASE WHEN available=1 THEN displayOrder ELSE 0 END DESC,
-          CASE WHEN available=1 THEN createdAt ELSE COALESCE(lastSoldAt, createdAt) END DESC
+        ORDER BY displayOrder DESC, createdAt DESC
       `)
       .all();
     if (!allRows.length) return 0;
@@ -1425,6 +1425,7 @@ function normalizeProductRow(row, { includeImages = false } = {}) {
     title: row.title,
     description: row.description ?? "",
     priceSats: Number(row.priceSats || 0),
+    artworkStatus: ARTWORK_STATUSES.has(row.artworkStatus) ? row.artworkStatus : "unclassified",
     isUnique,
     quantityAvailable: qtyValue,
     available: !!row.available,
