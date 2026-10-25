@@ -527,7 +527,7 @@ function CartToast({ notice, onHide }) {
           </div>
         )}
         <div>
-          <div className="text-xs uppercase tracking-wide text-white/60">Added to cart</div>
+          <div className="text-xs uppercase tracking-wide text-[#F5F0E6]">Added to cart</div>
           <div className="font-semibold text-white">
             {product.title || "Product"}
           </div>

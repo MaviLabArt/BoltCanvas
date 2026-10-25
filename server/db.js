@@ -1842,6 +1842,7 @@ export const Settings = {
       commissionCtaHref: map.commissionCtaHref || "/about",
       // NEW: Embedded Code
       embedCode: map.embedCode || "",
+      nostrTestimonials: map.nostrTestimonials || "",
       // NEW:
       nostrNpub: map.nostrNpub || "",
       nostrNip05: map.nostrNip05 || "",
@@ -1942,6 +1943,7 @@ export const Settings = {
     commissionTitle, commissionBody, commissionCtaLabel, commissionCtaHref,
     // NEW: Embedded Code
     embedCode,
+    nostrTestimonials,
     // NEW:
     nostrNpub, nostrNip05, nostrRelays, lightningAddress,
     // NEW: theme
@@ -2005,6 +2007,9 @@ export const Settings = {
     if (commissionCtaHref !== undefined) sSet.run("commissionCtaHref", commissionCtaHref || "/about");
     // NEW: Embedded Code
     if (embedCode !== undefined) sSet.run("embedCode", embedCode || "");
+    if (nostrTestimonials !== undefined) {
+      sSet.run("nostrTestimonials", String(nostrTestimonials || ""));
+    }
     // NEW:
     if (nostrNpub !== undefined) sSet.run("nostrNpub", nostrNpub || "");
     if (nostrNip05 !== undefined) sSet.run("nostrNip05", nostrNip05 || "");

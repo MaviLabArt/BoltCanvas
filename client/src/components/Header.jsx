@@ -255,7 +255,21 @@ export default function Header() {
                 }`}
                 title="Cart"
               >
-                Cart ({count})
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-5 w-5 text-[#F5F0E6]"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="9" cy="21" r="1" />
+                  <circle cx="19" cy="21" r="1" />
+                  <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
+                </svg>
+                <span className="ml-1">{count}</span>
                 {flashCart && (
                   <span
                     className="pointer-events-none absolute -top-1.5 -right-1.5 inline-flex h-4 w-4 rounded-full bg-[#C4815E]/90 animate-ping"

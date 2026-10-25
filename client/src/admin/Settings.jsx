@@ -107,6 +107,9 @@ export default function Settings() {
     // --- NEW: Embedded Code ---
     embedCode: "",
 
+    // --- Nostr Testimonials ---
+    nostrTestimonials: "",
+
     // --- NEW: Nostr & Lightning ---
     nostrNpub: "",
     nostrNip05: "",
@@ -943,6 +946,34 @@ export default function Settings() {
         />
         <HelpBox>
           {t("Il codice inserito verrà renderizzato così com'è. Assicurati che sia sicuro e proveniente da fonti attendibili.", "The inserted code will be rendered as-is. Make sure it's secure and from trusted sources.")}
+        </HelpBox>
+      </div>
+
+      {/* --- NOSTR TESTIMONIALS --- */}
+      <div className="mt-8">
+        <div className="text-lg font-semibold mb-2">
+          {t("Testimonianze Nostr", "Nostr Testimonials")}
+        </div>
+        <div className="mb-3 text-sm text-white/60">
+          {t(
+            "Inserisci un identificativo nevent1 per riga. Le testimonianze verranno recuperate da Nostr e mostrate nella sezione dedicata della homepage.",
+            "Enter one nevent1 identifier per line. Testimonials will be fetched from Nostr and displayed in a dedicated homepage section."
+          )}
+        </div>
+        <textarea
+          rows={5}
+          className="w-full px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10 font-mono text-sm"
+          placeholder={"nevent1...\nnevent1..."}
+          value={s.nostrTestimonials}
+          onChange={(e) =>
+            setS({ ...s, nostrTestimonials: e.target.value })
+          }
+        />
+        <HelpBox>
+          {t(
+            "Incolla gli identificativi nevent1 originali, non gli URL njump.me. Usa una riga per ogni testimonianza; puoi riordinarle spostando le righe.",
+            "Paste the original nevent1 identifiers, not njump.me URLs. Use one line per testimonial; reorder them by moving the lines."
+          )}
         </HelpBox>
       </div>
 

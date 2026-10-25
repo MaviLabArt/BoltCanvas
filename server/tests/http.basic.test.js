@@ -17,6 +17,14 @@ describe("http endpoints", () => {
     vi.resetModules();
   });
 
+
+  it("returns an empty list when no Nostr testimonials are configured", async () => {
+    const app = await loadApp();
+    const res = await request(app).get("/api/public/nostr-testimonials");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ testimonials: [] });
+  });
+
   it("serves health", async () => {
     const app = await loadApp();
     const res = await request(app).get("/api/health");

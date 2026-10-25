@@ -42,6 +42,7 @@ import {
   getShopPubkey,
   npubFromHex,
   fetchProfile,
+  fetchNostrEventByNevent,
   relaysFrom,
   resolveToPubkey,
   verifyLoginEvent,
@@ -57,6 +58,8 @@ import {
 import { sendOrderStatusEmail, label as statusLabel } from "./email.js";
 import { createNtfySender } from "./ntfy.js";
 import { verifySvixSignature } from "./svix.js";
+
+let nostrTestimonialsCache = { key: "", expiresAt: 0, data: [] };
 
 const app = express();
 const adminLoginLimiter = createAdminLoginLimiter();
@@ -769,31 +772,70 @@ function sanitizeCartItemsInput(raw) {
 
 function makeDefaultTeaserContent(product, { productUrl = "", hashtags = "" } = {}) {
   const lines = [];
-  const title = product.title || "";
-  const shortLine = product.subtitle || "";
-  lines.push(`${title}${shortLine ? `, ${shortLine}` : ""}`);
-  lines.push("");
-  if (product.longDescription) {
-    const firstLine = String(product.longDescription).split("\n").find((l) => l.trim());
-    if (firstLine) {
-      lines.push(firstLine.trim());
-      lines.push("");
-    }
+  const title = product?.title || "";
+  const subtitle = product?.subtitle || "";
+  if (title) {
+    lines.push(`🎨 ${title}${subtitle ? `, ${subtitle}` : ""}`);
+    lines.push("");
   }
-  const price = Math.max(0, Number(product.priceSats) || 0);
+  const description = String(product?.longDescription || product?.description || "").trim();
+  if (description) {
+    lines.push(description);
+    lines.push("");
+  }
+  const price = Math.max(0, Number(product?.priceSats) || 0);
   if (price > 0) {
     lines.push(`Price: ${price.toLocaleString("en-US")} sats`);
     lines.push("");
   }
-  if (productUrl) {
-    lines.push(`Available here 👉 ${productUrl}`);
-  }
+  if (productUrl) lines.push(`Available here 👉 ${productUrl}`);
   const ht = String(hashtags || "").trim();
   if (ht) {
-    lines.push("");
+    if (lines.length && lines[lines.length - 1].trim() !== "") lines.push("");
     lines.push(ht);
   }
-  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return lines.join("\n")
+    .replace(/\n?Buy\/details:[^\n]*/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function makeLegacyDefaultTeaserContent(product, {
+  productUrl = "",
+  hashtags = "",
+  includeEmoji = true,
+  includeDescriptionFallback = true
+} = {}) {
+  const lines = [];
+  const title = product?.title || "";
+  const subtitle = product?.subtitle || "";
+  if (title) {
+    lines.push(`${includeEmoji ? "🎨 " : ""}${title}${subtitle ? `, ${subtitle}` : ""}`);
+    lines.push("");
+  }
+  const description = includeDescriptionFallback
+    ? (product?.longDescription || product?.description || "")
+    : (product?.longDescription || "");
+  const firstLine = String(description || "").split("\n").find((line) => line.trim());
+  if (firstLine) {
+    lines.push(firstLine.trim());
+    lines.push("");
+  }
+  const price = Math.max(0, Number(product?.priceSats) || 0);
+  if (price > 0) {
+    lines.push(`Price: ${price.toLocaleString("en-US")} sats`);
+    lines.push("");
+  }
+  if (productUrl) lines.push(`Available here 👉 ${productUrl}`);
+  const ht = String(hashtags || "").trim();
+  if (ht) {
+    if (lines.length && lines[lines.length - 1].trim() !== "") lines.push("");
+    lines.push(ht);
+  }
+  return lines.join("\n")
+    .replace(/\n?Buy\/details:[^\n]*/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function normalizeTeaserHashtags(raw, defaultHashtags = DEFAULT_TEASER_HASHTAGS) {
@@ -1006,6 +1048,139 @@ app.get("/api/public-settings", (req, res) => {
   const nostrShopPubkey = getShopPubkey();
   res.json({ ...Settings.getPublic(), nostrShopPubkey });
 });
+app.get("/api/public/nostr-testimonials", async (req, res) => {
+  const CACHE_TTL_MS = 5 * 60 * 1000;
+
+  try {
+    const settings = Settings.getAll();
+    const identifiers = [...new Set(
+      String(settings.nostrTestimonials || "")
+        .split(/\r?\n/)
+        .map((value) => value.trim())
+        .filter((value) => /^nevent1[023456789acdefghjklmnpqrstuvwxyz]+$/i.test(value))
+    )];
+
+    res.set("Cache-Control", "public, max-age=60, stale-while-revalidate=120");
+
+    if (!identifiers.length) {
+      return res.json({ testimonials: [] });
+    }
+
+    const relaySettings = {
+      ...settings,
+      nostrRelays: Array.isArray(settings.nostrRelays)
+        ? settings.nostrRelays
+        : String(settings.nostrRelays || "")
+            .split(/[\n,]+/)
+            .map((value) => value.trim())
+            .filter(Boolean)
+    };
+    const relays = [...new Set([
+      ...relaysFrom(relaySettings),
+      "wss://nostr.oxtr.dev",
+      "wss://nostr21.com",
+      "wss://nostr.wine",
+      "wss://relay.fountain.fm",
+      "wss://relay.lexingtonbitcoin.org",
+      "wss://relay.nos.social"
+    ])];
+    const cacheKey = `${identifiers.join("|")}::${relays.join("|")}`;
+    const nowMs = Date.now();
+
+    if (
+      nostrTestimonialsCache.key === cacheKey &&
+      nostrTestimonialsCache.expiresAt > nowMs
+    ) {
+      return res.json({ testimonials: nostrTestimonialsCache.data });
+    }
+
+    const profileCache = new Map();
+
+    const testimonials = (await Promise.all(identifiers.map(async (identifier) => {
+      try {
+        const event = await fetchNostrEventByNevent(identifier, relays);
+        if (!event || typeof event.content !== "string") return null;
+
+        let profile = profileCache.get(event.pubkey);
+        if (profile === undefined) {
+          profile = await fetchProfile(event.pubkey, relays);
+          profileCache.set(event.pubkey, profile || null);
+        }
+
+        const imageSet = new Set();
+        for (const tag of Array.isArray(event.tags) ? event.tags : []) {
+          if (!Array.isArray(tag)) continue;
+
+          if (tag[0] === "image" && typeof tag[1] === "string") {
+            try {
+              const url = new URL(tag[1]);
+              if (url.protocol === "https:") imageSet.add(url.href);
+            } catch {}
+          }
+
+          if (tag[0] === "imeta") {
+            for (const item of tag.slice(1)) {
+              if (typeof item !== "string" || !item.startsWith("url ")) continue;
+              try {
+                const url = new URL(item.slice(4).trim());
+                if (url.protocol === "https:") imageSet.add(url.href);
+              } catch {}
+            }
+          }
+        }
+
+        // Extract direct HTTPS image URLs from event content, including Markdown links.
+        for (const match of event.content.matchAll(/https:\/\/[^\s<>"'`\])}]+/gi)) {
+          const candidate = match[0].replace(/[.,!?;:]+$/, "");
+          try {
+            const url = new URL(candidate);
+            if (
+              url.protocol === "https:" &&
+              /\.(?:avif|gif|jpe?g|png|webp)$/i.test(url.pathname)
+            ) {
+              imageSet.add(url.href);
+            }
+          } catch {}
+        }
+
+        const authorName = String(
+          profile?.display_name || profile?.name || ""
+        ).trim();
+
+        return {
+          id: event.id,
+          identifier,
+          content: event.content,
+          createdAt: Number(event.created_at || 0),
+          author: {
+            name: authorName || `${event.pubkey.slice(0, 8)}…${event.pubkey.slice(-6)}`,
+            picture: typeof profile?.picture === "string" &&
+              profile.picture.startsWith("https://")
+                ? profile.picture
+                : "",
+            pubkey: event.pubkey
+          },
+          images: [...imageSet].slice(0, 4),
+          url: "https:" + "/" + "/njump.me/" + identifier,
+        };
+      } catch (err) {
+        console.warn("[nostr testimonials] Event lookup failed:", err?.message || err);
+        return null;
+      }
+    }))).filter(Boolean);
+
+    nostrTestimonialsCache = {
+      key: cacheKey,
+      expiresAt: nowMs + CACHE_TTL_MS,
+      data: testimonials
+    };
+
+    res.json({ testimonials });
+  } catch (err) {
+    console.error("[nostr testimonials] Route failed:", err?.message || err);
+    res.status(500).json({ testimonials: [], error: "Unable to load testimonials" });
+  }
+});
 // Expose the stall logo when stored as a data URL (for Nostr publishing)
 app.get("/api/public/stall-logo", (req, res) => {
   try {
@@ -1190,6 +1365,7 @@ app.put("/api/admin/settings", requireAdmin, (req, res) => {
     commissionTitle, commissionBody, commissionCtaLabel, commissionCtaHref,
     // NEW: Embedded Code
     embedCode,
+    nostrTestimonials,
     // NEW Nostr/LN
     nostrNpub, nostrNip05, nostrRelays, lightningAddress, nostrDefaultHashtags, nostrCommentsEnabled,
     nostrBlockedPubkeys, nostrBlockedHashtags,
@@ -1216,6 +1392,7 @@ app.put("/api/admin/settings", requireAdmin, (req, res) => {
       commissionTitle, commissionBody, commissionCtaLabel, commissionCtaHref,
       // NEW: Embedded Code
       embedCode,
+      nostrTestimonials,
       nostrNpub, nostrNip05, nostrRelays, lightningAddress, nostrDefaultHashtags, nostrCommentsEnabled,
       nostrBlockedPubkeys, nostrBlockedHashtags,
       themeChoice, themeTokens,
@@ -1648,8 +1825,33 @@ app.put("/api/admin/products/:id", requireAdmin, (req, res) => {
   if (req.body.isUnique !== undefined) patch.isUnique = !!req.body.isUnique;
   if (req.body.quantityAvailable !== undefined) patch.quantityAvailable = req.body.quantityAvailable;
 
+  const previous = Products.get(id);
+  const nostrBefore = ProductNostrPosts.get(id);
+  const settings = Settings.getAll();
+  const hashtags = normalizeTeaserHashtags(
+    nostrBefore?.teaserHashtags,
+    settings.nostrDefaultHashtags || DEFAULT_TEASER_HASHTAGS
+  );
+  const productUrl = ensureAbsoluteFromReq(req, `/product/${id}`);
+  const previousDefaultTeaser = previous
+    ? makeDefaultTeaserContent(previous, { productUrl, hashtags })
+    : "";
+
   const changed = Products.update(id, patch);
   if (!changed) return res.status(404).json({ error: "Not found" });
+
+  if (
+    nostrBefore &&
+    previousDefaultTeaser &&
+    nostrBefore.teaserContent === previousDefaultTeaser
+  ) {
+    const updatedDefaultTeaser = makeDefaultTeaserContent(changed, {
+      productUrl,
+      hashtags
+    });
+    ProductNostrPosts.setTeaser(id, { content: updatedDefaultTeaser });
+  }
+
   res.json(changed);
 });
 app.delete("/api/admin/products/:id", requireAdmin, (req, res) => {

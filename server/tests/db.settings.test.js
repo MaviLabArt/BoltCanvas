@@ -22,4 +22,18 @@ describe("db: settings", () => {
     expect(next.shippingZones[0].id).toBe("z1");
     expect(next.nostrCommentsEnabled).toBe(false);
   });
+
+  it("saves and preserves Nostr testimonial identifiers", async () => {
+    const { Settings } = await freshDb();
+    const identifiers = [
+      "nevent1examplefirst",
+      "nevent1examplesecond"
+    ].join("\\n");
+
+    Settings.setAll({ nostrTestimonials: identifiers });
+    expect(Settings.getAll().nostrTestimonials).toBe(identifiers);
+
+    Settings.setAll({ storeName: "Updated Store" });
+    expect(Settings.getAll().nostrTestimonials).toBe(identifiers);
+  });
 });

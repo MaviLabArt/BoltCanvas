@@ -1219,7 +1219,7 @@ function TeaserModal({ initial, onClose }) {
   };
 
   const applyTeaserDefault = () => {
-    const nextDefault = teaser.defaultContent || buildDefaultTeaserForInitial(initial, {
+    const nextDefault = buildDefaultTeaserForInitial(initial, {
       ...teaser,
       defaultImageUrl: teaser.defaultImageUrl,
       imageUrl: teaser.imageUrl
@@ -1522,10 +1522,9 @@ function buildDefaultTeaserForInitial(initial, raw = {}) {
     lines.push(`🎨 ${title}${subtitle ? `, ${subtitle}` : ""}`);
     lines.push("");
   }
-  const description = initial?.longDescription || initial?.description || "";
-  const firstLine = String(description || "").split("\n").find((l) => l.trim());
-  if (firstLine) {
-    lines.push(firstLine.trim());
+  const description = String(initial?.longDescription || initial?.description || "").trim();
+  if (description) {
+    lines.push(description);
     lines.push("");
   }
   const price = Math.max(0, Number(initial?.priceSats) || 0);

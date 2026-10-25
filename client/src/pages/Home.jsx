@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { useSettings } from "../store/settings.jsx";
 import { stripMarkdown } from "../utils/markdown.js";
 import RecentCommentsStrip from "../components/RecentCommentsStrip.jsx";
+import NostrTestimonials from "../components/NostrTestimonials.jsx";
 
 const DEFAULT_SETTINGS = {
   logo: "",
@@ -281,6 +282,7 @@ export default function Home() {
         }} />
       )}
 
+      <NostrTestimonials />
       <RecentCommentsStrip products={ordered} />
     </section>
   );
