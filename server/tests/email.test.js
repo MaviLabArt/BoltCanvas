@@ -3,6 +3,39 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const sendMail = vi.fn(async () => ({ message: Buffer.from("raw") }));
 const createTransport = vi.fn(() => ({ sendMail }));
 
+// Registro SQLite simulato: nessuna email reale viene inviata dai test.
+const notificationStates = new Map();
+const notificationKey = (id, status) => `${String(id)}|${String(status).toUpperCase()}`;
+
+const claimNotification = vi.fn((id, status, options = {}) => {
+  const key = notificationKey(id, status);
+  const current = notificationStates.get(key);
+
+  if (!current) {
+    if (!options.allowCreate) return false;
+    notificationStates.set(key, "sending");
+    return true;
+  }
+  if (current === "sent" || current === "sending") return false;
+
+  notificationStates.set(key, "sending");
+  return true;
+});
+
+const markNotificationSent = vi.fn((id, status) => {
+  const key = notificationKey(id, status);
+  notificationStates.set(key, "sent");
+  return true;
+});
+
+const markNotificationFailed = vi.fn((id, status) => {
+  const key = notificationKey(id, status);
+  if (notificationStates.get(key) === "sending") {
+    notificationStates.set(key, "failed");
+  }
+  return true;
+});
+
 vi.mock("nodemailer", () => ({ default: { createTransport }, createTransport }));
 vi.mock("imapflow", () => ({ ImapFlow: class { async connect() {} async logout() {} async append() {} async mailboxOpen() {} async mailboxCreate() {} async list() { return []; } } }));
 vi.mock("../db.js", () => ({
@@ -13,6 +46,11 @@ vi.mock("../db.js", () => ({
       notifyEmailSubject_PAID: "",
       notifyEmailBody_PAID: ""
     }))
+  },
+  OrderStatusEmails: {
+    claim: claimNotification,
+    markSent: markNotificationSent,
+    markFailed: markNotificationFailed
   }
 }));
 
@@ -35,6 +73,7 @@ async function loadEmail() {
 describe("email", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    notificationStates.clear();
   });
 
   it("sends order status email and respects deduplication", async () => {
@@ -70,6 +109,20 @@ describe("email", () => {
     await email.sendOrderStatusEmail(order, "PAID");
     await email.sendOrderStatusEmail(order, "PAID");
     expect(sendMail).toHaveBeenCalledTimes(2);
+  });
+
+
+  it("deduplicates successful delivery across email-module reloads", async () => {
+    let email = await loadEmail();
+    const order = { id: "persisted", contactEmail: "buyer@example.com", items: [] };
+
+    await email.sendOrderStatusEmail(order, "PAID");
+
+    // Simula un riavvio del modulo: il registro persistente resta presente.
+    email = await loadEmail();
+    await email.sendOrderStatusEmail(order, "PAID");
+
+    expect(sendMail).toHaveBeenCalledTimes(1);
   });
 
   it("suppresses concurrent sends for the same order and status", async () => {

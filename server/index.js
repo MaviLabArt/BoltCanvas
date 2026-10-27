@@ -237,6 +237,9 @@ app.use(express.urlencoded({ extended: true, limit: "50mb" })); // harmless; sup
 app.use(sessions(SESSION_SECRET));
 app.use(logger());
 
+
+
+
 // Ensure a long-lived buyer client id (per browser) for order history
 app.use((req, res, next) => {
   if (!req.session.cid) req.session.cid = makeId();
@@ -1746,8 +1749,10 @@ app.post("/api/admin/orders/:id/status", requireAdmin, async (req, res) => {
     // NOSTR DM on status change
     try { await dmOrderUpdate(updated, status); } catch {}
 
-    // Email on status change (if email present and SMTP enabled)
-    try { await sendOrderStatusEmail(updated, status); } catch {}
+    // Email only when the order status actually changes
+    if (String(existing.status || "").toUpperCase() !== status) {
+      try { await sendOrderStatusEmail(updated, status); } catch {}
+    }
 
     return res.json(updated);
   } catch (e) {

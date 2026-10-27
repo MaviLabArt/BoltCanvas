@@ -5,7 +5,7 @@
 import "dotenv/config";
 import nodemailer from "nodemailer";
 import { ImapFlow } from "imapflow";
-import { Settings } from "./db.js";
+import { Settings, OrderStatusEmails } from "./db.js";
 
 const _sentKeys = new Map(); // key -> timestamp
 const _inFlight = new Set();
@@ -235,21 +235,32 @@ async function appendToSent(rawBuffer) {
  */
 export async function sendOrderStatusEmail(order, status) {
   let deliveryKey;
+  let claimed = false;
+
   try {
     if (!order || !order.contactEmail) return;
 
-    // Templates + store metadata + signature come from DB; transport from env
+    const normalizedStatus = String(status || "").trim().toUpperCase();
+    if (!normalizedStatus) return;
+
     const s = Settings.getAll();
     if (!MAIL.enabled) return;
 
     const fromAddr = String(MAIL.fromAddress || "").trim();
-    if (!fromAddr) return; // can't send without visible From:
-    if (!shouldSend(order.id, status)) return;
-    deliveryKey = dedupKey(order.id, status);
+    if (!fromAddr) return;
 
-    const { subject, text, html } = buildBodies(order, status, s);
+    // La protezione in memoria evita duplicati nella stessa istanza.
+    if (!shouldSend(order.id, normalizedStatus)) return;
+    deliveryKey = dedupKey(order.id, normalizedStatus);
 
-    // Build the message once into a Buffer so we can IMAP-append it later.
+    // Il registro SQLite protegge anche tra chiamate concorrenti e riavvii.
+    if (!OrderStatusEmails.claim(order.id, normalizedStatus, { allowCreate: true })) {
+      return;
+    }
+    claimed = true;
+
+    const { subject, text, html } = buildBodies(order, normalizedStatus, s);
+
     const mail = {
       from: MAIL.fromName ? `"${MAIL.fromName}" <${fromAddr}>` : fromAddr,
       to: order.contactEmail,
@@ -262,26 +273,48 @@ export async function sendOrderStatusEmail(order, status) {
         to: order.contactEmail
       }
     };
+
     const compiled = MAIL.saveToSent
       ? await nodemailer.createTransport({ streamTransport: true, buffer: true }).sendMail(mail)
       : null;
-    const raw = compiled?.message; // Buffer with CRLF line endings
+    const raw = compiled?.message;
 
-    // Real SMTP send
     const transporter = nodemailer.createTransport({
       host: MAIL.host,
       port: Number(MAIL.port || 587),
       secure: !!MAIL.secure,
       auth: (MAIL.user || MAIL.pass) ? { user: MAIL.user, pass: MAIL.pass } : undefined
     });
-    await transporter.sendMail(mail);
-    _sentKeys.set(deliveryKey, Date.now());
 
-    // Optional: append to Sent via IMAP
-    try { await appendToSent(raw); } catch (e) {
+    await transporter.sendMail(mail);
+
+    // SMTP ha accettato il messaggio: non marcarlo come fallito anche se
+    // un eventuale problema successivo riguarda solo la persistenza SQLite.
+    _sentKeys.set(deliveryKey, Date.now());
+    claimed = false;
+
+    try {
+      const persisted = OrderStatusEmails.markSent(order.id, normalizedStatus);
+      if (!persisted) {
+        console.warn("[email] SMTP accepted but notification ledger was not updated:", order.id, normalizedStatus);
+      }
+    } catch (e) {
+      console.warn("[email] failed to persist successful delivery:", e?.message || e);
+    }
+
+    try {
+      await appendToSent(raw);
+    } catch (e) {
       console.warn("[email] appendToSent failed:", e?.message || e);
     }
   } catch (e) {
+    if (claimed && order?.id) {
+      try {
+        OrderStatusEmails.markFailed(order.id, String(status || "").trim().toUpperCase());
+      } catch (ledgerError) {
+        console.warn("[email] failed to persist notification failure:", ledgerError?.message || ledgerError);
+      }
+    }
     console.warn("[email] sendOrderStatusEmail failed:", e?.message || e);
   } finally {
     if (deliveryKey) _inFlight.delete(deliveryKey);

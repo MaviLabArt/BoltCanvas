@@ -108,6 +108,33 @@ CREATE TABLE IF NOT EXISTS product_nostr_posts (
   FOREIGN KEY(productId) REFERENCES products(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS order_status_emails (
+  orderId TEXT NOT NULL,
+  status TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('sending', 'sent', 'failed')),
+  updatedAt INTEGER NOT NULL,
+  sentAt INTEGER,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (orderId, status)
+);
+
+INSERT OR IGNORE INTO order_status_emails
+  (orderId, status, state, updatedAt, sentAt, attempts)
+SELECT id, 'PAID', 'sent',
+       CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+       CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0
+FROM orders
+WHERE UPPER(TRIM(COALESCE(status, ''))) IN ('PAID', 'PREPARATION', 'SHIPPED');
+
+INSERT OR IGNORE INTO order_status_emails
+  (orderId, status, state, updatedAt, sentAt, attempts)
+SELECT id, UPPER(TRIM(status)), 'sent',
+       CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+       CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0
+FROM orders
+WHERE UPPER(TRIM(COALESCE(status, ''))) IN ('PREPARATION', 'SHIPPED');
+
+
 CREATE TABLE IF NOT EXISTS nostr_carts (
   pubkey TEXT PRIMARY KEY,
   data TEXT NOT NULL,
@@ -1785,6 +1812,71 @@ export const NostrCarts = {
     const key = String(pubkey || "");
     if (!key) return;
     db.prepare(`DELETE FROM nostr_carts WHERE pubkey=?`).run(key);
+  }
+};
+
+export const OrderStatusEmails = {
+  claim(orderId, status, { allowCreate = false, leaseMs = 5 * 60 * 1000 } = {}) {
+    const id = String(orderId || "").trim();
+    const normalizedStatus = String(status || "").trim().toUpperCase();
+    if (!id || !normalizedStatus) return false;
+
+    const timestamp = Date.now();
+    return db.transaction(() => {
+      const current = db.prepare(`
+        SELECT state, updatedAt
+        FROM order_status_emails
+        WHERE orderId=? AND status=?
+      `).get(id, normalizedStatus);
+
+      if (!current) {
+        if (!allowCreate) return false;
+        db.prepare(`
+          INSERT INTO order_status_emails
+            (orderId, status, state, updatedAt, sentAt, attempts)
+          VALUES (?, ?, 'sending', ?, NULL, 1)
+        `).run(id, normalizedStatus, timestamp);
+        return true;
+      }
+
+      if (current.state === "sent") return false;
+      if (current.state === "sending" &&
+          timestamp - Number(current.updatedAt || 0) < leaseMs) {
+        return false;
+      }
+
+      db.prepare(`
+        UPDATE order_status_emails
+        SET state='sending', updatedAt=?, attempts=attempts+1
+        WHERE orderId=? AND status=?
+      `).run(timestamp, id, normalizedStatus);
+      return true;
+    })();
+  },
+
+  markSent(orderId, status) {
+    const id = String(orderId || "").trim();
+    const normalizedStatus = String(status || "").trim().toUpperCase();
+    if (!id || !normalizedStatus) return false;
+    const timestamp = Date.now();
+    const result = db.prepare(`
+      UPDATE order_status_emails
+      SET state='sent', updatedAt=?, sentAt=?
+      WHERE orderId=? AND status=?
+    `).run(timestamp, timestamp, id, normalizedStatus);
+    return result.changes > 0;
+  },
+
+  markFailed(orderId, status) {
+    const id = String(orderId || "").trim();
+    const normalizedStatus = String(status || "").trim().toUpperCase();
+    if (!id || !normalizedStatus) return false;
+    const result = db.prepare(`
+      UPDATE order_status_emails
+      SET state='failed', updatedAt=?
+      WHERE orderId=? AND status=? AND state='sending'
+    `).run(Date.now(), id, normalizedStatus);
+    return result.changes > 0;
   }
 };
 
