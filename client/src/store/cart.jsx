@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo, useState, useEffect, useRef } from "react";
+import React, { createContext, useContext, useMemo, useState, useEffect, useRef, useCallback } from "react";
 import api from "../services/api.js";
 
 const Ctx = createContext(null);
@@ -451,10 +451,10 @@ export function CartProvider({ children }) {
       return next;
     });
   }
-  function clear() {
+  const clear = useCallback(() => {
     setItems([]);
     safePersist([]);
-  }
+  }, []);
   function subtotal() {
     return items.reduce((s, it) => s + it.product.priceSats * it.qty, 0);
   }
