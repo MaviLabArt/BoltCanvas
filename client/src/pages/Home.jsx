@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { useSettings } from "../store/settings.jsx";
 import { stripMarkdown } from "../utils/markdown.js";
 import RecentCommentsStrip from "../components/RecentCommentsStrip.jsx";
+import NostrTestimonials from "../components/NostrTestimonials.jsx";
 
 const DEFAULT_SETTINGS = {
   logo: "",
@@ -14,6 +15,7 @@ const DEFAULT_SETTINGS = {
   heroLine: "Quality pieces made for you and shipped with care.",
   radiusScale: "3xl",
   productsHeading: "Featured Products",
+  featuredProductId: "",
   // new editable settings used by the hero / teaser / story arc
   aboutTitle: "About Us",
   aboutBody: "Use this space to introduce who you are, what you create, and how you work. Update it with your story and what customers can expect.",
@@ -50,8 +52,20 @@ export default function Home() {
 
   // Preserve server-provided order (already respects availability + manual displayOrder)
   const ordered = useMemo(() => products.slice(), [products]);
-  const available = useMemo(() => ordered.filter((p) => p.available), [ordered]);
-  const sold = useMemo(() => ordered.filter((p) => !p.available), [ordered]);
+  const available = useMemo(
+    () => ordered.filter((p) => p.artworkStatus === "for_sale" && p.available),
+    [ordered]
+  );
+  const sold = useMemo(
+    () => ordered.filter((p) => p.artworkStatus === "sold"),
+    [ordered]
+  );
+  const featuredProduct = useMemo(() => {
+    const id = String(settings?.featuredProductId || "");
+    return id
+      ? ordered.find((p) => String(p.id) === id && p.artworkStatus === "for_sale" && p.available) || null
+      : null;
+  }, [ordered, settings]);
 
   const teaserText = useMemo(() => {
     if (!settings) return "";
@@ -141,13 +155,21 @@ export default function Home() {
                   {teaserText}
                 </div>
               )}
-              <div className="mt-2">
+              <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2">
                 <Link
                   to="/about"
                   className="inline-block underline underline-offset-4 hover:opacity-90 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-400"
                 >
                   Read more →
                 </Link>
+                {settings && (settings.commissionTitle || settings.commissionBody) && (
+                  <Link
+                    to="/commissions"
+                    className="inline-block underline underline-offset-4 hover:opacity-90 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-indigo-400"
+                  >
+                    Commissions →
+                  </Link>
+                )}
               </div>
             </div>
 
@@ -161,6 +183,22 @@ export default function Home() {
                 />
               </div>
             ) : null}
+          </div>
+        </div>
+      )}
+
+      {featuredProduct && !loading && !loadError && (
+        <div className="mx-auto mb-10 max-w-5xl px-1 sm:px-2">
+          <div className="mb-4 text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] opacity-60">
+              {settings.themeChoice === "light" ? "Selected artwork" : "Selected artwork"}
+            </p>
+            <h2 className="heading mt-2 text-2xl sm:text-3xl font-semibold tracking-tight">
+              {featuredProduct.title || featuredProduct.name}
+            </h2>
+          </div>
+          <div className="mx-auto max-w-3xl">
+            <ProductCard p={featuredProduct} radiusScale={settings.radiusScale} />
           </div>
         </div>
       )}
@@ -224,23 +262,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* --- Story arc: commission / contact callout --- */}
-      {settings && (settings.commissionTitle || settings.commissionBody) && (
-        <div className="mt-6 rounded-3xl p-6 bg-slate-900 ring-1 ring-white/10 max-w-3xl mx-auto text-center">
-          <div className="text-lg font-semibold">{settings.commissionTitle || "Commissions & Contact"}</div>
-          {settings.commissionBody && (
-            <p className="mt-2 text-white/80 whitespace-pre-wrap">{settings.commissionBody}</p>
-          )}
-          <div className="mt-4">
-            <Link
-              to={settings.commissionCtaHref || "/about"}
-              className="px-4 py-2 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 ring-1 ring-white/10"
-            >
-              {settings.commissionCtaLabel || "Write to me"}
-            </Link>
-          </div>
-        </div>
-      )}
 
       {/* --- Embedded Code Section --- */}
       {settings && settings.embedCode && (
@@ -261,6 +282,7 @@ export default function Home() {
         }} />
       )}
 
+      <NostrTestimonials />
       <RecentCommentsStrip products={ordered} />
     </section>
   );

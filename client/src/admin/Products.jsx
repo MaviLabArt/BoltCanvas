@@ -149,6 +149,7 @@ export default function Products() {
       description: "",
       longDescription: "",
       priceSats: 0,
+      artworkStatus: "for_sale",
       images: [],
       thumbs: [],            // kept for local previews during edit only
       mainImageIndex: 0,
@@ -198,12 +199,20 @@ export default function Products() {
   async function beginReorder() {
     try {
       setReorderLoading(true);
-      const r = await api.get("/admin/products?page=1&pageSize=9999");
+      const r = await api.get("/admin/products?page=1&pageSize=100");
       const data = r.data;
       const items = Array.isArray(data?.items)
-        ? data.items
-        : (Array.isArray(data) ? data : []);
-      const arr = items.slice();
+        ? data.items.slice()
+        : (Array.isArray(data) ? data.slice() : []);
+
+      if (Array.isArray(data?.items)) {
+        const totalPages = Math.max(1, Number(data.totalPages) || 1);
+        for (let page = 2; page <= totalPages; page += 1) {
+          const next = await api.get(`/admin/products?page=${page}&pageSize=100`);
+          if (Array.isArray(next.data?.items)) items.push(...next.data.items);
+        }
+      }
+      const arr = items;
       setOrderDraft(arr);
       setOrderOriginal(arr.map((p) => p.id));
       setReordering(true);
@@ -410,10 +419,15 @@ export default function Products() {
                     </span>
                   </div>
                 )}
-                {!isHidden && !p.available && (
-                  <div className="absolute inset-0 bg-black/60 grid place-items-center">
-                    <span className="px-3 py-1 rounded-xl bg-white/10 ring-1 ring-white/20 text-white">
-                      {t("VENDUTO", "SOLD")}
+                {!isHidden && p.artworkStatus && p.artworkStatus !== "for_sale" && (
+                  <div className="absolute bottom-2 right-2">
+                    <span className="px-2 py-1 rounded-lg bg-black/65 ring-1 ring-white/20 text-white text-xs">
+                      {{
+                        sold: "SOLD",
+                        gifted: "GIFTED",
+                        personal_collection: "PERSONAL COLLECTION",
+                        unclassified: "UNCLASSIFIED",
+                      }[p.artworkStatus] || "UNCLASSIFIED"}
                     </span>
                   </div>
                 )}
@@ -500,9 +514,9 @@ export default function Products() {
                       </AsyncButton>
                       <AsyncButton
                         onClick={() => toggleAvailable(p)}
-                        busyText={p.available ? t("Segno venduto...", "Marking sold...") : t("Segno disponibile...", "Marking available...")}
+                        busyText={p.available ? t("Disattivo la vendita...", "Disabling sale...") : t("Riattivo la vendita...", "Enabling sale...")}
                       >
-                        {p.available ? t("Segna venduto", "Mark sold") : t("Segna disponibile", "Mark available")}
+                        {p.available ? t("Disattiva vendita", "Disable sale") : t("Attiva vendita", "Enable sale")}
                       </AsyncButton>
                       <AsyncButton
                         onClick={() => toggleHidden(p)}
@@ -583,6 +597,7 @@ function Editor({ initial, shippingZones = [], onClose, onSaved }) {
   const [title, setTitle] = useState(initial.title || "");
   const [subtitle, setSubtitle] = useState(initial.subtitle || "");
   const [priceSats, setPriceSats] = useState(initial.priceSats || 0);
+  const [artworkStatus, setArtworkStatus] = useState(initial.artworkStatus || "for_sale");
   const [isUnique, setIsUnique] = useState(initial.isUnique !== false);
   const [quantityAvailable, setQuantityAvailable] = useState(
     initial.isUnique === false
@@ -623,6 +638,7 @@ function Editor({ initial, shippingZones = [], onClose, onSaved }) {
 
   const isNew = !initial.id;
   useEffect(() => {
+    setArtworkStatus(initial.artworkStatus || "for_sale");
     setHidden(initial.hidden ?? false);
     setShowDimensions(initial.showDimensions !== false);
     setZoneOverrides(makeInitialZoneOverrideState(initial));
@@ -770,6 +786,7 @@ function Editor({ initial, shippingZones = [], onClose, onSaved }) {
       subtitle: subtitle.trim(),
       longDescription: longDescription,
       priceSats: Math.floor(Number(priceSats || 0)),
+      artworkStatus,
       isUnique: !!isUnique,
       quantityAvailable: (() => {
         if (isUnique) return 1;
@@ -1123,6 +1140,24 @@ function Editor({ initial, shippingZones = [], onClose, onSaved }) {
               )}
             </div>
 
+            {/* Stato dell'opera */}
+            <div className="md:col-span-2">
+              <label className="block text-sm text-white/70 mb-1">
+                {t("Stato dell'opera", "Artwork status")}
+              </label>
+              <select
+                className="w-full px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10"
+                value={artworkStatus}
+                onChange={(e) => setArtworkStatus(e.target.value)}
+              >
+                <option value="for_sale">FOR SALE</option>
+                <option value="sold">SOLD</option>
+                <option value="gifted">GIFTED</option>
+                <option value="personal_collection">PERSONAL COLLECTION</option>
+                <option value="unclassified">UNCLASSIFIED</option>
+              </select>
+            </div>
+
             {/* Disponibilità */}
             <div className="md:col-span-2">
               <label className="inline-flex items-center gap-2">
@@ -1184,7 +1219,7 @@ function TeaserModal({ initial, onClose }) {
   };
 
   const applyTeaserDefault = () => {
-    const nextDefault = teaser.defaultContent || buildDefaultTeaserForInitial(initial, {
+    const nextDefault = buildDefaultTeaserForInitial(initial, {
       ...teaser,
       defaultImageUrl: teaser.defaultImageUrl,
       imageUrl: teaser.imageUrl
@@ -1487,10 +1522,9 @@ function buildDefaultTeaserForInitial(initial, raw = {}) {
     lines.push(`🎨 ${title}${subtitle ? `, ${subtitle}` : ""}`);
     lines.push("");
   }
-  const description = initial?.longDescription || initial?.description || "";
-  const firstLine = String(description || "").split("\n").find((l) => l.trim());
-  if (firstLine) {
-    lines.push(firstLine.trim());
+  const description = String(initial?.longDescription || initial?.description || "").trim();
+  if (description) {
+    lines.push(description);
     lines.push("");
   }
   const price = Math.max(0, Number(initial?.priceSats) || 0);

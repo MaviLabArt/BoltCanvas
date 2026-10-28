@@ -108,6 +108,33 @@ CREATE TABLE IF NOT EXISTS product_nostr_posts (
   FOREIGN KEY(productId) REFERENCES products(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS order_status_emails (
+  orderId TEXT NOT NULL,
+  status TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('sending', 'sent', 'failed')),
+  updatedAt INTEGER NOT NULL,
+  sentAt INTEGER,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (orderId, status)
+);
+
+INSERT OR IGNORE INTO order_status_emails
+  (orderId, status, state, updatedAt, sentAt, attempts)
+SELECT id, 'PAID', 'sent',
+       CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+       CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0
+FROM orders
+WHERE UPPER(TRIM(COALESCE(status, ''))) IN ('PAID', 'PREPARATION', 'SHIPPED');
+
+INSERT OR IGNORE INTO order_status_emails
+  (orderId, status, state, updatedAt, sentAt, attempts)
+SELECT id, UPPER(TRIM(status)), 'sent',
+       CAST(strftime('%s', 'now') AS INTEGER) * 1000,
+       CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0
+FROM orders
+WHERE UPPER(TRIM(COALESCE(status, ''))) IN ('PREPARATION', 'SHIPPED');
+
+
 CREATE TABLE IF NOT EXISTS nostr_carts (
   pubkey TEXT PRIMARY KEY,
   data TEXT NOT NULL,
@@ -121,6 +148,15 @@ INSERT INTO xpub_state (id, nextIndex)
   VALUES (1, 0)
   ON CONFLICT(id) DO NOTHING;
 `);
+
+// Allowed artwork statuses
+const ARTWORK_STATUSES = new Set([
+  "for_sale",
+  "sold",
+  "gifted",
+  "personal_collection",
+  "unclassified"
+]);
 
 // Migrations
 addColumnIfMissing("products", "subtitle TEXT DEFAULT ''");
@@ -138,46 +174,7 @@ addColumnIfMissing("products", "displayOrder INTEGER NOT NULL DEFAULT 0");
 addColumnIfMissing("products", "isUnique INTEGER NOT NULL DEFAULT 1");
 addColumnIfMissing("products", "quantityAvailable INTEGER DEFAULT 1");
 addColumnIfMissing("products", "lastSoldAt INTEGER NOT NULL DEFAULT 0");
-// Backfill lastSoldAt for existing sold items (run once on startup)
-try {
-  db.prepare(`
-    UPDATE products
-       SET lastSoldAt = CASE
-         WHEN lastSoldAt IS NULL OR lastSoldAt = 0 THEN createdAt
-         ELSE lastSoldAt
-       END
-     WHERE available = 0
-       AND (quantityAvailable = 0 OR isUnique = 1)
-  `).run();
-} catch {}
-
-// Backfill lastSoldAt using latest PAID order timestamp for sold items
-try {
-  const paidOrders = db.prepare(`SELECT createdAt, items FROM orders WHERE status='PAID'`).all();
-  const latestByProduct = new Map();
-  for (const row of paidOrders) {
-    let items = [];
-    try { items = JSON.parse(row.items || "[]"); } catch {}
-    if (!Array.isArray(items)) continue;
-    for (const it of items) {
-      const pid = String(it?.productId || "").trim();
-      if (!pid) continue;
-      const ts = Number(row.createdAt || 0);
-      const prev = latestByProduct.get(pid) || 0;
-      if (ts > prev) latestByProduct.set(pid, ts);
-    }
-  }
-  const soldRows = db.prepare(`SELECT id, lastSoldAt FROM products WHERE available=0`).all();
-  const updateStmt = db.prepare(`UPDATE products SET lastSoldAt=? WHERE id=?`);
-  for (const p of soldRows) {
-    const candidate = latestByProduct.get(p.id);
-    const current = Number(p.lastSoldAt || 0);
-    if (candidate && candidate > current) {
-      updateStmt.run(candidate, p.id);
-    }
-  }
-} catch {}
-
+addColumnIfMissing("products", "artworkStatus TEXT NOT NULL DEFAULT 'unclassified'");
 const zeroDisplayOrder = db.prepare(`SELECT COUNT(*) AS cnt FROM products WHERE displayOrder=0`).get();
 if (zeroDisplayOrder?.cnt > 0) {
   const rowsForOrdering = db
@@ -1088,6 +1085,27 @@ export const Products = {
     return rows.map((row) => normalizeProductRow(row, { includeImages: false }));
   },
 
+  allForAdmin({ includeImages = true } = {}) {
+    const rows = db
+      .prepare(`
+        SELECT * FROM products
+        ORDER BY displayOrder DESC, createdAt DESC
+      `)
+      .all();
+    return rows.map((row) => normalizeProductRow(row, { includeImages }));
+  },
+
+  pageForAdmin({ offset = 0, limit = 24 } = {}) {
+    const rows = db
+      .prepare(`
+        SELECT * FROM products
+        ORDER BY displayOrder DESC, createdAt DESC
+        LIMIT ? OFFSET ?
+      `)
+      .all(limit, offset);
+    return rows.map((row) => normalizeProductRow(row, { includeImages: false }));
+  },
+
   allFull() {
     return this.all({ includeImages: true });
   },
@@ -1096,10 +1114,7 @@ export const Products = {
     const rows = db
       .prepare(`
         SELECT * FROM products
-        ORDER BY
-          available DESC,
-          CASE WHEN available=1 THEN displayOrder ELSE 0 END DESC,
-          CASE WHEN available=1 THEN createdAt ELSE COALESCE(lastSoldAt, createdAt) END DESC
+        ORDER BY displayOrder DESC, createdAt DESC
       `)
       .all();
     return rows
@@ -1139,7 +1154,8 @@ export const Products = {
         id: n.id,
         title: n.title,
         subtitle: n.subtitle,
-        priceSats: n.priceSats,
+        ...(n.artworkStatus === "for_sale" ? { priceSats: n.priceSats } : {}),
+        artworkStatus: n.artworkStatus,
         isUnique: !!n.isUnique,
         quantityAvailable: n.quantityAvailable,
         available: derivedAvailable,
@@ -1168,7 +1184,8 @@ export const Products = {
           n.createdAt || 0,
           n.displayOrder || 0,
           n.lastSoldAt || 0,
-          n.priceSats,
+          n.artworkStatus,
+          n.artworkStatus === "for_sale" ? n.priceSats : "",
           safeIdx,
           n.imageVersion || "",
           textTag,
@@ -1204,8 +1221,10 @@ export const Products = {
     shippingZoneOverrides = [],
     isUnique = true,
     quantityAvailable = undefined,
+    artworkStatus = "for_sale",
   }) {
     const normalizedImages = normalizeImageInputs(images);
+    const nextArtworkStatus = ARTWORK_STATUSES.has(artworkStatus) ? artworkStatus : "for_sale";
     const imagePayload = prepareImagePayload(normalizedImages, { preNormalized: normalizedImages });
     const safeMainIdx = clampImageIndex(mainImageIndex, imagePayload.length);
     const id = makeId();
@@ -1220,8 +1239,8 @@ export const Products = {
       `INSERT INTO products
        (id, title, description, priceSats, images, available, hidden, createdAt, displayOrder,
         subtitle, longDescription, mainImageIndex, widthCm, heightCm, depthCm, showDimensions,
-        shippingZoneOverrides, imageVersion, imageCount, isUnique, quantityAvailable, lastSoldAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        shippingZoneOverrides, imageVersion, imageCount, isUnique, quantityAvailable, lastSoldAt, artworkStatus)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       id,
       title,
@@ -1244,7 +1263,8 @@ export const Products = {
       0, // imageCount
       uniqueFlag ? 1 : 0,
       qtyValue,
-      0
+      0,
+      nextArtworkStatus
     );
     ProductImages.replaceAll(id, imagePayload);
     return this.get(id);
@@ -1300,14 +1320,18 @@ export const Products = {
       }
     }
 
-    const nextLastSold = (!nextAvailable && cur.available) ? now() : (cur.lastSoldAt || 0);
+    const nextLastSold = cur.lastSoldAt || 0;
+    const requestedStatus = patch.artworkStatus;
+    const nextArtworkStatus = requestedStatus !== undefined && ARTWORK_STATUSES.has(requestedStatus)
+      ? requestedStatus
+      : (ARTWORK_STATUSES.has(cur.artworkStatus) ? cur.artworkStatus : "unclassified");
 
     db.prepare(
       `UPDATE products
          SET title=?, description=?, priceSats=?, images=?, available=?, hidden=?,
              subtitle=?, longDescription=?, mainImageIndex=?,
              widthCm=?, heightCm=?, depthCm=?, showDimensions=?,
-             shippingZoneOverrides=?, isUnique=?, quantityAvailable=?, lastSoldAt=?
+             shippingZoneOverrides=?, isUnique=?, quantityAvailable=?, lastSoldAt=?, artworkStatus=?
        WHERE id=?`
     ).run(
       patch.title ?? cur.title,
@@ -1327,6 +1351,7 @@ export const Products = {
       nextIsUnique ? 1 : 0,
       nextQuantity,
       nextLastSold,
+      nextArtworkStatus,
       id
     );
 
@@ -1352,15 +1377,20 @@ export const Products = {
     }
 
     const currentQty = Number.isFinite(product.quantityAvailable) ? Math.max(0, product.quantityAvailable) : (product.isUnique ? 1 : 0);
+    if (currentQty <= 0) return product;
+
     const nextQty = product.isUnique ? 0 : Math.max(0, currentQty - decrement);
-    const nextAvailable = product.isUnique ? 0 : (nextQty > 0 ? 1 : 0);
+    const nextAvailable = nextQty > 0 ? 1 : 0;
+    const exhausted = currentQty > 0 && nextQty === 0;
+    const becomesSold = exhausted && product.artworkStatus === "for_sale";
+    const nextStatus = becomesSold ? "sold" : product.artworkStatus;
+    const soldAt = becomesSold ? now() : (product.lastSoldAt || 0);
 
-    const soldAt = nextAvailable ? product.lastSoldAt || 0 : now();
-
-    db.prepare(`UPDATE products SET quantityAvailable=?, available=?, lastSoldAt=? WHERE id=?`).run(
+    db.prepare(`UPDATE products SET quantityAvailable=?, available=?, lastSoldAt=?, artworkStatus=? WHERE id=?`).run(
       nextQty,
       nextAvailable,
       soldAt,
+      nextStatus,
       id
     );
     return this.get(id, { includeImages: false });
@@ -1376,10 +1406,7 @@ export const Products = {
     const allRows = db
       .prepare(`
         SELECT id FROM products
-        ORDER BY
-          available DESC,
-          CASE WHEN available=1 THEN displayOrder ELSE 0 END DESC,
-          CASE WHEN available=1 THEN createdAt ELSE COALESCE(lastSoldAt, createdAt) END DESC
+        ORDER BY displayOrder DESC, createdAt DESC
       `)
       .all();
     if (!allRows.length) return 0;
@@ -1425,6 +1452,7 @@ function normalizeProductRow(row, { includeImages = false } = {}) {
     title: row.title,
     description: row.description ?? "",
     priceSats: Number(row.priceSats || 0),
+    artworkStatus: ARTWORK_STATUSES.has(row.artworkStatus) ? row.artworkStatus : "unclassified",
     isUnique,
     quantityAvailable: qtyValue,
     available: !!row.available,
@@ -1787,6 +1815,71 @@ export const NostrCarts = {
   }
 };
 
+export const OrderStatusEmails = {
+  claim(orderId, status, { allowCreate = false, leaseMs = 5 * 60 * 1000 } = {}) {
+    const id = String(orderId || "").trim();
+    const normalizedStatus = String(status || "").trim().toUpperCase();
+    if (!id || !normalizedStatus) return false;
+
+    const timestamp = Date.now();
+    return db.transaction(() => {
+      const current = db.prepare(`
+        SELECT state, updatedAt
+        FROM order_status_emails
+        WHERE orderId=? AND status=?
+      `).get(id, normalizedStatus);
+
+      if (!current) {
+        if (!allowCreate) return false;
+        db.prepare(`
+          INSERT INTO order_status_emails
+            (orderId, status, state, updatedAt, sentAt, attempts)
+          VALUES (?, ?, 'sending', ?, NULL, 1)
+        `).run(id, normalizedStatus, timestamp);
+        return true;
+      }
+
+      if (current.state === "sent") return false;
+      if (current.state === "sending" &&
+          timestamp - Number(current.updatedAt || 0) < leaseMs) {
+        return false;
+      }
+
+      db.prepare(`
+        UPDATE order_status_emails
+        SET state='sending', updatedAt=?, attempts=attempts+1
+        WHERE orderId=? AND status=?
+      `).run(timestamp, id, normalizedStatus);
+      return true;
+    })();
+  },
+
+  markSent(orderId, status) {
+    const id = String(orderId || "").trim();
+    const normalizedStatus = String(status || "").trim().toUpperCase();
+    if (!id || !normalizedStatus) return false;
+    const timestamp = Date.now();
+    const result = db.prepare(`
+      UPDATE order_status_emails
+      SET state='sent', updatedAt=?, sentAt=?
+      WHERE orderId=? AND status=?
+    `).run(timestamp, timestamp, id, normalizedStatus);
+    return result.changes > 0;
+  },
+
+  markFailed(orderId, status) {
+    const id = String(orderId || "").trim();
+    const normalizedStatus = String(status || "").trim().toUpperCase();
+    if (!id || !normalizedStatus) return false;
+    const result = db.prepare(`
+      UPDATE order_status_emails
+      SET state='failed', updatedAt=?
+      WHERE orderId=? AND status=? AND state='sending'
+    `).run(Date.now(), id, normalizedStatus);
+    return result.changes > 0;
+  }
+};
+
 export const Settings = {
   nextRescueIndex() {
     const cur = Number(sGet.get("boltzRescueNextIndex")?.value ?? 0);
@@ -1809,10 +1902,13 @@ export const Settings = {
       logoLight: map.logoLight || "",
       favicon: map.favicon || "",
       productsHeading: map.productsHeading || "Featured Products",
+      featuredProductId: map.featuredProductId || "",
       heroLine: map.heroLine === undefined
         ? "Quality pieces made for you and shipped with care."
         : map.heroLine,
       radiusScale: map.radiusScale || "3xl",
+      displayFont: map.displayFont || "space-grotesk",
+      bodyFont: map.bodyFont || "inter",
       aboutTitle: map.aboutTitle || "About Us",
       aboutBody: map.aboutBody === undefined
         ? "Use this space to introduce who you are, what you create, and how you work. Update it with your story and what customers can expect."
@@ -1838,6 +1934,7 @@ export const Settings = {
       commissionCtaHref: map.commissionCtaHref || "/about",
       // NEW: Embedded Code
       embedCode: map.embedCode || "",
+      nostrTestimonials: map.nostrTestimonials || "",
       // NEW:
       nostrNpub: map.nostrNpub || "",
       nostrNip05: map.nostrNip05 || "",
@@ -1891,8 +1988,11 @@ export const Settings = {
       logoLight: full.logoLight,
       favicon: full.favicon,
       productsHeading: full.productsHeading,
+      featuredProductId: full.featuredProductId,
       heroLine: full.heroLine,
       radiusScale: full.radiusScale,
+      displayFont: full.displayFont,
+      bodyFont: full.bodyFont,
       aboutTitle: full.aboutTitle,
       aboutBody: full.aboutBody,
       aboutImage: full.aboutImage,
@@ -1927,13 +2027,15 @@ export const Settings = {
     };
   },
   setAll({
-    storeName, contactNote, logo, logoDark, logoLight, favicon, productsHeading, heroLine, radiusScale,
+    storeName, contactNote, logo, logoDark, logoLight, favicon, productsHeading, featuredProductId, heroLine, radiusScale,
+    displayFont, bodyFont,
     aboutTitle, aboutBody, aboutImage, heroCtaLabel, heroCtaHref,
     shippingTitle, shippingBullet1, shippingBullet2, shippingBullet3,
     shippingZones, shippingMode, shippingDomesticCountry, shippingDomesticPriceSats, shippingContinentPrices, shippingOverrides,
     commissionTitle, commissionBody, commissionCtaLabel, commissionCtaHref,
     // NEW: Embedded Code
     embedCode,
+    nostrTestimonials,
     // NEW:
     nostrNpub, nostrNip05, nostrRelays, lightningAddress,
     // NEW: theme
@@ -1957,8 +2059,11 @@ export const Settings = {
     if (logoLight !== undefined) sSet.run("logoLight", logoLight || "");
     if (favicon !== undefined) sSet.run("favicon", favicon || "");
     if (productsHeading !== undefined) sSet.run("productsHeading", productsHeading || "");
+    if (featuredProductId !== undefined) sSet.run("featuredProductId", String(featuredProductId || ""));
     if (heroLine !== undefined) sSet.run("heroLine", heroLine || "");
     if (radiusScale !== undefined) sSet.run("radiusScale", radiusScale || "3xl");
+    if (displayFont !== undefined) sSet.run("displayFont", displayFont || "space-grotesk");
+    if (bodyFont !== undefined) sSet.run("bodyFont", bodyFont || "inter");
     if (aboutTitle !== undefined) sSet.run("aboutTitle", aboutTitle || "");
     if (aboutBody !== undefined) sSet.run("aboutBody", aboutBody || "");
     if (aboutImage !== undefined) sSet.run("aboutImage", aboutImage || "");
@@ -1994,6 +2099,9 @@ export const Settings = {
     if (commissionCtaHref !== undefined) sSet.run("commissionCtaHref", commissionCtaHref || "/about");
     // NEW: Embedded Code
     if (embedCode !== undefined) sSet.run("embedCode", embedCode || "");
+    if (nostrTestimonials !== undefined) {
+      sSet.run("nostrTestimonials", String(nostrTestimonials || ""));
+    }
     // NEW:
     if (nostrNpub !== undefined) sSet.run("nostrNpub", nostrNpub || "");
     if (nostrNip05 !== undefined) sSet.run("nostrNip05", nostrNip05 || "");

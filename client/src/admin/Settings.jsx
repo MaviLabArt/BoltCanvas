@@ -60,6 +60,12 @@ function mergeThemeTokens(raw) {
 
 export default function Settings() {
   const { t } = useAdminI18n();
+  const [featuredProducts, setFeaturedProducts] = useState([]);
+  useEffect(() => {
+    api.get("/admin/products")
+      .then((r) => setFeaturedProducts(Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.products) ? r.data.products : [])))
+      .catch(() => setFeaturedProducts([]));
+  }, []);
   const [s, setS] = useState({
     storeName: "Your Shop Name",
     contactNote: "",
@@ -70,7 +76,10 @@ export default function Settings() {
     // New/extended fields
     heroLine: "Quality pieces made for you and shipped with care.",
     productsHeading: "Featured Products",
+    featuredProductId: "",
     radiusScale: "3xl",
+    displayFont: "space-grotesk",
+    bodyFont: "inter",
 
     // --- NEW editable content ---
     aboutTitle: "About Us",
@@ -97,6 +106,9 @@ export default function Settings() {
 
     // --- NEW: Embedded Code ---
     embedCode: "",
+
+    // --- Nostr Testimonials ---
+    nostrTestimonials: "",
 
     // --- NEW: Nostr & Lightning ---
     nostrNpub: "",
@@ -415,6 +427,27 @@ export default function Settings() {
           }
         />
 
+        <div>
+          <label className="block text-sm text-white/70 mb-1">
+            {t("Opera in evidenza", "Featured artwork")}
+          </label>
+          <select
+            className="w-full px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10"
+            value={s.featuredProductId || ""}
+            onChange={(e) => setS((prev) => ({ ...prev, featuredProductId: e.target.value }))}
+          >
+            <option value="">{t("Nessuna opera selezionata", "No featured artwork")}</option>
+            {featuredProducts.map((p) => (
+              <option key={p.id} value={String(p.id)}>
+                {(p.title || p.name || `#${p.id}`)}{p.available ? "" : ` — ${t("Venduto", "Sold")}`}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-white/60">
+            {t("L’opera rimane anche nella galleria normale. Se venduta, resta visibile ma non acquistabile.", "The artwork remains in the regular gallery too. If sold, it stays visible but cannot be purchased.")}
+          </p>
+        </div>
+
         {/* Hero line (short tagline under the store name) */}
         <input
           className="px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10"
@@ -712,6 +745,59 @@ export default function Settings() {
         )}
       </div>
 
+      {/* --- TYPOGRAPHY --- */}
+      <div className="mt-8">
+        <div className="text-lg font-semibold mb-2">
+          {t("Tipografia", "Typography")}
+        </div>
+        <p className="text-sm text-white/60 mb-3">
+          {t(
+            "Scegli separatamente i caratteri per i titoli e per i testi del sito.",
+            "Choose separate fonts for headings and body text."
+          )}
+        </p>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="block text-sm text-white/70 mb-1">
+              {t("Font dei titoli", "Heading font")}
+            </label>
+            <select
+              className="w-full px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10"
+              value={s.displayFont || "space-grotesk"}
+              onChange={(e) =>
+                setS((prev) => ({ ...prev, displayFont: e.target.value }))
+              }
+            >
+              <option value="space-grotesk">Space Grotesk — moderno</option>
+              <option value="fraunces">Fraunces — raffinato</option>
+              <option value="playfair-display">Playfair Display — classico</option>
+              <option value="cormorant-garamond">Cormorant Garamond — elegante</option>
+              <option value="lora">Lora — sobrio</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm text-white/70 mb-1">
+              {t("Font dei testi", "Body font")}
+            </label>
+            <select
+              className="w-full px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10"
+              value={s.bodyFont || "inter"}
+              onChange={(e) =>
+                setS((prev) => ({ ...prev, bodyFont: e.target.value }))
+              }
+            >
+              <option value="inter">Inter — pulito</option>
+              <option value="dm-sans">DM Sans — equilibrato</option>
+              <option value="lato">Lato — leggibile</option>
+              <option value="manrope">Manrope — contemporaneo</option>
+              <option value="source-sans-3">Source Sans 3 — essenziale</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
       {/* --- ABOUT --- */}
       <div className="mt-8">
         <div className="text-lg font-semibold mb-2">{t("Sezione “About”", "“About” section")}</div>
@@ -815,14 +901,11 @@ export default function Settings() {
             setS({ ...s, commissionTitle: e.target.value })
           }
         />
-        <textarea
-          rows={4}
-          className="mb-2 w-full px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10"
-          placeholder={t("Testo", "Body text")}
-          value={s.commissionBody}
-          onChange={(e) =>
-            setS({ ...s, commissionBody: e.target.value })
-          }
+        <MarkdownEditor
+          value={s.commissionBody || ""}
+          onChange={(val) => setS({ ...s, commissionBody: val })}
+          placeholder={t("Testo delle commissioni: puoi usare Markdown", "Commission text: Markdown supported")}
+          showPreview={false}
         />
         <div className="grid sm:grid-cols-2 gap-3">
           <input
@@ -863,6 +946,34 @@ export default function Settings() {
         />
         <HelpBox>
           {t("Il codice inserito verrà renderizzato così com'è. Assicurati che sia sicuro e proveniente da fonti attendibili.", "The inserted code will be rendered as-is. Make sure it's secure and from trusted sources.")}
+        </HelpBox>
+      </div>
+
+      {/* --- NOSTR TESTIMONIALS --- */}
+      <div className="mt-8">
+        <div className="text-lg font-semibold mb-2">
+          {t("Testimonianze Nostr", "Nostr Testimonials")}
+        </div>
+        <div className="mb-3 text-sm text-white/60">
+          {t(
+            "Inserisci un identificativo nevent1 per riga. Le testimonianze verranno recuperate da Nostr e mostrate nella sezione dedicata della homepage.",
+            "Enter one nevent1 identifier per line. Testimonials will be fetched from Nostr and displayed in a dedicated homepage section."
+          )}
+        </div>
+        <textarea
+          rows={5}
+          className="w-full px-4 py-3 rounded-2xl bg-slate-950 ring-1 ring-white/10 font-mono text-sm"
+          placeholder={"nevent1...\nnevent1..."}
+          value={s.nostrTestimonials}
+          onChange={(e) =>
+            setS({ ...s, nostrTestimonials: e.target.value })
+          }
+        />
+        <HelpBox>
+          {t(
+            "Incolla gli identificativi nevent1 originali, non gli URL njump.me. Usa una riga per ogni testimonianza; puoi riordinarle spostando le righe.",
+            "Paste the original nevent1 identifiers, not njump.me URLs. Use one line per testimonial; reorder them by moving the lines."
+          )}
         </HelpBox>
       </div>
 

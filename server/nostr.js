@@ -227,9 +227,8 @@ export async function fetchProfile(pubkey, relays = []) {
   if (!urls.length) return null;
   const pool = new SimplePool({ enableReconnect: false });
   try {
-    const events = await pool.list(urls, [{ kinds: [0], authors: [pk], limit: 1 }]);
-    if (!events || !events.length) return null;
-    const latest = events.reduce((a, b) => ((b.created_at || 0) > (a.created_at || 0) ? b : a), events[0]);
+    const latest = await pool.get(urls, { kinds: [0], authors: [pk] });
+    if (!latest) return null;
     if (!latest?.content) return null;
     try {
       return JSON.parse(latest.content || "{}");
@@ -246,6 +245,46 @@ export async function fetchProfile(pubkey, relays = []) {
 // ------------------------------
 // Relay selection
 // ------------------------------
+/**
+ * Fetch a Nostr event from a nevent identifier.
+ * Uses only the relay URLs supplied by the application.
+ */
+export async function fetchNostrEventByNevent(identifier, relays = []) {
+  const value = String(identifier || "").trim();
+  if (!value || !Array.isArray(relays) || !relays.length) return null;
+
+  let eventId;
+  try {
+    const decoded = nip19.decode(value);
+    if (decoded.type !== "nevent") return null;
+    eventId = decoded.data?.id;
+  } catch {
+    return null;
+  }
+
+  if (typeof eventId !== "string" || !/^[0-9a-f]{64}$/i.test(eventId)) {
+    return null;
+  }
+
+  const urls = [...new Set(
+    relays
+      .map((url) => String(url || "").trim())
+      .filter((url) => /^wss:\/\/[^/\s]+(?:\/.*)?$/i.test(url))
+  )];
+
+  if (!urls.length) return null;
+
+  const pool = new SimplePool({ enableReconnect: false });
+  try {
+    return await pool.get(urls, { ids: [eventId] });
+  } catch (err) {
+    console.warn("[nostr] testimonial event lookup failed:", err?.message || err);
+    return null;
+  } finally {
+    try { pool.close(urls); } catch {}
+  }
+}
+
 export function relaysFrom(settings = {}) {
   const fromEnv = (process.env.NOSTR_RELAYS_CSV || "")
     .split(",")

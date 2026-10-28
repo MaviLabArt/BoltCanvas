@@ -9,6 +9,8 @@ const Checkout = lazy(() => import("./pages/Checkout.jsx"));
 const Paid = lazy(() => import("./pages/Paid.jsx"));
 const Orders = lazy(() => import("./pages/Orders.jsx"));
 const About = lazy(() => import("./pages/About.jsx"));
+const Gallery = lazy(() => import("./pages/Gallery.jsx"));
+const Commissions = lazy(() => import("./pages/Commissions.jsx"));
 
 export default function App() {
   return (
@@ -19,6 +21,8 @@ export default function App() {
         <Routes>
           <Route index element={<Home />} />
           <Route path="/about" element={<About />} />
+          <Route path="/gallery" element={<Gallery />} />
+          <Route path="/commissions" element={<Commissions />} />
           <Route path="/product/:id" element={<ProductDetail />} />
           <Route path="/cart" element={<Cart />} />
           <Route path="/checkout" element={<Checkout />} />

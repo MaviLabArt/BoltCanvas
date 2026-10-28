@@ -89,6 +89,19 @@ export default function ProductDetail() {
   const mainImgsAbs = mainImgs.map((u) => absoluteApiUrl(u));
   const thumbImgsAbs = thumbImgs.map((u) => absoluteApiUrl(u));
   const mainImgsLen = mainImgs.length;
+  const artworkStatus = p?.artworkStatus || "unclassified";
+  const isForSale = artworkStatus === "for_sale" && !!p?.available;
+  const statusLabels = {
+    sold: "SOLD",
+    gifted: "GIFTED",
+    personal_collection: "PERSONAL COLLECTION",
+    unclassified: "UNCLASSIFIED",
+    for_sale: "FOR SALE"
+  };
+  const statusLabel = artworkStatus === "for_sale" && !p?.available
+    ? "NOT AVAILABLE"
+    : (statusLabels[artworkStatus] || "UNCLASSIFIED");
+
   const stockLabel = useMemo(() => {
     if (!p?.available) return "";
     if (p.isUnique) return "";
@@ -183,12 +196,12 @@ export default function ProductDetail() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <div>
-          <div className="rounded-3xl overflow-hidden bg-slate-900 ring-1 ring-white/10 aspect-square">
+          <div className="rounded-3xl overflow-hidden aspect-square">
             {hasImages && mainImgsAbs[active] ? (
               <img
                 src={mainImgsAbs[active]}
                 alt={p.title}
-                className="w-full h-full object-contain bg-black/40 cursor-zoom-in"
+                className="w-full h-full object-contain bg-transparent cursor-zoom-in"
                 loading="eager"
                 onClick={() => setLightbox(true)}
               />
@@ -222,21 +235,23 @@ export default function ProductDetail() {
         <div>
           <h1 className="text-2xl font-semibold">{p.title}</h1>
           {p.subtitle && <div className="mt-1 text-white/70">{p.subtitle}</div>}
-          <div className="mt-4 flex items-center gap-3">
-            <span className="text-xs uppercase tracking-[0.25em] text-white/50">Price</span>
-            <span className="inline-flex items-baseline gap-1 rounded-2xl bg-indigo-500/15 px-4 py-2 text-3xl font-semibold text-indigo-100">
-              {formatSats(p.priceSats)}
-              <span className="text-sm font-medium text-indigo-200/80">sats</span>
-            </span>
-          </div>
+          {isForSale && (
+            <div className="mt-4 flex items-center gap-3">
+              <span className="text-xs uppercase tracking-[0.25em] text-white/50">Price</span>
+              <span className="inline-flex items-baseline gap-1 rounded-2xl bg-indigo-500/15 px-4 py-2 text-3xl font-semibold text-indigo-100">
+                {formatSats(p.priceSats)}
+                <span className="text-sm font-medium text-indigo-200/80">sats</span>
+              </span>
+            </div>
+          )}
           {showFreeShippingPill && (
             <div className="mt-3 inline-flex items-center gap-1 rounded-2xl px-3 py-1 text-xs font-semibold free-shipping-pill">
               {freeShippingLabel}
             </div>
           )}
-          {!p.available && (
-            <div className="mt-2 inline-block px-2 py-1 rounded-lg bg-white/10 ring-1 ring-white/20 text-white sold-pill">
-              SOLD
+          {!isForSale && (
+            <div className="mt-2 inline-block px-2.5 py-1 rounded-full text-xs font-semibold tracking-wide bg-[#292B2A] ring-1 ring-[#B8734F]/60 text-[#F5F0E6]">
+              {statusLabel}
             </div>
           )}
           {dimText && (
@@ -250,7 +265,7 @@ export default function ProductDetail() {
           <div className="mt-8 flex flex-col gap-2">
             <button
               className="px-4 py-3 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:opacity-50 w-max"
-              disabled={!p.available}
+              disabled={!isForSale}
               onClick={() => {
                 add(p, 1);
               }}

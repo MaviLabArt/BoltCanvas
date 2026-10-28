@@ -222,9 +222,11 @@ export default function Checkout() {
     let es;
     let fallbackTimer;
     let disposed = false;
+    let pollingStarted = false;
 
     const startPollingFallback = () => {
-      if (resolvedRef.current) return;
+      if (disposed || resolvedRef.current || pollingStarted) return;
+      pollingStarted = true;
       clearTimeout(fallbackTimer);
       const poll = async () => {
         if (disposed || resolvedRef.current) return;
@@ -246,9 +248,8 @@ export default function Checkout() {
       poll();
     };
 
-    // Always run a lightweight poll alongside SSE so UI reflects mempool/confirm even if events are blocked.
+    // SSE is the primary channel; HTTP polling starts only if SSE fails.
     setSseConnected(false);
-    startPollingFallback();
 
     try {
       const url = `${API_BASE}/payments/${paymentId}/stream`;
@@ -274,10 +275,14 @@ export default function Checkout() {
         try {
           es.close();
         } catch {}
-        if (!disposed) setSseConnected(false);
+        if (!disposed) {
+          setSseConnected(false);
+          startPollingFallback();
+        }
       };
     } catch {
       setSseConnected(false);
+      startPollingFallback();
     }
 
     return () => {

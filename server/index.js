@@ -12,6 +12,7 @@ import { createBufferCache } from "./buffer-cache.js";
 import { verifyEvent } from "nostr-tools/pure";
 
 import { makeCors, sessions, logger, requireAdmin } from "./middleware.js";
+import { createAdminLoginLimiter } from "./admin-login-limiter.js";
 import { Products, Orders, Settings, ProductImages, ProductNostrPosts, NostrCarts, DEFAULT_TEASER_HASHTAGS } from "./db.js";
 import { isEurope } from "./countries.js";
 import { makeId, now } from "./utils.js";
@@ -41,6 +42,7 @@ import {
   getShopPubkey,
   npubFromHex,
   fetchProfile,
+  fetchNostrEventByNevent,
   relaysFrom,
   resolveToPubkey,
   verifyLoginEvent,
@@ -57,7 +59,10 @@ import { sendOrderStatusEmail, label as statusLabel } from "./email.js";
 import { createNtfySender } from "./ntfy.js";
 import { verifySvixSignature } from "./svix.js";
 
+let nostrTestimonialsCache = { key: "", expiresAt: 0, data: [] };
+
 const app = express();
+const adminLoginLimiter = createAdminLoginLimiter();
 // Disable ETag generation to avoid 304s on status endpoints (we rely on fresh payloads)
 app.set("etag", false);
 const TEST_MODE = process.env.NODE_ENV === "test";
@@ -82,14 +87,15 @@ const FALLBACK_INDEX_HTML = [
 ].join("\n");
 let cachedIndexHtml = "";
 
-// In dev, restrict to Vite origin; in prod, reflect request origin (true) to keep cookies working.
+// In development, allow Vite origins by default.
+// In production, require explicitly configured CORS_ORIGIN.
 const rawCorsOrigin = process.env.CORS_ORIGIN;
 const parsedCorsOrigins = rawCorsOrigin
   ? rawCorsOrigin.split(",").map((o) => o.trim()).filter(Boolean)
   : null;
 const CORS_ORIGIN = (parsedCorsOrigins && parsedCorsOrigins.length)
   ? parsedCorsOrigins
-  : (DEV ? ["http://localhost:5173", "http://127.0.0.1:5173"] : true);
+  : (DEV ? ["http://localhost:5173", "http://127.0.0.1:5173"] : []);
 
 // Blink-specific env (used when PAYMENT_PROVIDER === "blink")
 const BLINK_GRAPHQL_URL = process.env.BLINK_GRAPHQL_URL;
@@ -230,6 +236,9 @@ app.use(express.json({
 app.use(express.urlencoded({ extended: true, limit: "50mb" })); // harmless; supports form posts
 app.use(sessions(SESSION_SECRET));
 app.use(logger());
+
+
+
 
 // Ensure a long-lived buyer client id (per browser) for order history
 app.use((req, res, next) => {
@@ -766,31 +775,70 @@ function sanitizeCartItemsInput(raw) {
 
 function makeDefaultTeaserContent(product, { productUrl = "", hashtags = "" } = {}) {
   const lines = [];
-  const title = product.title || "";
-  const shortLine = product.subtitle || "";
-  lines.push(`${title}${shortLine ? `, ${shortLine}` : ""}`);
-  lines.push("");
-  if (product.longDescription) {
-    const firstLine = String(product.longDescription).split("\n").find((l) => l.trim());
-    if (firstLine) {
-      lines.push(firstLine.trim());
-      lines.push("");
-    }
+  const title = product?.title || "";
+  const subtitle = product?.subtitle || "";
+  if (title) {
+    lines.push(`🎨 ${title}${subtitle ? `, ${subtitle}` : ""}`);
+    lines.push("");
   }
-  const price = Math.max(0, Number(product.priceSats) || 0);
+  const description = String(product?.longDescription || product?.description || "").trim();
+  if (description) {
+    lines.push(description);
+    lines.push("");
+  }
+  const price = Math.max(0, Number(product?.priceSats) || 0);
   if (price > 0) {
     lines.push(`Price: ${price.toLocaleString("en-US")} sats`);
     lines.push("");
   }
-  if (productUrl) {
-    lines.push(`Available here 👉 ${productUrl}`);
-  }
+  if (productUrl) lines.push(`Available here 👉 ${productUrl}`);
   const ht = String(hashtags || "").trim();
   if (ht) {
-    lines.push("");
+    if (lines.length && lines[lines.length - 1].trim() !== "") lines.push("");
     lines.push(ht);
   }
-  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return lines.join("\n")
+    .replace(/\n?Buy\/details:[^\n]*/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function makeLegacyDefaultTeaserContent(product, {
+  productUrl = "",
+  hashtags = "",
+  includeEmoji = true,
+  includeDescriptionFallback = true
+} = {}) {
+  const lines = [];
+  const title = product?.title || "";
+  const subtitle = product?.subtitle || "";
+  if (title) {
+    lines.push(`${includeEmoji ? "🎨 " : ""}${title}${subtitle ? `, ${subtitle}` : ""}`);
+    lines.push("");
+  }
+  const description = includeDescriptionFallback
+    ? (product?.longDescription || product?.description || "")
+    : (product?.longDescription || "");
+  const firstLine = String(description || "").split("\n").find((line) => line.trim());
+  if (firstLine) {
+    lines.push(firstLine.trim());
+    lines.push("");
+  }
+  const price = Math.max(0, Number(product?.priceSats) || 0);
+  if (price > 0) {
+    lines.push(`Price: ${price.toLocaleString("en-US")} sats`);
+    lines.push("");
+  }
+  if (productUrl) lines.push(`Available here 👉 ${productUrl}`);
+  const ht = String(hashtags || "").trim();
+  if (ht) {
+    if (lines.length && lines[lines.length - 1].trim() !== "") lines.push("");
+    lines.push(ht);
+  }
+  return lines.join("\n")
+    .replace(/\n?Buy\/details:[^\n]*/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function normalizeTeaserHashtags(raw, defaultHashtags = DEFAULT_TEASER_HASHTAGS) {
@@ -1003,6 +1051,139 @@ app.get("/api/public-settings", (req, res) => {
   const nostrShopPubkey = getShopPubkey();
   res.json({ ...Settings.getPublic(), nostrShopPubkey });
 });
+app.get("/api/public/nostr-testimonials", async (req, res) => {
+  const CACHE_TTL_MS = 5 * 60 * 1000;
+
+  try {
+    const settings = Settings.getAll();
+    const identifiers = [...new Set(
+      String(settings.nostrTestimonials || "")
+        .split(/\r?\n/)
+        .map((value) => value.trim())
+        .filter((value) => /^nevent1[023456789acdefghjklmnpqrstuvwxyz]+$/i.test(value))
+    )];
+
+    res.set("Cache-Control", "public, max-age=60, stale-while-revalidate=120");
+
+    if (!identifiers.length) {
+      return res.json({ testimonials: [] });
+    }
+
+    const relaySettings = {
+      ...settings,
+      nostrRelays: Array.isArray(settings.nostrRelays)
+        ? settings.nostrRelays
+        : String(settings.nostrRelays || "")
+            .split(/[\n,]+/)
+            .map((value) => value.trim())
+            .filter(Boolean)
+    };
+    const relays = [...new Set([
+      ...relaysFrom(relaySettings),
+      "wss://nostr.oxtr.dev",
+      "wss://nostr21.com",
+      "wss://nostr.wine",
+      "wss://relay.fountain.fm",
+      "wss://relay.lexingtonbitcoin.org",
+      "wss://relay.nos.social"
+    ])];
+    const cacheKey = `${identifiers.join("|")}::${relays.join("|")}`;
+    const nowMs = Date.now();
+
+    if (
+      nostrTestimonialsCache.key === cacheKey &&
+      nostrTestimonialsCache.expiresAt > nowMs
+    ) {
+      return res.json({ testimonials: nostrTestimonialsCache.data });
+    }
+
+    const profileCache = new Map();
+
+    const testimonials = (await Promise.all(identifiers.map(async (identifier) => {
+      try {
+        const event = await fetchNostrEventByNevent(identifier, relays);
+        if (!event || typeof event.content !== "string") return null;
+
+        let profile = profileCache.get(event.pubkey);
+        if (profile === undefined) {
+          profile = await fetchProfile(event.pubkey, relays);
+          profileCache.set(event.pubkey, profile || null);
+        }
+
+        const imageSet = new Set();
+        for (const tag of Array.isArray(event.tags) ? event.tags : []) {
+          if (!Array.isArray(tag)) continue;
+
+          if (tag[0] === "image" && typeof tag[1] === "string") {
+            try {
+              const url = new URL(tag[1]);
+              if (url.protocol === "https:") imageSet.add(url.href);
+            } catch {}
+          }
+
+          if (tag[0] === "imeta") {
+            for (const item of tag.slice(1)) {
+              if (typeof item !== "string" || !item.startsWith("url ")) continue;
+              try {
+                const url = new URL(item.slice(4).trim());
+                if (url.protocol === "https:") imageSet.add(url.href);
+              } catch {}
+            }
+          }
+        }
+
+        // Extract direct HTTPS image URLs from event content, including Markdown links.
+        for (const match of event.content.matchAll(/https:\/\/[^\s<>"'`\])}]+/gi)) {
+          const candidate = match[0].replace(/[.,!?;:]+$/, "");
+          try {
+            const url = new URL(candidate);
+            if (
+              url.protocol === "https:" &&
+              /\.(?:avif|gif|jpe?g|png|webp)$/i.test(url.pathname)
+            ) {
+              imageSet.add(url.href);
+            }
+          } catch {}
+        }
+
+        const authorName = String(
+          profile?.display_name || profile?.name || ""
+        ).trim();
+
+        return {
+          id: event.id,
+          identifier,
+          content: event.content,
+          createdAt: Number(event.created_at || 0),
+          author: {
+            name: authorName || `${event.pubkey.slice(0, 8)}…${event.pubkey.slice(-6)}`,
+            picture: typeof profile?.picture === "string" &&
+              profile.picture.startsWith("https://")
+                ? profile.picture
+                : "",
+            pubkey: event.pubkey
+          },
+          images: [...imageSet].slice(0, 4),
+          url: "https:" + "/" + "/njump.me/" + identifier,
+        };
+      } catch (err) {
+        console.warn("[nostr testimonials] Event lookup failed:", err?.message || err);
+        return null;
+      }
+    }))).filter(Boolean);
+
+    nostrTestimonialsCache = {
+      key: cacheKey,
+      expiresAt: nowMs + CACHE_TTL_MS,
+      data: testimonials
+    };
+
+    res.json({ testimonials });
+  } catch (err) {
+    console.error("[nostr testimonials] Route failed:", err?.message || err);
+    res.status(500).json({ testimonials: [], error: "Unable to load testimonials" });
+  }
+});
 // Expose the stall logo when stored as a data URL (for Nostr publishing)
 app.get("/api/public/stall-logo", (req, res) => {
   try {
@@ -1038,7 +1219,7 @@ app.get("/api/payments/config", (req, res) => {
 app.get("/api/products", (req, res) => {
   const list = Products.allPublic() || [];
   const etagKey = list.map((p) => p.cacheTag).join("|");
-  const etag = strongEtag(`products:v3:${etagKey}`);
+  const etag = strongEtag(`products:v4:${etagKey}`);
   const alreadyFresh = req.headers["if-none-match"] && req.headers["if-none-match"] === etag;
 
   res.setHeader("Cache-Control", "public, max-age=30, stale-while-revalidate=60");
@@ -1082,7 +1263,10 @@ app.get("/api/products/:id", (req, res) => {
   const nostrRow = ProductNostrPosts.get(p.id);
   const dTag = nostrRow?.dTag || `product:${p.id}`;
   const coordinates = (shopPubkey && dTag) ? buildCoordinates(KIND_PRODUCT, shopPubkey, dTag) : "";
-  res.json({ ...p, imageUrls, thumbUrls, absImageUrls, absThumbUrls, nostr: { coordinates } });
+  const publicProduct = p.artworkStatus === "for_sale"
+    ? p
+    : (({ priceSats, ...rest }) => rest)(p);
+  res.json({ ...publicProduct, imageUrls, thumbUrls, absImageUrls, absThumbUrls, nostr: { coordinates } });
 });
 
 // Binary image endpoints (full + thumbnail)
@@ -1144,11 +1328,13 @@ app.put("/api/cart", (req, res) => {
 // ---------------------------------------------------------------------
 // Admin auth
 // ---------------------------------------------------------------------
-app.post("/api/admin/login", (req, res) => {
+app.post("/api/admin/login", adminLoginLimiter.middleware, (req, res) => {
   const { pin } = req.body || {};
   if (String(pin || "") !== String(ADMIN_PIN)) {
+    adminLoginLimiter.recordFailure(req);
     return res.status(401).json({ ok: false, error: "Invalid PIN" });
   }
+  adminLoginLimiter.reset(req);
   req.session.admin = true;
   res.json({ ok: true });
 });
@@ -1170,8 +1356,10 @@ app.put("/api/admin/settings", requireAdmin, (req, res) => {
     logoLight,
     favicon,
     productsHeading,
+    featuredProductId,
     heroLine,
     radiusScale,
+    displayFont, bodyFont,
     // NEW:
     aboutTitle, aboutBody, aboutImage,
     heroCtaLabel, heroCtaHref,
@@ -1180,6 +1368,7 @@ app.put("/api/admin/settings", requireAdmin, (req, res) => {
     commissionTitle, commissionBody, commissionCtaLabel, commissionCtaHref,
     // NEW: Embedded Code
     embedCode,
+    nostrTestimonials,
     // NEW Nostr/LN
     nostrNpub, nostrNip05, nostrRelays, lightningAddress, nostrDefaultHashtags, nostrCommentsEnabled,
     nostrBlockedPubkeys, nostrBlockedHashtags,
@@ -1197,7 +1386,8 @@ app.put("/api/admin/settings", requireAdmin, (req, res) => {
   } = req.body || {};
   res.json(
     Settings.setAll({
-      storeName, contactNote, logo, logoDark, logoLight, favicon, productsHeading, heroLine, radiusScale,
+      storeName, contactNote, logo, logoDark, logoLight, favicon, productsHeading, featuredProductId, heroLine, radiusScale,
+      displayFont, bodyFont,
       aboutTitle, aboutBody, aboutImage,
       heroCtaLabel, heroCtaHref,
       shippingTitle, shippingBullet1, shippingBullet2, shippingBullet3,
@@ -1205,6 +1395,7 @@ app.put("/api/admin/settings", requireAdmin, (req, res) => {
       commissionTitle, commissionBody, commissionCtaLabel, commissionCtaHref,
       // NEW: Embedded Code
       embedCode,
+      nostrTestimonials,
       nostrNpub, nostrNip05, nostrRelays, lightningAddress, nostrDefaultHashtags, nostrCommentsEnabled,
       nostrBlockedPubkeys, nostrBlockedHashtags,
       themeChoice, themeTokens,
@@ -1225,7 +1416,7 @@ app.get("/api/admin/products", requireAdmin, (req, res) => {
   const pageSizeParam = Number.parseInt(req.query.pageSize, 10);
 
   if (!Number.isFinite(pageParam) || !Number.isFinite(pageSizeParam)) {
-    const all = Products.all({ includeImages: true }) || [];
+    const all = Products.allForAdmin({ includeImages: true }) || [];
     const withNostr = all.map((p) => {
       const nostrRow = ProductNostrPosts.get(p.id);
       return { ...p, nostr: nostrRow ? {
@@ -1247,7 +1438,7 @@ app.get("/api/admin/products", requireAdmin, (req, res) => {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(Math.max(1, pageParam), totalPages);
   const offset = (page - 1) * pageSize;
-  const rows = Products.page({ offset, limit: pageSize });
+  const rows = Products.pageForAdmin({ offset, limit: pageSize });
 
   const items = rows.map((p) => {
     const count = Math.max(0, Number(p.imageCount || 0));
@@ -1558,8 +1749,10 @@ app.post("/api/admin/orders/:id/status", requireAdmin, async (req, res) => {
     // NOSTR DM on status change
     try { await dmOrderUpdate(updated, status); } catch {}
 
-    // Email on status change (if email present and SMTP enabled)
-    try { await sendOrderStatusEmail(updated, status); } catch {}
+    // Email only when the order status actually changes
+    if (String(existing.status || "").toUpperCase() !== status) {
+      try { await sendOrderStatusEmail(updated, status); } catch {}
+    }
 
     return res.json(updated);
   } catch (e) {
@@ -1587,7 +1780,8 @@ app.post("/api/admin/products", requireAdmin, (req, res) => {
     showDimensions,
     hidden,
     isUnique,
-    quantityAvailable
+    quantityAvailable,
+    artworkStatus
   } = req.body || {};
   if (!title || !priceSats || !images?.length) {
     return res.status(400).json({ error: "title, priceSats, images required" });
@@ -1606,7 +1800,8 @@ app.post("/api/admin/products", requireAdmin, (req, res) => {
     showDimensions: showDimensions !== undefined ? !!showDimensions : true,
     shippingZoneOverrides: Array.isArray(shippingZoneOverrides) ? shippingZoneOverrides : [],
     isUnique: isUnique !== undefined ? !!isUnique : undefined,
-    quantityAvailable: quantityAvailable
+    quantityAvailable: quantityAvailable,
+    artworkStatus: artworkStatus
   });
   if (available === false) Products.update(created.id, { available: false });
   if (hidden === true) Products.update(created.id, { hidden: true });
@@ -1629,13 +1824,39 @@ app.put("/api/admin/products/:id", requireAdmin, (req, res) => {
     patch.shippingZoneOverrides = Array.isArray(req.body.shippingZoneOverrides) ? req.body.shippingZoneOverrides : [];
   }
   if (req.body.available !== undefined) patch.available = !!req.body.available;
+  if (req.body.artworkStatus !== undefined) patch.artworkStatus = req.body.artworkStatus;
   if (req.body.hidden !== undefined) patch.hidden = !!req.body.hidden;
   if (req.body.showDimensions !== undefined) patch.showDimensions = !!req.body.showDimensions;
   if (req.body.isUnique !== undefined) patch.isUnique = !!req.body.isUnique;
   if (req.body.quantityAvailable !== undefined) patch.quantityAvailable = req.body.quantityAvailable;
 
+  const previous = Products.get(id);
+  const nostrBefore = ProductNostrPosts.get(id);
+  const settings = Settings.getAll();
+  const hashtags = normalizeTeaserHashtags(
+    nostrBefore?.teaserHashtags,
+    settings.nostrDefaultHashtags || DEFAULT_TEASER_HASHTAGS
+  );
+  const productUrl = ensureAbsoluteFromReq(req, `/product/${id}`);
+  const previousDefaultTeaser = previous
+    ? makeDefaultTeaserContent(previous, { productUrl, hashtags })
+    : "";
+
   const changed = Products.update(id, patch);
   if (!changed) return res.status(404).json({ error: "Not found" });
+
+  if (
+    nostrBefore &&
+    previousDefaultTeaser &&
+    nostrBefore.teaserContent === previousDefaultTeaser
+  ) {
+    const updatedDefaultTeaser = makeDefaultTeaserContent(changed, {
+      productUrl,
+      hashtags
+    });
+    ProductNostrPosts.setTeaser(id, { content: updatedDefaultTeaser });
+  }
+
   res.json(changed);
 });
 app.delete("/api/admin/products/:id", requireAdmin, (req, res) => {
@@ -1722,7 +1943,7 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
     const country = sanitizedCustomer.country;
     const loaded = items.map(({ productId, qty }) => {
       const p = Products.get(productId, { includeImages: false });
-      if (!p || !p.available || p.hidden) throw new Error(`Item not available: ${productId}`);
+      if (!p || p.artworkStatus !== "for_sale" || !p.available || p.hidden) throw new Error(`Item not available: ${productId}`);
       const q = Math.max(1, Math.floor(qty || 1));
       const maxAllowed = maxPurchasableForProduct(p);
       if (maxAllowed <= 0) throw new Error(`Item not available: ${productId}`);
