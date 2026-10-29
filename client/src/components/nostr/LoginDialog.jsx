@@ -7,7 +7,7 @@ export default function LoginDialog({ open, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs px-4" onClick={onClose}>
       <div
-        className="relative w-full max-w-md bg-slate-900 text-white rounded-2xl shadow-2xl ring-1 ring-white/10 p-6"
+        className="relative w-full max-w-md bg-[#191916] text-[#f4efe3] rounded-2xl shadow-2xl ring-1 ring-[#d8b363]/30 p-6"
         onClick={(e) => e.stopPropagation()}
       >
         <button

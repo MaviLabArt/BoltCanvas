@@ -37,6 +37,8 @@ export default function Home() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [shippingAlertCount, setShippingAlertCount] = useState(0);
+  const [shippingAlertLanguage, setShippingAlertLanguage] = useState("it");
   const { settings: remoteSettings } = useSettings();
   const settings = useMemo(() => {
     if (!remoteSettings) return null;
@@ -48,6 +50,44 @@ export default function Home() {
       .then(r => { setProducts(r.data); setLoadError(false); })
       .catch(()=>{ setProducts([]); setLoadError(true); })
       .finally(()=> setLoading(false));
+  }, []);
+
+  // Refresh the private shipping alert whenever the Nostr session changes.
+  useEffect(() => {
+    let active = true;
+    let requestId = 0;
+
+    const refreshShippingAlert = async () => {
+      const currentRequest = ++requestId;
+      setShippingAlertCount(0);
+
+      try {
+        const me = await api.get("/nostr/me");
+        if (!active || currentRequest !== requestId || !me.data?.isOwner) return;
+
+        const alert = await api.get("/nostr/shipping-alert");
+        if (!active || currentRequest !== requestId) return;
+
+        setShippingAlertCount(Math.max(0, Number(alert.data?.count) || 0));
+        setShippingAlertLanguage(alert.data?.language === "en" ? "en" : "it");
+      } catch {
+        if (active && currentRequest === requestId) {
+          setShippingAlertCount(0);
+        }
+      }
+    };
+
+    const handleNostrSession = () => {
+      void refreshShippingAlert();
+    };
+
+    window.addEventListener("nostr:session", handleNostrSession);
+    void refreshShippingAlert();
+
+    return () => {
+      active = false;
+      window.removeEventListener("nostr:session", handleNostrSession);
+    };
   }, []);
 
   // Preserve server-provided order (already respects availability + manual displayOrder)
@@ -123,6 +163,21 @@ export default function Home() {
 
   return (
     <section className="pt-8">
+      {shippingAlertCount > 0 && (
+        <div
+          role="status"
+          className="mx-auto mb-6 max-w-3xl rounded-xl border border-amber-500/40 bg-amber-950/50 px-4 py-3 text-center text-amber-100 shadow-sm"
+        >
+          <div className="font-semibold tracking-wide">
+            {shippingAlertLanguage === "en" ? "NEW ORDER TO SHIP" : "NUOVO ORDINE DA SPEDIRE"}
+          </div>
+          <div className="mt-1 text-sm text-amber-100/80">
+            {shippingAlertLanguage === "en"
+              ? `${shippingAlertCount} order${shippingAlertCount === 1 ? "" : "s"} awaiting shipment`
+              : `${shippingAlertCount} ${shippingAlertCount === 1 ? "ordine da spedire" : "ordini da spedire"}`}
+          </div>
+        </div>
+      )}
       {/* --- HERO / Masthead (big logo only + optional subheading) --- */}
       <div className="mb-8 text-center">
         {heroLogo ? (

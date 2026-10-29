@@ -13,10 +13,25 @@ export default function AdminApp() {
   const { me } = useAdmin();
   const nav = useNavigate();
 
+  // Isola il tema Admin dal tema pubblico durante la navigazione SPA.
+  useEffect(() => {
+    const root = document.documentElement;
+    const previousTheme = root.getAttribute("data-theme");
+
+    root.setAttribute("data-theme", "dark");
+
+    return () => {
+      if (previousTheme === null) {
+        root.removeAttribute("data-theme");
+      } else {
+        root.setAttribute("data-theme", previousTheme);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     me()
       .then((ok) => {
-        // If someone hits /admin/dashboard directly and isn't logged in, send them to /admin (login)
         if (!ok) nav("/admin");
       })
       .catch(() => nav("/admin"));
@@ -25,8 +40,11 @@ export default function AdminApp() {
 
   return (
     <AdminI18nProvider>
-      <div className="min-h-screen bg-slate-950 text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div
+        className="admin-shell"
+        data-admin-theme="dark"
+      >
+        <div className="admin-frame">
           <Routes>
             <Route index element={<Login />} />
             <Route path="dashboard" element={<Dashboard />}>
