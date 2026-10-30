@@ -100,6 +100,7 @@ describe("HtmlEmbed", () => {
     const html = `
       <script type="application/ld+json" src="/metadata.json"></script>
       <script type="application/json" src="/config.json"></script>
+      <script type="text/javascript; charset=utf-8" src="/parameterized.js"></script>
       <script>
         window.__afterDataBlocks = true;
       </script>
@@ -109,10 +110,11 @@ describe("HtmlEmbed", () => {
 
     await waitFor(() => {
       const scripts = container.querySelectorAll("script");
-      expect(scripts).toHaveLength(3);
+      expect(scripts).toHaveLength(4);
       expect(scripts[0].type).toBe("application/ld+json");
       expect(scripts[1].type).toBe("application/json");
-      expect(scripts[2].textContent).toContain("window.__afterDataBlocks");
+      expect(scripts[2].type).toBe("text/javascript; charset=utf-8");
+      expect(scripts[3].textContent).toContain("window.__afterDataBlocks");
     });
   });
 
@@ -159,16 +161,28 @@ describe("HtmlEmbed", () => {
 
   it("does not insert the same scripts twice in React StrictMode", () => {
     const html = '<script src="/widget-library.js"></script>';
+    const replaceWithSpy = vi.spyOn(Comment.prototype, "replaceWith");
 
-    const { container } = render(
-      <StrictMode>
-        <HtmlEmbed html={html} />
-      </StrictMode>
-    );
+    try {
+      const { container } = render(
+        <StrictMode>
+          <HtmlEmbed html={html} />
+        </StrictMode>
+      );
 
-    expect(
-      container.querySelectorAll('script[src="/widget-library.js"]')
-    ).toHaveLength(1);
+      const scriptInsertions = replaceWithSpy.mock.calls.filter(
+        ([node]) =>
+          node instanceof HTMLScriptElement &&
+          node.getAttribute("src") === "/widget-library.js"
+      );
+
+      expect(scriptInsertions).toHaveLength(1);
+      expect(
+        container.querySelectorAll('script[src="/widget-library.js"]')
+      ).toHaveLength(1);
+    } finally {
+      replaceWithSpy.mockRestore();
+    }
   });
 
   it("updates the rendered HTML when the embed changes", () => {

@@ -28,8 +28,7 @@ function isExecutableScript(script) {
 
   if (!type || type === "module") return true;
 
-  const mimeType = type.split(";")[0].trim();
-  return JAVASCRIPT_MIME_TYPES.has(mimeType);
+  return JAVASCRIPT_MIME_TYPES.has(type);
 }
 
 export default function HtmlEmbed({ html = "", className = "" }) {
