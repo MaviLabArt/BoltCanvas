@@ -21,7 +21,17 @@ createRoot(document.getElementById("root")).render(
               <Route
                 path="/admin/*"
                 element={
-                  <Suspense fallback={<div className="p-6 text-center text-white/70">Caricamento...</div>}>
+                  <Suspense
+                    fallback={
+                      <div className="flex min-h-screen items-center justify-center bg-[#171614]">
+                        <span
+                          role="status"
+                          aria-label="Loading"
+                          className="h-8 w-8 animate-spin rounded-full border-2 border-[#a98a52]/30 border-t-[#a98a52]"
+                        />
+                      </div>
+                    }
+                  >
                     <AdminApp />
                   </Suspense>
                 }
