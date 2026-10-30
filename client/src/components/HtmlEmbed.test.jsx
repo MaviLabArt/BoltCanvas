@@ -40,6 +40,47 @@ describe("HtmlEmbed", () => {
     );
   });
 
+  it("does not wait for nomodule scripts in browsers supporting modules", async () => {
+    const originalNoModule = Object.getOwnPropertyDescriptor(
+      HTMLScriptElement.prototype,
+      "noModule"
+    );
+
+    Object.defineProperty(HTMLScriptElement.prototype, "noModule", {
+      configurable: true,
+      get() {
+        return this.hasAttribute("nomodule");
+      }
+    });
+
+    try {
+      const html = `
+        <script nomodule src="/legacy-widget.js"></script>
+        <script>window.__afterNomodule = true;</script>
+      `;
+
+      const { container } = render(<HtmlEmbed html={html} />);
+
+      await waitFor(() => {
+        expect(container.querySelectorAll("script")).toHaveLength(2);
+      });
+
+      expect(container.querySelectorAll("script")[1].textContent).toContain(
+        "window.__afterNomodule = true"
+      );
+    } finally {
+      if (originalNoModule) {
+        Object.defineProperty(
+          HTMLScriptElement.prototype,
+          "noModule",
+          originalNoModule
+        );
+      } else {
+        delete HTMLScriptElement.prototype.noModule;
+      }
+    }
+  });
+
   it("does not insert the same scripts twice in React StrictMode", () => {
     const html = '<script src="/widget-library.js"></script>';
 

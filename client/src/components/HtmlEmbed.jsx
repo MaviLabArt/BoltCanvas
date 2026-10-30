@@ -55,6 +55,12 @@ export default function HtmlEmbed({ html = "", className = "" }) {
         const hasSource = script.hasAttribute("src");
         const isModule = script.type === "module";
         const isExplicitlyAsync = script.hasAttribute("async");
+        // Modern browsers ignore classic scripts marked nomodule.
+        const isIgnoredNomodule =
+          hasSource &&
+          !isModule &&
+          script.noModule &&
+          "noModule" in script;
 
         // Dynamically inserted classic scripts are async by default.
         // Disable that behavior unless async was explicitly requested.
@@ -85,7 +91,11 @@ export default function HtmlEmbed({ html = "", className = "" }) {
         placeholder.replaceWith(script);
 
         // Explicitly async scripts retain their requested behavior.
-        if (loadPromise && !(hasSource && isExplicitlyAsync)) {
+        if (
+          loadPromise &&
+          !(hasSource && isExplicitlyAsync) &&
+          !isIgnoredNomodule
+        ) {
           await loadPromise;
         }
       }
@@ -96,8 +106,10 @@ export default function HtmlEmbed({ html = "", className = "" }) {
     });
 
     // Deliberately do not cancel here: React StrictMode replays effects
-    // during development. A changed HTML value cancels the old execution;
-    // a real unmount is detected through container.isConnected.
+    // during development. A changed HTML value cancels scripts that have
+    // not yet been inserted, and a real unmount is detected through
+    // container.isConnected. An external script already inserted into the
+    // document cannot be aborted here and may still execute after removal.
   }, [source]);
 
   return <div ref={containerRef} className={className} />;
