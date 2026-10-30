@@ -82,6 +82,20 @@ describe("HtmlEmbed", () => {
     }
   });
 
+  it("does not block following scripts on inline module scripts", async () => {
+    const html = `
+      <script type="module">
+        window.__inlineModule = true;
+      </script>
+      <script>
+        window.__afterInlineModule = true;
+      </script>
+    `;
+    const { container } = render(<HtmlEmbed html={html} />);
+    await waitFor(() => {
+      expect(container.querySelectorAll("script")).toHaveLength(2);
+    });
+  });
   it("does not wait for nomodule scripts in browsers supporting modules", async () => {
     const originalNoModule = Object.getOwnPropertyDescriptor(
       HTMLScriptElement.prototype,

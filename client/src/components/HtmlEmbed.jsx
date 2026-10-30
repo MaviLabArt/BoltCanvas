@@ -70,7 +70,10 @@ export default function HtmlEmbed({ html = "", className = "" }) {
 
         let loadPromise = null;
 
-        if (hasSource || isModule) {
+        // Inline module scripts do not provide a reliable load/error event
+        // for this sequencing mechanism. Let the browser evaluate them
+        // asynchronously without blocking the insertion of following scripts.
+        if (hasSource) {
           loadPromise = new Promise((resolve) => {
             script.addEventListener("load", resolve, { once: true });
             script.addEventListener(
