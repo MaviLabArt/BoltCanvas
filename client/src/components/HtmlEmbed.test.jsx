@@ -96,6 +96,26 @@ describe("HtmlEmbed", () => {
       expect(container.querySelectorAll("script")).toHaveLength(2);
     });
   });
+  it("does not wait for external data-block scripts", async () => {
+    const html = `
+      <script type="application/ld+json" src="/metadata.json"></script>
+      <script type="application/json" src="/config.json"></script>
+      <script>
+        window.__afterDataBlocks = true;
+      </script>
+    `;
+
+    const { container } = render(<HtmlEmbed html={html} />);
+
+    await waitFor(() => {
+      const scripts = container.querySelectorAll("script");
+      expect(scripts).toHaveLength(3);
+      expect(scripts[0].type).toBe("application/ld+json");
+      expect(scripts[1].type).toBe("application/json");
+      expect(scripts[2].textContent).toContain("window.__afterDataBlocks");
+    });
+  });
+
   it("does not wait for nomodule scripts in browsers supporting modules", async () => {
     const originalNoModule = Object.getOwnPropertyDescriptor(
       HTMLScriptElement.prototype,

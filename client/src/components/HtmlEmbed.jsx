@@ -4,6 +4,34 @@ import { useEffect, useRef } from "react";
 // This also prevents React StrictMode from initializing the same embed twice.
 const executions = new WeakMap();
 
+const JAVASCRIPT_MIME_TYPES = new Set([
+  "application/ecmascript",
+  "application/javascript",
+  "application/x-ecmascript",
+  "application/x-javascript",
+  "text/ecmascript",
+  "text/javascript",
+  "text/javascript1.0",
+  "text/javascript1.1",
+  "text/javascript1.2",
+  "text/javascript1.3",
+  "text/javascript1.4",
+  "text/javascript1.5",
+  "text/jscript",
+  "text/livescript",
+  "text/x-ecmascript",
+  "text/x-javascript"
+]);
+
+function isExecutableScript(script) {
+  const type = (script.getAttribute("type") || "").trim().toLowerCase();
+
+  if (!type || type === "module") return true;
+
+  const mimeType = type.split(";")[0].trim();
+  return JAVASCRIPT_MIME_TYPES.has(mimeType);
+}
+
 export default function HtmlEmbed({ html = "", className = "" }) {
   const containerRef = useRef(null);
   const source = String(html || "");
@@ -53,7 +81,8 @@ export default function HtmlEmbed({ html = "", className = "" }) {
         }
 
         const hasSource = script.hasAttribute("src");
-        const isModule = script.type === "module";
+        const isModule = script.type.trim().toLowerCase() === "module";
+        const hasExecutableType = isExecutableScript(script);
         const isExplicitlyAsync = script.hasAttribute("async");
         // Modern browsers ignore classic scripts marked nomodule.
         const isIgnoredNomodule =
@@ -73,7 +102,7 @@ export default function HtmlEmbed({ html = "", className = "" }) {
         // Inline module scripts do not provide a reliable load/error event
         // for this sequencing mechanism. Let the browser evaluate them
         // asynchronously without blocking the insertion of following scripts.
-        if (hasSource) {
+        if (hasSource && hasExecutableType) {
           loadPromise = new Promise((resolve) => {
             script.addEventListener("load", resolve, { once: true });
             script.addEventListener(
