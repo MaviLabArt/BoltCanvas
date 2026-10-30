@@ -159,6 +159,10 @@ describe("http endpoints", () => {
       const me = await agent.get("/api/nostr/me");
       expect(me.status).toBe(200);
       expect(me.body).toEqual({ pubkey: userPubkey, isOwner: false });
+
+      const alert = await agent.get("/api/nostr/shipping-alert");
+      expect(alert.status).toBe(403);
+      expect(alert.body).toEqual({ error: "Forbidden" });
     } finally {
       if (previous === undefined) delete process.env.OWNER_NOSTR_PUBKEY;
       else process.env.OWNER_NOSTR_PUBKEY = previous;

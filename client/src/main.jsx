@@ -1,4 +1,4 @@
-import React from "react";
+import React, { Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import "./index.css";
@@ -8,7 +8,7 @@ import { CartProvider } from "./store/cart.jsx";
 import { SettingsProvider } from "./store/settings.jsx";
 import { NostrProvider } from "./providers/NostrProvider.jsx";
 
-import AdminApp from "./admin/AdminApp.jsx";
+const AdminApp = React.lazy(() => import("./admin/AdminApp.jsx"));
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
@@ -20,7 +20,11 @@ createRoot(document.getElementById("root")).render(
               <Route path="/*" element={<App />} />
               <Route
                 path="/admin/*"
-                element={<AdminApp />}
+                element={
+                  <Suspense fallback={<div className="p-6 text-center text-white/70">Caricamento...</div>}>
+                    <AdminApp />
+                  </Suspense>
+                }
               />
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>

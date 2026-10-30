@@ -150,6 +150,7 @@ const ADMIN_LANG = (() => {
 
 const OWNER_NOSTR_PUBKEY = (() => {
   const raw = String(process.env.OWNER_NOSTR_PUBKEY || "").trim();
+  if (!raw) return "";
   if (/^[0-9a-f]{64}$/i.test(raw)) return raw.toLowerCase();
   try {
     const decoded = nip19.decode(raw);
@@ -157,6 +158,9 @@ const OWNER_NOSTR_PUBKEY = (() => {
       return decoded.data.toLowerCase();
     }
   } catch {}
+  console.warn(
+    "[config] OWNER_NOSTR_PUBKEY is set but invalid; owner-only features are disabled."
+  );
   return "";
 })();
 
