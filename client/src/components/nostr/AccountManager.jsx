@@ -50,7 +50,7 @@ export default function AccountManager({ onClose }) {
     <div className="space-y-6">
       <div>
         <h2 className="text-xl font-semibold">{title}</h2>
-        <p className="text-sm text-white/60 mt-1">
+        <p className="text-sm text-[#c4bcaa] mt-1">
           Connect a signer to keep carts and orders tied to your Nostr identity.
         </p>
       </div>
@@ -60,19 +60,19 @@ export default function AccountManager({ onClose }) {
           <button
             onClick={handleNip07Login}
             disabled={busy}
-            className="w-full px-4 py-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 transition text-sm font-semibold disabled:opacity-60"
+            className="w-full px-4 py-3 rounded-xl bg-[#642e27] text-[#fff4e6] hover:bg-[#d8b363] hover:text-[#11110f] transition text-sm font-semibold disabled:opacity-60"
           >
             {busy ? "Connecting..." : "Login with Browser Extension"}
           </button>
           <button
             onClick={() => setView(VIEW.NOSTR_CONNECT)}
-            className="w-full px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 transition text-sm font-semibold ring-1 ring-white/10"
+            className="w-full px-4 py-3 rounded-xl bg-[#292720] text-[#f4efe3] hover:bg-[#d8b363] hover:text-[#11110f] transition text-sm font-semibold ring-1 ring-[#d8b363]/35"
           >
             Login with Bunker / Nostr Connect
           </button>
           <button
             onClick={() => setView(VIEW.NSEC)}
-            className="w-full px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 transition text-sm font-semibold ring-1 ring-white/10"
+            className="w-full px-4 py-3 rounded-xl bg-[#292720] text-[#f4efe3] hover:bg-[#d8b363] hover:text-[#11110f] transition text-sm font-semibold ring-1 ring-[#d8b363]/35"
           >
             Login with Private Key
           </button>

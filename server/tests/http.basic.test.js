@@ -2,6 +2,8 @@ import fs from "fs";
 import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DB_PATH } from "./helpers.js";
+import { generateSecretKey, getPublicKey, finalizeEvent } from "nostr-tools/pure";
+import { nip19 } from "nostr-tools";
 
 const PNG_DATA_URL = "data:image/png;base64,iVBORw0KGgo=";
 
@@ -44,6 +46,127 @@ describe("http endpoints", () => {
     }
     expect((await request(app).post("/api/admin/products/example/nostr/teaser/publish")).status).toBe(401);
     expect((await request(app).get("/api/nostr/login/challenge")).status).toBe(200);
+  });
+
+  it("returns isOwner false when no Nostr user is logged in", async () => {
+    const previous = process.env.OWNER_NOSTR_PUBKEY;
+    delete process.env.OWNER_NOSTR_PUBKEY;
+    try {
+      const app = await loadApp();
+      const res = await request(app).get("/api/nostr/me");
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ pubkey: "", isOwner: false });
+    } finally {
+      if (previous === undefined) delete process.env.OWNER_NOSTR_PUBKEY;
+      else process.env.OWNER_NOSTR_PUBKEY = previous;
+    }
+  });
+
+  it("identifies the configured Nostr owner after a valid login", async () => {
+    const previous = process.env.OWNER_NOSTR_PUBKEY;
+    const secretKey = generateSecretKey();
+    const pubkey = getPublicKey(secretKey);
+    process.env.OWNER_NOSTR_PUBKEY = pubkey;
+    try {
+      const app = await loadApp();
+      const agent = request.agent(app);
+      const host = "shop.test";
+      const challengeRes = await agent.get("/api/nostr/login/challenge").set("Host", host);
+      expect(challengeRes.status).toBe(200);
+      const event = finalizeEvent({
+        kind: 27235,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ["challenge", challengeRes.body.challenge],
+          ["domain", host]
+        ],
+        content: ""
+      }, secretKey);
+      const loginRes = await agent.post("/api/nostr/login/verify").set("Host", host).send({ event });
+      expect(loginRes.status).toBe(200);
+      const me = await agent.get("/api/nostr/me");
+      expect(me.status).toBe(200);
+      expect(me.body).toEqual({ pubkey, isOwner: true });
+    } finally {
+      if (previous === undefined) delete process.env.OWNER_NOSTR_PUBKEY;
+      else process.env.OWNER_NOSTR_PUBKEY = previous;
+    }
+  });
+
+  it("denies access to the shipping alert without an owner Nostr session", async () => {
+    const app = await loadApp();
+    const res = await request(app).get("/api/nostr/shipping-alert");
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: "Forbidden" });
+  });
+
+  it("returns only the shipping count to the authenticated Nostr owner", async () => {
+    const previous = process.env.OWNER_NOSTR_PUBKEY;
+    const secretKey = generateSecretKey();
+    const pubkey = getPublicKey(secretKey);
+    process.env.OWNER_NOSTR_PUBKEY = pubkey;
+    try {
+      const app = await loadApp();
+      const agent = request.agent(app);
+      const host = "shop.test";
+      const challengeRes = await agent.get("/api/nostr/login/challenge").set("Host", host);
+      expect(challengeRes.status).toBe(200);
+      const event = finalizeEvent({
+        kind: 27235,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ["challenge", challengeRes.body.challenge],
+          ["domain", host]
+        ],
+        content: ""
+      }, secretKey);
+      const loginRes = await agent.post("/api/nostr/login/verify").set("Host", host).send({ event });
+      expect(loginRes.status).toBe(200);
+
+      const res = await agent.get("/api/nostr/shipping-alert");
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ count: 0, language: expect.any(String) });
+      expect(Object.keys(res.body).sort()).toEqual(["count", "language"]);
+    } finally {
+      if (previous === undefined) delete process.env.OWNER_NOSTR_PUBKEY;
+      else process.env.OWNER_NOSTR_PUBKEY = previous;
+    }
+  });
+
+  it("does not identify another logged-in Nostr user as the owner", async () => {
+    const previous = process.env.OWNER_NOSTR_PUBKEY;
+    const ownerPubkey = getPublicKey(generateSecretKey());
+    const userSecretKey = generateSecretKey();
+    const userPubkey = getPublicKey(userSecretKey);
+    process.env.OWNER_NOSTR_PUBKEY = nip19.npubEncode(ownerPubkey);
+    try {
+      const app = await loadApp();
+      const agent = request.agent(app);
+      const host = "shop.test";
+      const challengeRes = await agent.get("/api/nostr/login/challenge").set("Host", host);
+      expect(challengeRes.status).toBe(200);
+      const event = finalizeEvent({
+        kind: 27235,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ["challenge", challengeRes.body.challenge],
+          ["domain", host]
+        ],
+        content: ""
+      }, userSecretKey);
+      const loginRes = await agent.post("/api/nostr/login/verify").set("Host", host).send({ event });
+      expect(loginRes.status).toBe(200);
+      const me = await agent.get("/api/nostr/me");
+      expect(me.status).toBe(200);
+      expect(me.body).toEqual({ pubkey: userPubkey, isOwner: false });
+
+      const alert = await agent.get("/api/nostr/shipping-alert");
+      expect(alert.status).toBe(403);
+      expect(alert.body).toEqual({ error: "Forbidden" });
+    } finally {
+      if (previous === undefined) delete process.env.OWNER_NOSTR_PUBKEY;
+      else process.env.OWNER_NOSTR_PUBKEY = previous;
+    }
   });
 
   it("returns public products", async () => {

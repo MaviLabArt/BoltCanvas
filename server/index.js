@@ -10,6 +10,7 @@ import crypto from "crypto";
 import sharp from "sharp";
 import { createBufferCache } from "./buffer-cache.js";
 import { verifyEvent } from "nostr-tools/pure";
+import { nip19 } from "nostr-tools";
 
 import { makeCors, sessions, logger, requireAdmin } from "./middleware.js";
 import { createAdminLoginLimiter } from "./admin-login-limiter.js";
@@ -145,6 +146,22 @@ const SESSION_SECRET = process.env.SESSION_SECRET || "change_me";
 const ADMIN_LANG = (() => {
   const raw = String(process.env.ADMIN_LANG || "").toLowerCase();
   return raw === "en" ? "en" : "it";
+})();
+
+const OWNER_NOSTR_PUBKEY = (() => {
+  const raw = String(process.env.OWNER_NOSTR_PUBKEY || "").trim();
+  if (!raw) return "";
+  if (/^[0-9a-f]{64}$/i.test(raw)) return raw.toLowerCase();
+  try {
+    const decoded = nip19.decode(raw);
+    if (decoded.type === "npub" && /^[0-9a-f]{64}$/i.test(decoded.data)) {
+      return decoded.data.toLowerCase();
+    }
+  } catch {}
+  console.warn(
+    "[config] OWNER_NOSTR_PUBKEY is set but invalid; owner-only features are disabled."
+  );
+  return "";
 })();
 
 // Optional webhook toggle (kept for future)
@@ -2892,9 +2909,28 @@ app.post("/api/nostr/login/verify", (req, res) => {
 });
 
 app.get("/api/nostr/me", (req, res) => {
-  const pk = req.session?.nostrPubkey || "";
-  res.json({ pubkey: pk });
+  const pk = String(req.session?.nostrPubkey || "").toLowerCase();
+  res.json({ pubkey: pk, isOwner: Boolean(pk && OWNER_NOSTR_PUBKEY && pk === OWNER_NOSTR_PUBKEY) });
 });
+
+// Private owner-only alert: expose only the number of orders awaiting shipment.
+app.get("/api/nostr/shipping-alert", (req, res) => {
+  const pk = String(req.session?.nostrPubkey || "").toLowerCase();
+  if (!pk || !OWNER_NOSTR_PUBKEY || pk !== OWNER_NOSTR_PUBKEY) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  try {
+    const count = (Orders.all() || []).filter((order) =>
+      ["PAID", "PREPARATION"].includes(String(order.status || "").toUpperCase())
+    ).length;
+    res.set("Cache-Control", "no-store");
+    return res.json({ count, language: ADMIN_LANG });
+  } catch {
+    return res.status(500).json({ error: "Failed to load shipping alert" });
+  }
+});
+
 app.post("/api/nostr/logout", (req, res) => {
   req.session.nostrPubkey = null;
   res.json({ ok: true });

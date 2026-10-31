@@ -24,10 +24,50 @@ export default function Header() {
   };
   const storeLabel = s.storeName || baseTitle || "";
   const [hasOrders, setHasOrders] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
 
   const [npubState, setNpubState] = useState({ npubFull: "", npubShort: "" });
   const [nostrProfile, setNostrProfile] = useState(null);
   const [mobileNostrMenuOpen, setMobileNostrMenuOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let checkVersion = 0;
+    setIsOwner(false);
+
+    const checkOwner = () => {
+      if (!nostrPk) {
+        setIsOwner(false);
+        return;
+      }
+
+      const version = ++checkVersion;
+      api.get("/nostr/me")
+        .then((r) => {
+          if (!cancelled && version === checkVersion) {
+            setIsOwner(r.data?.isOwner === true);
+          }
+        })
+        .catch(() => {
+          if (!cancelled && version === checkVersion) {
+            setIsOwner(false);
+          }
+        });
+    };
+
+    const onSessionBound = (event) => {
+      const boundPubkey = event.detail?.pubkey;
+      if (!boundPubkey || boundPubkey === nostrPk) checkOwner();
+    };
+
+    checkOwner();
+    window.addEventListener("nostr:session-bound", onSessionBound);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("nostr:session-bound", onSessionBound);
+    };
+  }, [nostrPk]);
 
   // For cart “flash” animation when an item is added
   const [flashCart, setFlashCart] = useState(false);
@@ -196,7 +236,7 @@ export default function Header() {
 
   return (
     <>
-      <header className="sticky top-0 z-20 text-[#F5F0E6] backdrop-blur-sm bg-[#292B2A]/95 supports-[backdrop-filter]:bg-[#292B2A]/90 border-b border-[#B8734F]/40">
+      <header className="sticky top-0 z-20 text-[#F5F0E6] backdrop-blur-sm bg-[#353735]/95 supports-[backdrop-filter]:bg-[#353735]/90 border-b border-[#B8734F]/40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             {/* Left: Home button (logo only; hidden on detail/cart/checkout/orders) */}
@@ -280,29 +320,47 @@ export default function Header() {
 
               {/* Nostr auth (desktop) */}
               {nostrPk ? (
-                <div className="hidden lg:inline-flex h-10 items-center gap-2 px-3 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35">
-                  <div className="h-8 w-8 rounded-full overflow-hidden bg-[#3A3C39] ring-1 ring-[#B8734F]/35 flex items-center justify-center text-xs font-semibold">
+                <div className="relative hidden lg:block">
+                  <button
+                    onClick={() => setMobileNostrMenuOpen((v) => !v)}
+                    className="h-10 w-10 rounded-full overflow-hidden bg-[#292B2A] text-[#F5F0E6] ring-1 ring-[#B8734F]/35 flex items-center justify-center text-xs font-semibold"
+                    title="Account menu"
+                    aria-label="Account menu"
+                    aria-expanded={mobileNostrMenuOpen}
+                  >
                     {nostrProfile?.picture ? (
                       <img src={nostrProfile.picture} alt={nostrProfile.name || "avatar"} className="h-full w-full object-cover" loading="lazy" />
                     ) : (
                       <span>{(nostrProfile?.name || npubShort || "Hi").slice(0, 2)}</span>
                     )}
-                  </div>
-                  <div className="text-sm" title={npubFull || nostrPk}>
-                    Hi {nostrProfile?.name || npubShort || "there"}!
-                  </div>
-                  <button
-                    onClick={signOutNostr}
-                    className="text-xs px-2 py-1 rounded-lg bg-[#3A3C39] ring-1 ring-[#B8734F]/35"
-                    title="Sign out of Nostr"
-                  >
-                    Sign out
                   </button>
+                  {mobileNostrMenuOpen && (
+                    <div className="absolute right-0 mt-2 w-48 rounded-xl bg-[#292B2A] text-[#F5F0E6] ring-1 ring-[#B8734F]/35 shadow-lg p-3 z-30">
+                      <div className="text-sm font-medium truncate" title={npubFull || nostrPk}>
+                        {nostrProfile?.name || npubShort || "You"}
+                      </div>
+                      {isOwner && (
+                        <Link
+                          to="/admin"
+                          onClick={() => setMobileNostrMenuOpen(false)}
+                          className="mt-2 block w-full text-left text-xs px-3 py-2 rounded-lg bg-[#3A3C39] text-[#F5F0E6] ring-1 ring-[#B8734F]/35"
+                        >
+                          Amministrazione
+                        </Link>
+                      )}
+                      <button
+                        onClick={() => { setMobileNostrMenuOpen(false); signOutNostr(); }}
+                        className="mt-2 w-full text-left text-xs px-3 py-2 rounded-lg bg-[#3A3C39] text-[#F5F0E6] ring-1 ring-[#B8734F]/35"
+                      >
+                        Sign out
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <button
                   onClick={signInWithNostr}
-                  className="hidden lg:inline-flex h-10 items-center px-3 rounded-xl bg-[#B8734F] text-[#292B2A] hover:bg-[#C4815E] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F]"
+                  className="hidden lg:inline-flex h-10 items-center px-3 rounded-xl bg-[#642e27] text-[#fff4e6] hover:bg-[#d8b363] hover:text-[#11110f] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#d8b363]"
                   title="Login with Nostr"
                 >
                   Login with Nostr
@@ -331,6 +389,15 @@ export default function Header() {
                         <div className="text-sm font-medium truncate" title={npubFull || nostrPk}>
                           {nostrProfile?.name || npubShort || "You"}
                         </div>
+                        {isOwner && (
+                          <Link
+                            to="/admin"
+                            onClick={() => setMobileNostrMenuOpen(false)}
+                            className="mt-2 block w-full text-left text-xs px-3 py-2 rounded-lg bg-[#3A3C39] ring-1 ring-[#B8734F]/35"
+                          >
+                            Amministrazione
+                          </Link>
+                        )}
                         <button
                           onClick={() => { setMobileNostrMenuOpen(false); signOutNostr(); }}
                           className="mt-2 w-full text-left text-xs px-3 py-2 rounded-lg bg-[#3A3C39] ring-1 ring-[#B8734F]/35"
@@ -370,6 +437,15 @@ export default function Header() {
                         <div className="text-sm font-medium truncate" title={npubFull || nostrPk}>
                           {nostrProfile?.name || npubShort || "You"}
                         </div>
+                        {isOwner && (
+                          <Link
+                            to="/admin"
+                            onClick={() => setMobileNostrMenuOpen(false)}
+                            className="mt-2 block w-full text-left text-xs px-3 py-2 rounded-lg bg-[#3A3C39] ring-1 ring-[#B8734F]/35"
+                          >
+                            Amministrazione
+                          </Link>
+                        )}
                         <button
                           onClick={() => { setMobileNostrMenuOpen(false); signOutNostr(); }}
                           className="mt-2 w-full text-left text-xs px-3 py-2 rounded-lg bg-[#3A3C39] ring-1 ring-[#B8734F]/35"

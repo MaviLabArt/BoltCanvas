@@ -1,0 +1,540 @@
+/* =========================================================
+   BoltCanvas Admin — Dark Atelier / Charcoal & Gold
+   Tutte le regole restano circoscritte all'amministrazione.
+   ========================================================= */
+
+.admin-shell {
+  --admin-bg: #11110f;
+  --admin-surface: #191916;
+  --admin-surface-raised: #22211c;
+  --admin-surface-hover: #2b2922;
+  --admin-text: #f4efe3;
+  --admin-muted: #c4bcaa;
+  --admin-border: rgba(213, 173, 88, 0.23);
+  --admin-accent: #d8b363;
+  --admin-accent-strong: #e8c779;
+  --admin-accent-soft: rgba(216, 179, 99, 0.13);
+  min-height: 100vh;
+  background: var(--admin-bg);
+  color: var(--admin-text);
+  color-scheme: dark;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.admin-shell[data-admin-theme="dark"] {
+  --admin-bg: #11110f;
+  --admin-surface: #191916;
+  --admin-surface-raised: #22211c;
+  --admin-surface-hover: #2b2922;
+  --admin-text: #f4efe3;
+  --admin-muted: #c4bcaa;
+  --admin-border: rgba(213, 173, 88, 0.23);
+  --admin-accent: #d8b363;
+  --admin-accent-strong: #e8c779;
+  --admin-accent-soft: rgba(216, 179, 99, 0.13);
+}
+
+.admin-shell[data-admin-theme="ember"] {
+  --admin-bg: #17120f;
+  --admin-surface: #211914;
+  --admin-surface-raised: #2d2119;
+  --admin-surface-hover: #39291e;
+  --admin-text: #fff0df;
+  --admin-muted: #d0bca7;
+  --admin-border: rgba(224, 163, 99, 0.25);
+  --admin-accent: #e5a45f;
+  --admin-accent-strong: #f2bd7d;
+  --admin-accent-soft: rgba(229, 164, 95, 0.14);
+}
+
+.admin-shell[data-admin-theme="light"] {
+  --admin-bg: #e9e2d4;
+  --admin-surface: #f5efe4;
+  --admin-surface-raised: #e9dfce;
+  --admin-surface-hover: #dfd2bd;
+  --admin-text: #29251e;
+  --admin-muted: #5f574a;
+  --admin-border: rgba(104, 79, 40, 0.23);
+  --admin-accent: #88621f;
+  --admin-accent-strong: #694815;
+  --admin-accent-soft: rgba(136, 98, 31, 0.12);
+  color-scheme: light;
+}
+
+.admin-shell[data-admin-theme="custom"] {
+  --admin-bg: var(--admin-custom-surface, #12120f);
+  --admin-surface: var(--admin-custom-surface, #191916);
+  --admin-surface-raised: var(--admin-custom-surface-alt, #22211c);
+  --admin-surface-hover: var(--admin-custom-surface-alt, #2b2922);
+  --admin-text: var(--admin-custom-text, #f4efe3);
+  --admin-muted: var(--admin-custom-muted, #c4bcaa);
+  --admin-border: var(--admin-custom-border, rgba(213, 173, 88, 0.23));
+  --admin-accent: var(--admin-custom-accent, #d8b363);
+  --admin-accent-strong: var(--admin-custom-accent, #e8c779);
+  --admin-accent-soft: var(--admin-custom-accent-soft, rgba(216, 179, 99, 0.13));
+}
+
+.admin-shell *,
+.admin-shell *::before,
+.admin-shell *::after {
+  box-sizing: border-box;
+}
+
+.admin-frame {
+  width: 100%;
+  max-width: 1680px;
+  min-height: 100vh;
+  margin-inline: auto;
+  padding: 24px clamp(14px, 2.5vw, 40px);
+}
+
+/* Intestazione */
+.admin-dashboard {
+  width: 100%;
+  min-width: 0;
+}
+
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.13);
+}
+
+.admin-brand {
+  min-width: 0;
+}
+
+.admin-store-name {
+  color: var(--admin-accent);
+  font-size: 1.15rem;
+  font-weight: 750;
+  letter-spacing: 0.025em;
+  overflow-wrap: anywhere;
+}
+
+.admin-heading {
+  margin: 5px 0 0;
+  color: var(--admin-text);
+  font-size: 0.88rem;
+  font-weight: 500;
+  letter-spacing: 0.025em;
+}
+
+.admin-header-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-home-link,
+.admin-logout-button {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 650;
+  text-decoration: none;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.admin-home-link {
+  color: var(--admin-text);
+  background: var(--admin-surface-raised);
+}
+
+.admin-home-link:hover {
+  color: var(--admin-accent-strong);
+  background: var(--admin-surface-hover);
+  border-color: var(--admin-accent);
+}
+
+.admin-logout-button {
+  color: #fff0e8;
+  background: #642e27;
+  border-color: rgba(226, 125, 104, 0.35);
+  cursor: pointer;
+}
+
+.admin-logout-button:hover {
+  color: #11110f;
+  background: #d8b363;
+  border-color: #d8b363;
+}
+
+/* Area di lavoro: sidebar e contenuto */
+.admin-workspace {
+  display: grid;
+  grid-template-columns: 225px minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
+}
+
+.admin-nav {
+  position: sticky;
+  top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 16px;
+  background: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  border-radius: 14px;
+}
+
+.admin-nav-label {
+  padding: 8px 10px 12px;
+  color: var(--admin-muted);
+  font-size: 0.69rem;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+}
+
+.admin-tab {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 11px 13px;
+  color: var(--admin-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font-size: 0.94rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
+}
+
+.admin-tab:hover {
+  color: var(--admin-text);
+  background: var(--admin-surface-raised);
+}
+
+.admin-tab.active {
+  color: var(--admin-accent-strong);
+  background: var(--admin-accent-soft);
+  border-color: var(--admin-border);
+  box-shadow: inset 3px 0 0 var(--admin-accent);
+}
+
+.admin-content {
+  min-width: 0;
+  color: var(--admin-text);
+}
+
+.admin-content > * {
+  min-width: 0;
+}
+
+/* Superfici e pannelli creati con classi Tailwind preesistenti */
+.admin-shell .bg-slate-950,
+.admin-shell .bg-slate-950\/95 {
+  background-color: var(--admin-bg);
+}
+
+.admin-shell .bg-slate-900,
+.admin-shell .bg-slate-900\/95,
+.admin-shell .bg-slate-900\/90 {
+  background-color: var(--admin-surface);
+}
+
+.admin-shell .bg-slate-900\/60,
+.admin-shell .bg-slate-900\/50,
+.admin-shell .bg-slate-800,
+.admin-shell .bg-slate-800\/80,
+.admin-shell .bg-slate-800\/70,
+.admin-shell .bg-slate-800\/60 {
+  background-color: var(--admin-surface-raised);
+}
+
+.admin-shell .bg-slate-700,
+.admin-shell .hover\:bg-slate-700:hover,
+.admin-shell .hover\:bg-slate-800:hover {
+  background-color: var(--admin-surface-hover);
+}
+
+.admin-shell .border-white\/5,
+.admin-shell .border-white\/10,
+.admin-shell .border-white\/15,
+.admin-shell .ring-white\/10 {
+  border-color: var(--admin-border);
+  --tw-ring-color: var(--admin-border);
+}
+
+/* Testi: elimina i grigi troppo scuri su superfici scure */
+.admin-shell .text-white,
+.admin-shell .text-white\/90,
+.admin-shell .text-white\/80,
+.admin-shell .text-white\/70 {
+  color: var(--admin-text);
+}
+
+.admin-shell .text-white\/60,
+.admin-shell .text-white\/50,
+.admin-shell .text-white\/40,
+.admin-shell .text-slate-300,
+.admin-shell .text-slate-400 {
+  color: var(--admin-muted);
+}
+
+.admin-shell .placeholder\:text-white\/40::placeholder,
+.admin-shell input::placeholder,
+.admin-shell textarea::placeholder {
+  color: var(--admin-muted);
+  opacity: 0.85;
+}
+
+.admin-shell .text-indigo-300,
+.admin-shell .text-indigo-400 {
+  color: var(--admin-accent-strong);
+}
+
+/* Pulsanti Admin: stesso colore del tasto Esci */
+.admin-shell .bg-indigo-600,
+.admin-shell .bg-indigo-500,
+.admin-shell .bg-indigo-500\/90,
+.admin-shell .bg-indigo-500\/80 {
+  color: #fff0e8;
+  background-color: #642e27;
+}
+
+.admin-shell .hover\:bg-indigo-500:hover,
+.admin-shell .hover\:bg-indigo-400:hover,
+.admin-shell .hover\:bg-indigo-500\/90:hover {
+  color: #11110f;
+  background-color: #d8b363;
+  border-color: #d8b363;
+}
+
+.admin-shell .border-indigo-500,
+.admin-shell .border-indigo-400 {
+  border-color: rgba(226, 125, 104, 0.35);
+}
+
+/* Campi, selettori e aree di testo */
+.admin-shell input,
+.admin-shell select,
+.admin-shell textarea {
+  color: var(--admin-text);
+  background-color: var(--admin-surface-raised);
+  border-color: var(--admin-border);
+}
+
+.admin-shell input:focus,
+.admin-shell select:focus,
+.admin-shell textarea:focus {
+  border-color: var(--admin-accent);
+  outline: 2px solid var(--admin-accent-soft);
+  outline-offset: 1px;
+}
+
+.admin-shell select option {
+  color: var(--admin-text);
+  background: var(--admin-surface);
+}
+
+.admin-shell input:disabled,
+.admin-shell select:disabled,
+.admin-shell textarea:disabled {
+  color: var(--admin-muted);
+  opacity: 0.7;
+}
+
+.admin-shell button:focus-visible,
+.admin-shell a:focus-visible {
+  outline: 2px solid var(--admin-accent-strong);
+  outline-offset: 3px;
+}
+
+/* Tabelle e contenuti lunghi */
+.admin-shell table {
+  width: 100%;
+  border-color: var(--admin-border);
+}
+
+.admin-shell th {
+  color: var(--admin-muted);
+}
+
+.admin-shell td {
+  color: var(--admin-text);
+  border-color: var(--admin-border);
+}
+
+.admin-shell .overflow-x-auto {
+  max-width: 100%;
+}
+
+/* Evita che il tema alteri le classi semantiche degli stati:
+   verde, rosso, rosa e ambra restano riconoscibili. */
+
+/* Schermi medi */
+@media (max-width: 900px) {
+  .admin-frame {
+    padding: 18px;
+  }
+
+  .admin-workspace {
+    grid-template-columns: 185px minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .admin-nav {
+    padding: 11px;
+  }
+
+  .admin-header {
+    padding: 17px;
+  }
+}
+
+/* Smartphone: navigazione compatta sopra al contenuto */
+@media (max-width: 640px) {
+  .admin-frame {
+    padding: 12px;
+  }
+
+  .admin-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px;
+    margin-bottom: 14px;
+    border-radius: 12px;
+  }
+
+  .admin-header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .admin-home-link,
+  .admin-logout-button {
+    flex: 1;
+  }
+
+  .admin-workspace {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .admin-nav {
+    position: static;
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px;
+  }
+
+  .admin-nav-label {
+    width: 100%;
+    padding: 3px 5px 7px;
+  }
+
+  .admin-tab {
+    flex: 1 1 auto;
+    justify-content: center;
+    min-height: 40px;
+    padding: 9px 10px;
+    font-size: 0.86rem;
+    text-align: center;
+  }
+
+  .admin-tab.active {
+    box-shadow: inset 0 -3px 0 var(--admin-accent);
+  }
+
+  .admin-content {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-shell *,
+  .admin-shell *::before,
+  .admin-shell *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+
+/* Priorità al tema Admin anche quando il tema pubblico è chiaro. */
+.admin-shell {
+  background-color: var(--admin-bg) !important;
+  color: var(--admin-text) !important;
+}
+
+.admin-shell .admin-login-panel {
+  background-color: var(--admin-surface) !important;
+  color: var(--admin-text) !important;
+}
+
+.admin-shell .admin-login-pin,
+.admin-shell .admin-login-pin:focus {
+  background-color: var(--admin-bg) !important;
+  color: var(--admin-text) !important;
+}
+
+/* Login Admin: contrasto esplicito e coerente con Dark Atelier */
+.admin-shell .admin-login-panel {
+  color: var(--admin-text);
+  background-color: var(--admin-surface);
+  border: 1px solid var(--admin-border);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.28);
+}
+
+.admin-shell .admin-login-pin,
+.admin-shell .admin-login-pin:focus {
+  color: var(--admin-text);
+  background-color: var(--admin-bg);
+  border: 1px solid var(--admin-border);
+}
+
+.admin-shell .admin-login-pin::placeholder {
+  color: var(--admin-muted);
+  opacity: 1;
+}
+
+.admin-shell .admin-login-submit {
+  color: #fff0e8;
+  background-color: #642e27;
+  border-color: rgba(226, 125, 104, 0.35);
+}
+
+.admin-shell .admin-login-submit:hover {
+  color: #11110f;
+  background-color: #d8b363;
+  border-color: #d8b363;
+}
+
+/* I pulsanti indaco diventano oro al passaggio del mouse */
+.admin-shell .hover\:bg-indigo-600:hover {
+  color: #11110f;
+  background-color: #d8b363;
+  border-color: #d8b363;
+}
+
+/* Dark Atelier Admin: protezione dell'intestazione dai temi pubblici */
+.admin-shell .admin-header .admin-store-name {
+  color: var(--admin-accent) !important;
+}
+
+.admin-shell .admin-header .admin-heading {
+  color: var(--admin-text) !important;
+}
