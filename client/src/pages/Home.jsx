@@ -6,6 +6,7 @@ import { useSettings } from "../store/settings.jsx";
 import { stripMarkdown } from "../utils/markdown.js";
 import RecentCommentsStrip from "../components/RecentCommentsStrip.jsx";
 import NostrTestimonials from "../components/NostrTestimonials.jsx";
+import HtmlEmbed from "../components/HtmlEmbed.jsx";
 
 const DEFAULT_SETTINGS = {
   logo: "",
@@ -265,9 +266,9 @@ export default function Home() {
 
       {/* --- Embedded Code Section --- */}
       {settings && settings.embedCode && (
-        <div
+        <HtmlEmbed
+          html={settings.embedCode}
           className="mt-6 rounded-3xl p-6 bg-slate-900 ring-1 ring-white/10 max-w-6xl mx-auto"
-          dangerouslySetInnerHTML={{ __html: settings.embedCode }}
         />
       )}
       {/* Add custom styles to ensure the Moonstr iframe has proper height */}
