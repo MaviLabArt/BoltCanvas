@@ -687,6 +687,26 @@ export default function Settings() {
             />
             <span>{t("Tema personalizzato", "Custom theme")}</span>
           </label>
+          <label className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-slate-950 ring-1 ring-white/10 cursor-pointer">
+            <input
+              type="radio"
+              name="themeChoice"
+              value="enhanced-light"
+              checked={s.themeChoice === "enhanced-light"}
+              onChange={(e) => setS({ ...s, themeChoice: e.target.value })}
+            />
+            <span>Enhanced Light</span>
+          </label>
+          <label className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-slate-950 ring-1 ring-white/10 cursor-pointer">
+            <input
+              type="radio"
+              name="themeChoice"
+              value="enhanced-dark"
+              checked={s.themeChoice === "enhanced-dark"}
+              onChange={(e) => setS({ ...s, themeChoice: e.target.value })}
+            />
+            <span>Enhanced Dark</span>
+          </label>
         </div>
 
         {s.themeChoice === "custom" && (
@@ -1448,14 +1468,9 @@ export default function Settings() {
 }
 
 function StorefrontPreview({ settings, t }) {
-  const theme =
-    settings.themeChoice === "light"
-      ? "light"
-      : settings.themeChoice === "ember"
-      ? "ember"
-      : settings.themeChoice === "custom"
-        ? "custom"
-        : "dark";
+  const theme = ["dark", "ember", "light", "custom", "enhanced-light", "enhanced-dark"].includes(settings.themeChoice)
+    ? settings.themeChoice
+    : "dark";
   const heroTitle = !settings.logo
     ? (settings.storeName || t("Your Shop Name", "Your Shop Name"))
     : "";
@@ -1469,7 +1484,7 @@ function StorefrontPreview({ settings, t }) {
   const gridTitle = settings.productsHeading || t("Opere in evidenza", "Featured products");
 
   const previewLogo =
-    theme === "light"
+    theme === "light" || theme === "enhanced-light"
       ? (settings.logoLight || settings.logoDark || settings.logo)
       : (settings.logoDark || settings.logo || settings.logoLight);
   const tokens = mergeThemeTokens(settings.themeTokens);
