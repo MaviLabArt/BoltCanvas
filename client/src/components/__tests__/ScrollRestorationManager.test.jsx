@@ -165,9 +165,11 @@ describe("Scroll restoration edge cases", () => {
     );
 
     render(
-      <MemoryRouter initialEntries={[{ pathname: "/", key: "home-entry" }]}>
-        <Harness />
-      </MemoryRouter>
+      <React.StrictMode>
+        <MemoryRouter initialEntries={[{ pathname: "/", key: "home-entry" }]}>
+          <Harness />
+        </MemoryRouter>
+      </React.StrictMode>
     );
 
     expect(window.scrollTo).not.toHaveBeenCalled();
