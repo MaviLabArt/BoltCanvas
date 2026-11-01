@@ -182,6 +182,7 @@ export default function ProductComments({ productId }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (previewReadOnly) return;
     if (!hasSigner || !nostrPubkey) {
       alert("Connect a Nostr signer to post");
       return;
@@ -213,17 +214,23 @@ export default function ProductComments({ productId }) {
         ) : null}
       </div>
 
-      {!previewReadOnly && (
       <div className="rounded-2xl bg-slate-950/80 ring-1 ring-white/10 p-3 sm:p-4 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
         <form onSubmit={handleSubmit} className="space-y-2">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value.slice(0, maxLen))}
             maxLength={maxLen}
-            placeholder={canPost ? "Share your thoughts… (text only, 600 chars max)" : "Connect Nostr in the header to leave a note."}
+            placeholder={
+              previewReadOnly
+                ? "Commenting is disabled in this preview."
+                : canPost
+                  ? "Share your thoughts… (text only, 600 chars max)"
+                  : "Connect Nostr in the header to leave a note."
+            }
             className="w-full rounded-xl bg-slate-900 ring-1 ring-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 resize-y focus:outline-hidden focus:ring-2 focus:ring-indigo-400"
             rows={3}
-            disabled={!canPost}
+            readOnly={previewReadOnly}
+            disabled={!previewReadOnly && !canPost}
           />
           <div className="flex items-center justify-end text-xs text-white/70">
             <span className="mr-3">{maxLen - input.length} chars left</span>
@@ -239,7 +246,6 @@ export default function ProductComments({ productId }) {
           </div>
         </form>
       </div>
-      )}
 
       <div className="mt-4 space-y-3">
         {loading && (
