@@ -17,6 +17,9 @@ function Listing() {
       <Link to="/gallery" onClick={() => { currentY = 0; }}>
         Open gallery
       </Link>
+      <Link to="/gallery#%E0%A4%A">
+        Open malformed anchor
+      </Link>
     </main>
   );
 }
@@ -154,6 +157,45 @@ describe.each(["/", "/gallery"])(
 
 
 describe("Scroll restoration edge cases", () => {
+  it("restores a saved position on the initial mount after the listing is ready", async () => {
+    listingReady = false;
+    sessionStorage.setItem(
+      "isolabellart:scroll:v1:home-entry",
+      JSON.stringify({ pathname: "/", scrollX: 0, scrollY: 640 })
+    );
+
+    render(
+      <MemoryRouter initialEntries={[{ pathname: "/", key: "home-entry" }]}>
+        <Harness />
+      </MemoryRouter>
+    );
+
+    expect(window.scrollTo).not.toHaveBeenCalled();
+
+    document.querySelector("main").setAttribute(
+      "data-scroll-restoration-ready",
+      "true"
+    );
+
+    await waitFor(() => {
+      expect(window.scrollTo).toHaveBeenCalledWith(0, 640);
+    });
+  });
+
+  it("does not throw when a pushed route contains a malformed URL fragment", async () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Harness />
+      </MemoryRouter>
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("link", { name: "Open malformed anchor" }));
+    });
+
+    expect(screen.getByTestId("route")).toHaveTextContent("/gallery");
+  });
+
   it("saves the pre-navigation position and ignores a stale scroll frame", async () => {
     const frames = new Map();
     let nextFrameId = 1;
