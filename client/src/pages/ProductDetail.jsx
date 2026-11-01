@@ -198,11 +198,17 @@ export default function ProductDetail() {
         <div>
           <div className="rounded-3xl overflow-hidden aspect-square">
             {hasImages && mainImgsAbs[active] ? (
-              <img
+              <motion.img
+                key={mainImgsAbs[active]}
                 src={mainImgsAbs[active]}
                 alt={p.title}
                 className="w-full h-full object-contain bg-transparent cursor-zoom-in"
                 loading="eager"
+                decoding="async"
+                initial={reduce ? false : { opacity: 0.78, scale: 0.992 }}
+                animate={reduce ? {} : { opacity: 1, scale: 1 }}
+                whileHover={reduce ? undefined : { scale: 1.012 }}
+                transition={reduce ? { duration: 0 } : { duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
                 onClick={() => setLightbox(true)}
               />
             ) : (
