@@ -1060,9 +1060,25 @@ function imageHandler({ thumb }) {
 // Public API
 // ---------------------------------------------------------------------
 app.get("/api/health", (req, res) => res.json({ ok: true }));
-app.get("/api/public-settings", (req, res) => {
-  const nostrShopPubkey = getShopPubkey();
-  res.json({ ...Settings.getPublic(), nostrShopPubkey });
+app.get("/api/public-settings", async (req, res) => {
+  const settings = Settings.getPublic();
+  let nostrShopPubkey = getShopPubkey();
+
+  // Public identity is sufficient for reading and verifying shop comments.
+  // Signing new comment proofs still requires the server private key.
+  if (!nostrShopPubkey && settings.nostrNpub) {
+    try {
+      nostrShopPubkey = await resolveToPubkey(settings.nostrNpub) || "";
+    } catch {
+      nostrShopPubkey = "";
+    }
+  }
+
+  res.json({
+    ...settings,
+    nostrShopPubkey,
+    nostrCommentsReadOnly: !getShopKeys()
+  });
 });
 app.get("/api/public/nostr-testimonials", async (req, res) => {
   const CACHE_TTL_MS = 5 * 60 * 1000;
