@@ -660,14 +660,25 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Disable the public hover lift without changing Tailwind's centering
+     translate on the product lightbox arrows. */
   #root > div:not(.admin-shell) button:not(:disabled):hover,
   #root > div:not(.admin-shell) a[class*="px-"][class*="rounded-"]:not(.cursor-not-allowed):hover {
     transform: none !important;
   }
+
+  /* These controls use the standalone translate property for their hover lift.
+     Keep the lightbox arrows' -translate-y-1/2 utility intact. */
+  #root > div:not(.admin-shell) button:not(:disabled):hover:not(.lightbox-arrow),
+  #root > div:not(.admin-shell) a[class*="px-"][class*="rounded-"]:not(.cursor-not-allowed):hover {
+    translate: 0 0 !important;
+  }
+
   #root > div:not(.admin-shell) button:not(:disabled):active {
     transform: none !important;
     scale: 1 !important;
   }
+
   .site-nav-control,
   .site-nav-avatar,
   .site-nav-menu-action,
