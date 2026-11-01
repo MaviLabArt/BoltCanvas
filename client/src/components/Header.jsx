@@ -427,7 +427,7 @@ export default function Header() {
                         initial={reduceMotion ? false : { opacity: 0, y: -5, scale: 0.985 }}
                         animate={reduceMotion ? {} : { opacity: 1, y: 0, scale: 1 }}
                         transition={reduceMotion ? { duration: 0 } : { duration: 0.16, ease: "easeOut" }}
-                        className="absolute right-0 mt-2 w-48 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 shadow-lg p-3 z-30 origin-top-right"
+                        className="absolute right-0 mt-2 w-48 rounded-xl bg-[#292B2A] text-[#F5F0E6] ring-1 ring-[#B8734F]/35 shadow-lg p-3 z-30 origin-top-right"
                       >
                         <div className="text-sm font-medium truncate" title={npubFull || nostrPk}>
                           {nostrProfile?.name || npubShort || "You"}
@@ -480,7 +480,7 @@ export default function Header() {
                         initial={reduceMotion ? false : { opacity: 0, y: -5, scale: 0.985 }}
                         animate={reduceMotion ? {} : { opacity: 1, y: 0, scale: 1 }}
                         transition={reduceMotion ? { duration: 0 } : { duration: 0.16, ease: "easeOut" }}
-                        className="absolute right-0 mt-2 w-48 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 shadow-lg p-3 z-30 origin-top-right"
+                        className="absolute right-0 mt-2 w-48 rounded-xl bg-[#292B2A] text-[#F5F0E6] ring-1 ring-[#B8734F]/35 shadow-lg p-3 z-30 origin-top-right"
                       >
                         <div className="text-sm font-medium truncate" title={npubFull || nostrPk}>
                           {nostrProfile?.name || npubShort || "You"}
