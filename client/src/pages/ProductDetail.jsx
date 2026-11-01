@@ -184,7 +184,7 @@ export default function ProductDetail() {
   const mainImageAbsolute = hasImages ? mainImgsAbs[Math.max(0, Math.min(active, mainImgsAbs.length - 1))] || mainImgsAbs[0] : "";
 
   return (
-    <section className="pt-6">
+    <section className="product-detail-page pt-6">
       <div className="mb-4">
         <button
           className="px-3 py-2 rounded-xl bg-slate-900 ring-1 ring-white/10"
@@ -239,15 +239,28 @@ export default function ProductDetail() {
           )}
         </div>
         <div>
-          <h1 className="text-2xl font-semibold">{p.title}</h1>
+          <motion.h1
+            key={p.id}
+            initial={reduce ? false : { opacity: 0, y: 8 }}
+            animate={reduce ? {} : { opacity: 1, y: 0 }}
+            transition={reduce ? { duration: 0 } : { duration: 0.48, ease: [0.22, 1, 0.36, 1] }}
+            className="text-2xl font-semibold"
+          >
+            {p.title}
+          </motion.h1>
           {p.subtitle && <div className="mt-1 text-white/70">{p.subtitle}</div>}
           {isForSale && (
             <div className="mt-4 flex items-center gap-3">
               <span className="text-xs uppercase tracking-[0.25em] text-white/50">Price</span>
-              <span className="inline-flex items-baseline gap-1 rounded-2xl bg-indigo-500/15 px-4 py-2 text-3xl font-semibold text-indigo-100">
+              <motion.span
+                  initial={reduce ? false : { opacity: 0, y: 7, scale: 0.985 }}
+                  animate={reduce ? {} : { opacity: 1, y: 0, scale: 1 }}
+                  transition={reduce ? { duration: 0 } : { duration: 0.46, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
+                  className="inline-flex items-baseline gap-1 rounded-2xl bg-indigo-500/15 px-4 py-2 text-3xl font-semibold text-indigo-100"
+                >
                 {formatSats(p.priceSats)}
                 <span className="text-sm font-medium text-indigo-200/80">sats</span>
-              </span>
+              </motion.span>
             </div>
           )}
           {showFreeShippingPill && (
@@ -270,7 +283,7 @@ export default function ProductDetail() {
 
           <div className="mt-8 flex flex-col gap-2">
             <button
-              className="px-4 py-3 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:opacity-50 w-max"
+              className="product-add-to-cart px-4 py-3 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 focus-visible:ring-2 focus-visible:ring-indigo-400 disabled:opacity-50 w-max"
               disabled={!isForSale}
               onClick={() => {
                 add(p, 1);
