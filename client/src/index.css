@@ -804,11 +804,11 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
 
 /* Accent controls, prices and status elements */
 [data-theme="enhanced-light"] .bg-indigo-500,
-[data-theme="enhanced-light"] .bg-indigo-500\\/90,
-[data-theme="enhanced-light"] .bg-indigo-500\\/80,
+[data-theme="enhanced-light"] [class~="bg-indigo-500/90"],
+[data-theme="enhanced-light"] [class~="bg-indigo-500/80"],
 [data-theme="enhanced-dark"] .bg-indigo-500,
-[data-theme="enhanced-dark"] .bg-indigo-500\\/90,
-[data-theme="enhanced-dark"] .bg-indigo-500\\/80 {
+[data-theme="enhanced-dark"] [class~="bg-indigo-500/90"],
+[data-theme="enhanced-dark"] [class~="bg-indigo-500/80"] {
   background-color: var(--enh-accent) !important;
   color: #FFF9F1 !important;
 }
