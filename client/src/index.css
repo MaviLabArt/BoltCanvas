@@ -560,15 +560,16 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
 }
 
 
-/* Accent-tinted glass header: follows the accent selected in Admin. */
+/* Translucent accent glass header: the page remains visible beneath it. */
 .site-header-accent-gradient {
   background: linear-gradient(
     to top,
-    color-mix(in srgb, var(--ct-accent, #B8734F) 24%, white) 0%,
-    color-mix(in srgb, var(--ct-accent, #B8734F) 58%, white) 48%,
-    color-mix(in srgb, var(--ct-accent, #B8734F) 88%, white) 100%
+    color-mix(in srgb, var(--ct-accent, #B8734F) 12%, transparent) 0%,
+    color-mix(in srgb, var(--ct-accent, #B8734F) 28%, transparent) 48%,
+    color-mix(in srgb, var(--ct-accent, #B8734F) 44%, transparent) 100%
   );
-  border-bottom: 1px solid color-mix(in srgb, var(--ct-accent, #B8734F) 42%, transparent);
+  border: 0;
+  box-shadow: none;
 }
 
 /* Gallery and cart use the same restrained gold hover as the artwork action. */
