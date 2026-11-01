@@ -27,12 +27,12 @@ function writeSnapshot(key, value) {
   }
 }
 
-function saveCurrentPosition(key, pathname) {
-  if (!key) return;
+function saveCurrentPosition(key, pathname, position) {
+  if (!key || position?.key !== key) return;
 
   const previous = readSnapshot(key) || {};
-  const scrollX = window.scrollX || 0;
-  const scrollY = window.scrollY || 0;
+  const scrollX = Number(position.scrollX) || 0;
+  const scrollY = Number(position.scrollY) || 0;
 
   const moved =
     Number.isFinite(Number(previous.scrollY)) &&
@@ -114,10 +114,9 @@ function restoreSnapshot(snapshot) {
     }
   }
 
-  window.scrollTo(
-    Number(snapshot.scrollX) || 0,
-    targetY
-  );
+  const scrollX = Number(snapshot.scrollX) || 0;
+  window.scrollTo(scrollX, targetY);
+  return { scrollX, scrollY: targetY };
 }
 
 export default function ScrollRestorationManager() {
@@ -129,6 +128,13 @@ export default function ScrollRestorationManager() {
     pathname: location.pathname
   });
   const pendingProductNavigationRef = useRef(null);
+  const scrollFrameRef = useRef(0);
+  const lastScrollPositionRef = useRef({
+    key: location.key,
+    pathname: location.pathname,
+    scrollX: window.scrollX || 0,
+    scrollY: window.scrollY || 0
+  });
 
   // Let this component, rather than the browser's premature native
   // restoration, control positions after asynchronous page loading.
@@ -151,8 +157,6 @@ export default function ScrollRestorationManager() {
   // Save the active history entry while scrolling and immediately
   // remember the exact artwork card when its product link is clicked.
   useEffect(() => {
-    let frame = 0;
-
     const save = () => {
       const active = activeLocationRef.current;
       const pending = pendingProductNavigationRef.current;
@@ -160,14 +164,29 @@ export default function ScrollRestorationManager() {
         if (Date.now() - pending.timestamp < 2000) return;
         pendingProductNavigationRef.current = null;
       }
-      saveCurrentPosition(active.key, active.pathname);
+
+      const position = lastScrollPositionRef.current;
+      if (position?.key !== active.key) return;
+      saveCurrentPosition(active.key, active.pathname, position);
     };
 
     const onScroll = () => {
-      if (frame) return;
+      const active = activeLocationRef.current;
+      lastScrollPositionRef.current = {
+        key: active.key,
+        pathname: active.pathname,
+        scrollX: window.scrollX || 0,
+        scrollY: window.scrollY || 0
+      };
 
-      frame = window.requestAnimationFrame(() => {
-        frame = 0;
+      if (scrollFrameRef.current) return;
+      const scheduledKey = active.key;
+
+      scrollFrameRef.current = window.requestAnimationFrame(() => {
+        scrollFrameRef.current = 0;
+        // A frame queued by the previous route must never save into the
+        // history entry that became active after navigation.
+        if (activeLocationRef.current.key !== scheduledKey) return;
         save();
       });
     };
@@ -205,7 +224,10 @@ export default function ScrollRestorationManager() {
     document.addEventListener("click", onProductClick, true);
 
     return () => {
-      if (frame) window.cancelAnimationFrame(frame);
+      if (scrollFrameRef.current) {
+        window.cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = 0;
+      }
       save();
 
       window.removeEventListener("scroll", onScroll);
@@ -223,12 +245,25 @@ export default function ScrollRestorationManager() {
     if (previous.key === location.key) return;
 
     const pending = pendingProductNavigationRef.current;
+    const previousPosition = lastScrollPositionRef.current;
     const openingClickedProduct =
       pending?.key === previous.key &&
       location.pathname.startsWith("/product/");
-    if (!openingClickedProduct) {
-      saveCurrentPosition(previous.key, previous.pathname);
+    if (
+      !openingClickedProduct &&
+      previousPosition?.key === previous.key
+    ) {
+      // useLayoutEffect runs after the destination route has committed.
+      // Persist the position captured by the old route's scroll listener.
+      saveCurrentPosition(previous.key, previous.pathname, previousPosition);
     }
+
+    // Cancel the old entry's pending frame before changing activeLocationRef.
+    if (scrollFrameRef.current) {
+      window.cancelAnimationFrame(scrollFrameRef.current);
+      scrollFrameRef.current = 0;
+    }
+
     if (pending?.key === previous.key) {
       pendingProductNavigationRef.current = null;
     }
@@ -238,9 +273,36 @@ export default function ScrollRestorationManager() {
       pathname: location.pathname
     };
 
+    const carriedPosition =
+      navigationType === "REPLACE" && previousPosition?.key === previous.key
+        ? previousPosition
+        : null;
+    lastScrollPositionRef.current = {
+      key: location.key,
+      pathname: location.pathname,
+      scrollX: carriedPosition?.scrollX ?? 0,
+      scrollY: carriedPosition?.scrollY ?? 0
+    };
+
     if (navigationType === "POP") {
       const snapshot = readSnapshot(location.key);
       if (!snapshot) return;
+
+      lastScrollPositionRef.current = {
+        key: location.key,
+        pathname: location.pathname,
+        scrollX: Number(snapshot.scrollX) || 0,
+        scrollY: Number(snapshot.scrollY) || 0
+      };
+
+      const rememberRestoredPosition = () => {
+        const restored = restoreSnapshot(snapshot);
+        lastScrollPositionRef.current = {
+          key: location.key,
+          pathname: location.pathname,
+          ...restored
+        };
+      };
 
       const needsPageReady = READY_ROUTES.has(location.pathname);
 
@@ -287,7 +349,7 @@ export default function ScrollRestorationManager() {
 
         frameOne = window.requestAnimationFrame(() => {
           frameTwo = window.requestAnimationFrame(() => {
-            if (!cancelled) restoreSnapshot(snapshot);
+            if (!cancelled) rememberRestoredPosition();
           });
         });
       };
@@ -296,12 +358,14 @@ export default function ScrollRestorationManager() {
         maxWaitTimer = window.setTimeout(() => {
           maxWaitTimer = 0;
           maxWaitExpired = true;
+          observer?.disconnect();
           if (fallbackTimer) {
             window.clearTimeout(fallbackTimer);
             fallbackTimer = 0;
           }
           if (cancelled || scheduled) return;
-          restoreSnapshot(snapshot);
+          scheduled = true;
+          rememberRestoredPosition();
         }, 5000);
       }
 
@@ -341,10 +405,23 @@ export default function ScrollRestorationManager() {
         const id = decodeURIComponent(location.hash.slice(1));
 
         window.requestAnimationFrame(() => {
+          if (activeLocationRef.current.key !== location.key) return;
           document.getElementById(id)?.scrollIntoView();
+          lastScrollPositionRef.current = {
+            key: location.key,
+            pathname: location.pathname,
+            scrollX: window.scrollX || 0,
+            scrollY: window.scrollY || 0
+          };
         });
       } else {
         window.scrollTo(0, 0);
+        lastScrollPositionRef.current = {
+          key: location.key,
+          pathname: location.pathname,
+          scrollX: 0,
+          scrollY: 0
+        };
       }
     }
 

@@ -943,59 +943,10 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
 }
 
 
-/* Distinct visual identities for the built-in storefront themes. */
-
-/* DARK INK — cool midnight blue with an indigo glow. */
-[data-theme="dark"] {
-  --site-accent: #818CF8;
-  --site-hover-bg: #A5B4FC;
-  --site-hover-fg: #11152A;
-}
-[data-theme="dark"] .site-header-accent-gradient {
-  background:
-    radial-gradient(ellipse at 14% -35%, rgba(129, 140, 248, 0.48), transparent 56%),
-    linear-gradient(112deg, #30366B 0%, #1C2747 46%, #0B1426 100%) !important;
-  border-bottom: 1px solid rgba(129, 140, 248, 0.34);
-  box-shadow: 0 10px 30px rgba(5, 10, 32, 0.42);
-}
-
-/* EMBER NIGHT — burnt copper, ember orange and deep blue-black. */
-[data-theme="ember"] {
-  --site-accent: #F97316;
-  --site-hover-bg: #FDBA74;
-  --site-hover-fg: #25140D;
-}
-[data-theme="ember"] .site-header-accent-gradient {
-  background:
-    radial-gradient(ellipse at 14% -35%, rgba(249, 115, 22, 0.48), transparent 55%),
-    linear-gradient(112deg, #6A3025 0%, #3C2529 46%, #121B2A 100%) !important;
-  border-bottom: 1px solid rgba(249, 115, 22, 0.40);
-  box-shadow: 0 10px 30px rgba(35, 13, 9, 0.42);
-}
-
-/* LIGHT ATELIER — warm terracotta, bronze and champagne light. */
-[data-theme="light"] {
-  --site-accent: #A3683C;
-  --site-hover-bg: #E4BB82;
-  --site-hover-fg: #2C1A11;
-}
-[data-theme="light"] .site-header-accent-gradient {
-  background:
-    radial-gradient(ellipse at 16% -35%, rgba(235, 190, 139, 0.42), transparent 56%),
-    linear-gradient(112deg, #503327 0%, #8A573A 46%, #B57A4D 100%) !important;
-  border-bottom: 1px solid rgba(229, 190, 145, 0.58);
-  box-shadow: 0 10px 28px rgba(84, 52, 34, 0.22);
-}
-
-/* Keep header navigation readable over all three dark gradients. */
-[data-theme="dark"] .site-header-accent-gradient a:not(.no-theme-color),
-[data-theme="ember"] .site-header-accent-gradient a:not(.no-theme-color),
-[data-theme="light"] .site-header-accent-gradient a:not(.no-theme-color),
+/* Enhanced Light uses a dark accent header; keep its nav text readable. */
 [data-theme="enhanced-light"] .site-header-accent-gradient a:not(.no-theme-color) {
   color: #F5F0E6 !important;
 }
-
-
 
 /* ISOLABELLART — refined preset identities and touch motion
    Enhanced Light / Enhanced Dark restano intenzionalmente invariati.
@@ -1505,7 +1456,6 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
 }
 
 [data-theme] .nostr-connect-login .nostr-connect-action-primary,
-[data-theme] .nostr-connect-login .nostr-connect-action-primary:hover,
 [data-theme] .nostr-connect-login .nostr-connect-action-primary:focus-visible {
   background-color: var(--nc-accent) !important;
   background-image: none !important;
@@ -1514,8 +1464,15 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
   opacity: 1 !important;
 }
 
+[data-theme] .nostr-connect-login .nostr-connect-action-primary:hover:not(:disabled) {
+  background-color: var(--nc-accent-hover) !important;
+  background-image: none !important;
+  color: var(--nc-accent-text) !important;
+  border-color: transparent !important;
+  opacity: 1 !important;
+}
+
 [data-theme] .nostr-connect-login .nostr-connect-action-secondary,
-[data-theme] .nostr-connect-login .nostr-connect-action-secondary:hover,
 [data-theme] .nostr-connect-login .nostr-connect-action-secondary:focus-visible {
   background-color: var(--nc-control) !important;
   background-image: none !important;
@@ -1524,17 +1481,32 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
   opacity: 1 !important;
 }
 
+[data-theme] .nostr-connect-login .nostr-connect-action-secondary:hover:not(:disabled) {
+  background-color: var(--nc-panel) !important;
+  background-image: none !important;
+  color: var(--nc-text) !important;
+  border-color: var(--nc-accent) !important;
+  opacity: 1 !important;
+}
+
 [data-theme] .nostr-connect-login a.nostr-connect-action-secondary {
   color: var(--nc-text) !important;
 }
 
 [data-theme] .nostr-connect-login .nostr-connect-back,
-[data-theme] .nostr-connect-login .nostr-connect-back:hover,
 [data-theme] .nostr-connect-login .nostr-connect-back:focus-visible {
   background-color: var(--nc-control) !important;
   background-image: none !important;
   color: var(--nc-text) !important;
   border-color: var(--nc-border) !important;
+  opacity: 1 !important;
+}
+
+[data-theme] .nostr-connect-login .nostr-connect-back:hover:not(:disabled) {
+  background-color: var(--nc-control) !important;
+  background-image: none !important;
+  color: var(--nc-text) !important;
+  border-color: var(--nc-accent) !important;
   opacity: 1 !important;
 }
 

@@ -6,12 +6,16 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import ScrollRestorationManager from "../ScrollRestorationManager.jsx";
 
 let currentY = 0;
+let listingReady = true;
 
 function Listing() {
   return (
-    <main data-scroll-restoration-ready="true">
+    <main {...(listingReady ? { "data-scroll-restoration-ready": "true" } : {})}>
       <Link to="/product/p1" data-product-card-id="p1">
         Open painting
+      </Link>
+      <Link to="/gallery" onClick={() => { currentY = 0; }}>
+        Open gallery
       </Link>
     </main>
   );
@@ -44,9 +48,11 @@ function Harness() {
 const originalRaf = window.requestAnimationFrame;
 const originalCaf = window.cancelAnimationFrame;
 const originalScrollTo = window.scrollTo;
+const originalMutationObserver = window.MutationObserver;
 
 beforeEach(() => {
   currentY = 0;
+  listingReady = true;
   sessionStorage.clear();
 
   Object.defineProperty(window, "scrollY", {
@@ -83,10 +89,13 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
+  listingReady = true;
   window.requestAnimationFrame = originalRaf;
   window.cancelAnimationFrame = originalCaf;
   window.scrollTo = originalScrollTo;
+  window.MutationObserver = originalMutationObserver;
 });
 
 describe.each(["/", "/gallery"])(
@@ -142,3 +151,113 @@ describe.each(["/", "/gallery"])(
     });
   }
 );
+
+
+describe("Scroll restoration edge cases", () => {
+  it("saves the pre-navigation position and ignores a stale scroll frame", async () => {
+    const frames = new Map();
+    let nextFrameId = 1;
+
+    const requestFrame = vi.fn(callback => {
+      const id = nextFrameId++;
+      frames.set(id, callback);
+      return id;
+    });
+    const cancelFrame = vi.fn(id => {
+      frames.delete(id);
+    });
+
+    window.requestAnimationFrame = requestFrame;
+    window.cancelAnimationFrame = cancelFrame;
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Harness />
+      </MemoryRouter>
+    );
+
+    currentY = 900;
+    fireEvent.scroll(window);
+
+    const pendingFrame = [...frames.entries()][0];
+    expect(pendingFrame).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("link", { name: "Open gallery" }));
+    });
+
+    expect(screen.getByTestId("route")).toHaveTextContent("/gallery");
+    expect(cancelFrame).toHaveBeenCalledWith(pendingFrame[0]);
+
+    // Simulate a callback that was already queued when navigation committed.
+    pendingFrame[1](Date.now());
+
+    let saved = null;
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (!key.startsWith("isolabellart:scroll:v1:")) continue;
+      const value = JSON.parse(sessionStorage.getItem(key));
+      if (value.pathname === "/") saved = value;
+    }
+
+    expect(saved).toMatchObject({ pathname: "/", scrollY: 900 });
+  });
+
+  it("does not restore a second time when readiness arrives after the max wait", async () => {
+    listingReady = false;
+
+    const observers = [];
+    class ControlledMutationObserver {
+      constructor(callback) {
+        this.callback = callback;
+        this.disconnect = vi.fn();
+        this.observe = vi.fn();
+        observers.push(this);
+      }
+    }
+    window.MutationObserver = ControlledMutationObserver;
+
+    sessionStorage.setItem(
+      "isolabellart:scroll:v1:home-entry",
+      JSON.stringify({ pathname: "/", scrollX: 0, scrollY: 640 })
+    );
+
+    render(
+      <MemoryRouter
+        initialEntries={[
+          { pathname: "/", key: "home-entry" },
+          { pathname: "/product/p1", key: "detail-entry" }
+        ]}
+        initialIndex={1}
+      >
+        <Harness />
+      </MemoryRouter>
+    );
+
+    vi.useFakeTimers();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    });
+
+    expect(screen.getByTestId("route")).toHaveTextContent("/");
+    expect(observers).toHaveLength(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+
+    expect(window.scrollTo).toHaveBeenCalledTimes(1);
+    expect(observers[0].disconnect).toHaveBeenCalled();
+
+    document.querySelector("main").setAttribute(
+      "data-scroll-restoration-ready",
+      "true"
+    );
+    await act(async () => {
+      observers[0].callback([]);
+      vi.runOnlyPendingTimers();
+    });
+
+    expect(window.scrollTo).toHaveBeenCalledTimes(1);
+  });
+});
