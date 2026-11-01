@@ -32,16 +32,112 @@ export default function Header() {
   const [mobileNostrMenuOpen, setMobileNostrMenuOpen] = useState(false);
   const reduceMotion = useReducedMotion();
 
+  // TOUCH HAPTIC FEEDBACK — ISOLABELLART
+  // Risposta aptica breve per le interazioni effettuate con il dito.
+  // Se il browser non supporta la Vibration API, non cambia nulla.
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      return undefined;
+    }
+
+    const handleTouchActivation = (event) => {
+      if (event.pointerType !== "touch" || event.isPrimary === false) {
+        return;
+      }
+
+      const target = event.target;
+      const element =
+        target?.nodeType === 1 ? target : target?.parentElement;
+
+      if (!element) return;
+
+      if (element.closest?.('[data-haptic="off"]')) return;
+
+      const control = element.closest?.(
+        'button:not(:disabled), a[href], [role="button"], [role="menuitem"], [role="option"], summary, select, [data-haptic]'
+      );
+
+      if (!control) return;
+
+      if (
+        control.matches(":disabled") ||
+        control.getAttribute("aria-disabled") === "true"
+      ) {
+        return;
+      }
+
+      // L'aggiunta al carrello riceve un impulso appena più percettibile.
+      const duration = control.matches(
+        '[data-haptic="strong"], .product-add-to-cart'
+      )
+        ? 14
+        : 10;
+
+      const vibrate = window.navigator?.vibrate;
+
+      if (typeof vibrate !== "function") return;
+
+      try {
+        vibrate.call(window.navigator, duration);
+      } catch {
+        // Il feedback aptico non deve mai interferire con la navigazione.
+      }
+    };
+
+    document.addEventListener(
+      "pointerup",
+      handleTouchActivation,
+      true
+    );
+
+    return () => {
+      document.removeEventListener(
+        "pointerup",
+        handleTouchActivation,
+        true
+      );
+    };
+  }, []);
+  const nostrMenuCloseTimerRef = useRef(null);
+
+  const clearNostrMenuCloseTimer = () => {
+    if (nostrMenuCloseTimerRef.current !== null) {
+      window.clearTimeout(nostrMenuCloseTimerRef.current);
+      nostrMenuCloseTimerRef.current = null;
+    }
+  };
+
+  const openNostrMenu = () => {
+    clearNostrMenuCloseTimer();
+    setMobileNostrMenuOpen(true);
+  };
+
+  const scheduleNostrMenuClose = () => {
+    clearNostrMenuCloseTimer();
+    nostrMenuCloseTimerRef.current = window.setTimeout(() => {
+      setMobileNostrMenuOpen(false);
+      nostrMenuCloseTimerRef.current = null;
+    }, 400);
+  };
+
+  useEffect(() => {
+    return () => clearNostrMenuCloseTimer();
+  }, []);
+
   // Close the Nostr account popover on outside interaction or Escape.
   useEffect(() => {
     if (!mobileNostrMenuOpen) return undefined;
 
     const handlePointerDown = (event) => {
       if (event.target?.closest?.("[data-nostr-account-menu]")) return;
+      clearNostrMenuCloseTimer();
       setMobileNostrMenuOpen(false);
     };
     const handleKeyDown = (event) => {
-      if (event.key === "Escape") setMobileNostrMenuOpen(false);
+      if (event.key === "Escape") {
+        clearNostrMenuCloseTimer();
+        setMobileNostrMenuOpen(false);
+      }
     };
 
     document.addEventListener("pointerdown", handlePointerDown);
@@ -267,7 +363,7 @@ export default function Header() {
             ) : (
               <button
                 onClick={() => nav("/")}
-                className="site-nav-control site-nav-gold-hover text-left flex items-center justify-center h-10 w-10 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 hover:ring-[#B8734F]/70 transition"
+                className="site-nav-control site-nav-copper-control site-nav-gold-hover text-left flex items-center justify-center h-10 w-10 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 hover:ring-[#B8734F]/70 transition"
                 title="Home"
                 aria-label="Home"
               >
@@ -292,7 +388,7 @@ export default function Header() {
 
               <Link
                 to="/gallery"
-                className="site-nav-control site-nav-gold-hover inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap px-3 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F]"
+                className="site-nav-control site-nav-copper-control site-nav-gold-hover inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap px-3 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F]"
                 title="Gallery"
               >
                 Gallery
@@ -310,7 +406,7 @@ export default function Header() {
 
               <Link
                 to="/cart"
-                className={`site-nav-control site-nav-gold-hover relative inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap px-3 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F] transition-transform duration-300 ease-out ${
+                className={`site-nav-control site-nav-copper-control site-nav-gold-hover relative inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap px-3 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F] transition-transform duration-300 ease-out ${
                   flashCart
                     ? "scale-110 ring-2 ring-[#B8734F] shadow-[0_8px_30px_rgba(184,115,79,0.35)]"
                     : ""
@@ -345,17 +441,17 @@ export default function Header() {
                 <div
                   className="relative hidden lg:block"
                   data-nostr-account-menu
-                  onMouseEnter={() => setMobileNostrMenuOpen(true)}
-                  onMouseLeave={() => setMobileNostrMenuOpen(false)}
-                  onFocus={() => setMobileNostrMenuOpen(true)}
+                  onMouseEnter={openNostrMenu}
+                  onMouseLeave={scheduleNostrMenuClose}
+                  onFocus={openNostrMenu}
                   onBlur={(event) => {
                     if (!event.currentTarget.contains(event.relatedTarget)) {
-                      setMobileNostrMenuOpen(false);
+                      scheduleNostrMenuClose();
                     }
                   }}
                 >
                   <button
-                    onClick={() => setMobileNostrMenuOpen(true)}
+                    onClick={openNostrMenu}
                     className="site-nav-avatar h-10 w-10 rounded-full overflow-hidden bg-[#292B2A] text-[#F5F0E6] ring-1 ring-[#B8734F]/35 flex items-center justify-center text-xs font-semibold"
                     title="Account menu"
                     aria-label="Account menu"
@@ -373,6 +469,8 @@ export default function Header() {
                       animate={reduceMotion ? {} : { opacity: 1, y: 0, scale: 1 }}
                       transition={reduceMotion ? { duration: 0 } : { duration: 0.16, ease: "easeOut" }}
                       className="absolute right-0 mt-2 w-48 rounded-xl bg-[#292B2A] text-[#F5F0E6] ring-1 ring-[#B8734F]/35 shadow-lg p-3 z-30 origin-top-right"
+                      onMouseEnter={openNostrMenu}
+                      onMouseLeave={scheduleNostrMenuClose}
                     >
                       <div className="text-sm font-medium truncate" title={npubFull || nostrPk}>
                         {nostrProfile?.name || npubShort || "You"}

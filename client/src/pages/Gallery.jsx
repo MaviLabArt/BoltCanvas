@@ -47,7 +47,7 @@ export default function Gallery() {
   );
 
   return (
-    <section className="py-8">
+    <section className="py-8" data-scroll-restoration-ready={loading ? "false" : "true"}>
       <ScrollReveal className="mb-10 text-center">
         <header>
           <h1 className="heading text-3xl sm:text-4xl font-semibold tracking-tight">

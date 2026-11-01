@@ -145,7 +145,7 @@ export default function Home() {
 
   if (!settings) {
     return (
-      <section className="pt-8">
+      <section className="pt-8" data-scroll-restoration-ready="false">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="h-6 w-32 bg-slate-800 rounded mb-2" />
           <div className="h-4 w-48 bg-slate-800/80 rounded" />
@@ -166,7 +166,7 @@ export default function Home() {
   }
 
   return (
-    <section className="pt-8">
+    <section className="pt-8" data-scroll-restoration-ready={loading ? "false" : "true"}>
       {shippingAlertCount > 0 && (
         <div
           role="status"
