@@ -65,19 +65,25 @@ export default function ProductCard({ p, radiusScale = "3xl" }) {
 
   return (
     <motion.div
-      initial={reduce ? false : { opacity: 0, y: 10 }}
-      animate={reduce ? {} : { opacity: 1, y: 0 }}
+      initial={reduce ? false : { opacity: 0, y: 12 }}
+      whileInView={reduce ? undefined : { opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.14, margin: "0px 0px -32px 0px" }}
+      whileTap={reduce ? undefined : { scale: 0.992 }}
+      transition={reduce ? { duration: 0 } : { duration: 0.58, ease: [0.22, 1, 0.36, 1] }}
       className={`text-left ${cardRadius} overflow-hidden bg-slate-900 ring-1 ring-white/10`}
       aria-label={`${p.title || "Untitled"}${isForSale ? `, ${formatSats(p.priceSats)} sats` : `, ${statusLabel}`}`}
     >
       <Link to={`/product/${p.id}`} className="block group">
         <div className={`aspect-[4/3] bg-black/40 relative ${cardRadius} overflow-hidden`}>
           {main ? (
-            <img
+            <motion.img
               src={main}
               alt={p.title}
               className="w-full h-full object-cover"
               loading="lazy"
+              decoding="async"
+              whileHover={reduce ? undefined : { scale: 1.025 }}
+              transition={reduce ? { duration: 0 } : { duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
             />
           ) : (
             <div className="w-full h-full grid place-items-center text-white/40">No image</div>

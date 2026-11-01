@@ -6,6 +6,8 @@ import { useSettings } from "../store/settings.jsx";
 import { stripMarkdown } from "../utils/markdown.js";
 import RecentCommentsStrip from "../components/RecentCommentsStrip.jsx";
 import NostrTestimonials from "../components/NostrTestimonials.jsx";
+import ScrollReveal from "../components/ScrollReveal.jsx";
+import { motion, useReducedMotion } from "framer-motion";
 
 const DEFAULT_SETTINGS = {
   logo: "",
@@ -34,6 +36,7 @@ const DEFAULT_SETTINGS = {
 };
 
 export default function Home() {
+  const reduceMotion = useReducedMotion();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -181,24 +184,37 @@ export default function Home() {
       {/* --- HERO / Masthead (big logo only + optional subheading) --- */}
       <div className="mb-8 text-center">
         {heroLogo ? (
-          <div className="mb-4 flex justify-center">
+          <motion.div
+            className="mb-4 flex justify-center"
+            initial={reduceMotion ? false : { opacity: 0, y: 7, scale: 0.992 }}
+            animate={reduceMotion ? {} : { opacity: 1, y: 0, scale: 1 }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 0.68, ease: [0.22, 1, 0.36, 1] }}
+          >
             <img
               src={heroLogo}
               alt="logo"
-              className="max-h-32 w-auto sm:max-h-40 rounded-none object-contain"
+              className="home-hero-logo max-h-32 w-auto sm:max-h-40 rounded-none object-contain"
+              decoding="async"
             />
-          </div>
+          </motion.div>
         ) : null}
         {/* ⬇️ Store name removed from Home per request */}
         {settings.heroLine && (
-          <p className="text-white/80">{settings.heroLine}</p>
+          <motion.p
+            className="home-hero-tagline text-white/80"
+            initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+            animate={reduceMotion ? {} : { opacity: 1, y: 0 }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 0.52, delay: 0.14, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {settings.heroLine}
+          </motion.p>
         )}
         {/* ⬇️ Removed hero CTA buttons */}
       </div>
 
       {/* --- About teaser (Option A: Text-first on phones) --- */}
       {settings && (settings.aboutImage || settings.aboutBody) && (
-        <div className="mb-8 max-w-3xl mx-auto rounded-3xl p-4 sm:p-5 bg-slate-900 ring-1 ring-white/10">
+        <ScrollReveal className="mb-8 max-w-3xl mx-auto rounded-3xl p-4 sm:p-5 bg-slate-900 ring-1 ring-white/10">
           <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4">
             {/* Text block first (keeps copy breathing room) */}
             <div className="flex-1 text-left">
@@ -239,19 +255,19 @@ export default function Home() {
               </div>
             ) : null}
           </div>
-        </div>
+        </ScrollReveal>
       )}
 
       {featuredProduct && !loading && !loadError && (
         <div className="mx-auto mb-10 max-w-5xl px-1 sm:px-2">
-          <div className="mb-4 text-center">
+          <ScrollReveal className="mb-4 text-center">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] opacity-60">
-              {settings.themeChoice === "light" ? "Selected artwork" : "Selected artwork"}
+              Selected artwork
             </p>
             <h2 className="heading mt-2 text-2xl sm:text-3xl font-semibold tracking-tight">
               {featuredProduct.title || featuredProduct.name}
             </h2>
-          </div>
+          </ScrollReveal>
           <div className="mx-auto max-w-3xl">
             <ProductCard p={featuredProduct} radiusScale={settings.radiusScale} />
           </div>
@@ -259,11 +275,13 @@ export default function Home() {
       )}
 
       {/* --- Gallery heading --- */}
-      <div id="gallery" className="mb-8 text-center">
+      <ScrollReveal className="mb-8 text-center">
+        <div id="gallery">
         <h2 className="heading text-2xl sm:text-3xl font-semibold tracking-tight">
           {settings.productsHeading || "Featured Products"}
         </h2>
-      </div>
+        </div>
+      </ScrollReveal>
 
       {(loading || loadError || ordered.length === 0) ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-5">
@@ -292,9 +310,9 @@ export default function Home() {
       {/* Recently Sold (optional) */}
       {sold.length > 0 && (
         <>
-          <div className="mt-10 mb-3 text-center">
+          <ScrollReveal className="mt-10 mb-3 text-center">
             <h3 className="heading text-xl font-semibold opacity-90">Recently Sold</h3>
-          </div>
+          </ScrollReveal>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
             {sold.slice(0,8).map(p => (
               <ProductCard key={p.id} p={p} radiusScale={settings.radiusScale} />
@@ -305,7 +323,7 @@ export default function Home() {
 
       {/* --- Story arc: shipping bullets --- */}
       {settings && (settings.shippingBullet1 || settings.shippingBullet2 || settings.shippingBullet3) && (
-        <div className="mt-12 rounded-3xl p-6 bg-slate-900 ring-1 ring-white/10 max-w-3xl mx-auto">
+        <ScrollReveal className="mt-12 rounded-3xl p-6 bg-slate-900 ring-1 ring-white/10 max-w-3xl mx-auto">
           <div className="text-lg font-semibold mb-3 text-center">
             {settings.shippingTitle || "How shipping works"}
           </div>
@@ -314,7 +332,7 @@ export default function Home() {
             {settings.shippingBullet2 ? <li>{settings.shippingBullet2}</li> : null}
             {settings.shippingBullet3 ? <li>{settings.shippingBullet3}</li> : null}
           </ul>
-        </div>
+        </ScrollReveal>
       )}
 
 
@@ -337,8 +355,8 @@ export default function Home() {
         }} />
       )}
 
-      <NostrTestimonials />
-      <RecentCommentsStrip products={ordered} />
+      <ScrollReveal><NostrTestimonials /></ScrollReveal>
+      <ScrollReveal><RecentCommentsStrip products={ordered} /></ScrollReveal>
     </section>
   );
 }

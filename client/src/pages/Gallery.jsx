@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import ProductCard from "../components/ProductCard.jsx";
+import ScrollReveal from "../components/ScrollReveal.jsx";
 import api from "../services/api.js";
 
 export default function Gallery() {
@@ -47,14 +48,16 @@ export default function Gallery() {
 
   return (
     <section className="py-8">
-      <header className="mb-10 text-center">
-        <h1 className="heading text-3xl sm:text-4xl font-semibold tracking-tight">
-          Gallery
-        </h1>
-        <p className="mt-3 text-white/70">
-          Original artworks and their stories.
-        </p>
-      </header>
+      <ScrollReveal className="mb-10 text-center">
+        <header>
+          <h1 className="heading text-3xl sm:text-4xl font-semibold tracking-tight">
+            Gallery
+          </h1>
+          <p className="mt-3 text-white/70">
+            Original artworks and their stories.
+          </p>
+        </header>
+      </ScrollReveal>
 
       {loading ? (
         <p className="py-8 text-center text-white/70" role="status">
@@ -67,12 +70,14 @@ export default function Gallery() {
       ) : (
         <>
           <section aria-labelledby="available-heading">
-            <h2
-              id="available-heading"
-              className="heading mb-5 text-2xl font-semibold"
-            >
-              Available works
-            </h2>
+            <ScrollReveal>
+              <h2
+                id="available-heading"
+                className="heading mb-5 text-2xl font-semibold"
+              >
+                Available works
+              </h2>
+            </ScrollReveal>
             {available.length ? (
               renderGrid(available)
             ) : (
@@ -83,12 +88,14 @@ export default function Gallery() {
           </section>
 
           <section aria-labelledby="archive-heading" className="mt-14">
-            <h2
-              id="archive-heading"
-              className="heading mb-5 text-2xl font-semibold"
-            >
-              Archive
-            </h2>
+            <ScrollReveal>
+              <h2
+                id="archive-heading"
+                className="heading mb-5 text-2xl font-semibold"
+              >
+                Archive
+              </h2>
+            </ScrollReveal>
             {archive.length ? (
               renderGrid(archive)
             ) : (
