@@ -1510,6 +1510,13 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
   opacity: 1 !important;
 }
 
+/* Enhanced themes use a gold hover surface: keep its foreground dark
+   on touch browsers as well as desktop, without changing other themes. */
+[data-theme="enhanced-light"] .nostr-connect-login .nostr-connect-action-primary:hover:not(:disabled),
+[data-theme="enhanced-dark"] .nostr-connect-login .nostr-connect-action-primary:hover:not(:disabled) {
+  color: var(--site-hover-fg) !important;
+}
+
 [data-theme] .nostr-connect-login .nostr-connect-field {
   color: var(--nc-muted) !important;
   opacity: 1 !important;
