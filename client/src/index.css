@@ -174,6 +174,9 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
 
 [data-theme='ember'] {
   color-scheme: dark;
+  --site-accent: var(--em-accent);
+  --site-hover-bg: #d8b363;
+  --site-hover-fg: #11110f;
 }
 
 [data-theme='ember'] body {
@@ -277,7 +280,12 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
   --lt-accent-hover: #8F5C36;
 }
 
-[data-theme='light'] { color-scheme: light; }
+[data-theme='light'] {
+  color-scheme: light;
+  --site-accent: var(--lt-accent);
+  --site-hover-bg: #d8b363;
+  --site-hover-fg: #11110f;
+}
 
 /* Base canvas & default text */
 [data-theme='light'] body {
@@ -475,6 +483,9 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
    =================================================================== */
 [data-theme='custom'] {
   color-scheme: dark;
+  --site-accent: var(--ct-accent);
+  --site-hover-bg: #d8b363;
+  --site-hover-fg: #11110f;
 }
 [data-theme='custom'] body {
   background-color: var(--ct-surface);
@@ -570,6 +581,19 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
   );
   border: 0;
   box-shadow: none;
+}
+
+
+/* Header contrast and active accent for the warm light presets. */
+[data-theme="light"] .site-header-accent-gradient,
+[data-theme="enhanced-light"] .site-header-accent-gradient {
+  color: #292B2A !important;
+}
+[data-theme="light"] .site-header-accent-gradient a,
+[data-theme="light"] .site-header-accent-gradient button,
+[data-theme="enhanced-light"] .site-header-accent-gradient a,
+[data-theme="enhanced-light"] .site-header-accent-gradient button {
+  color: #F5F0E6;
 }
 
 /* Gallery and cart use the same restrained gold hover as the artwork action. */
@@ -780,13 +804,11 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
 
 /* Accent controls, prices and status elements */
 [data-theme="enhanced-light"] .bg-indigo-500,
-[data-theme="enhanced-light"] .bg-indigo-500\/90,
-[data-theme="enhanced-light"] .bg-indigo-500\/80,
-[data-theme="enhanced-light"] .hover\\:bg-indigo-500:hover,
+[data-theme="enhanced-light"] .bg-indigo-500\\/90,
+[data-theme="enhanced-light"] .bg-indigo-500\\/80,
 [data-theme="enhanced-dark"] .bg-indigo-500,
-[data-theme="enhanced-dark"] .bg-indigo-500\/90,
-[data-theme="enhanced-dark"] .bg-indigo-500\/80,
-[data-theme="enhanced-dark"] .hover\\:bg-indigo-500:hover {
+[data-theme="enhanced-dark"] .bg-indigo-500\\/90,
+[data-theme="enhanced-dark"] .bg-indigo-500\\/80 {
   background-color: var(--enh-accent) !important;
   color: #FFF9F1 !important;
 }
