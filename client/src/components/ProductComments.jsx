@@ -100,8 +100,8 @@ export default function ProductComments({ productId }) {
   const [input, setInput] = useState("");
   const relays = useMemo(() => settings?.nostrRelays, [settings]);
   const storePubkey = useMemo(() => String(settings?.nostrShopPubkey || normalizePubkey(settings?.nostrNpub) || "").toLowerCase(), [settings]);
-  const previewReadOnly = import.meta.env.VITE_PREVIEW_MODE === "true";
-  const enabled = (nostrCommentsEnabled(settings) || import.meta.env.VITE_ENABLE_NOSTR_COMMENTS === "true") && !!storePubkey;
+  const previewReadOnly = settings?.nostrCommentsReadOnly === true;
+  const enabled = nostrCommentsEnabled(settings) && !!storePubkey;
   const blocked = useMemo(() => makeBlockedSets(settings), [settings]);
   const cancelledRef = useRef(false);
 
