@@ -123,8 +123,11 @@ export default function ScrollRestorationManager() {
   const location = useLocation();
   const navigationType = useNavigationType();
 
+  // A null key lets the initial POP pass through the same restoration
+  // path as a browser back/forward navigation. The real key is installed
+  // before any asynchronous restoration work is scheduled.
   const activeLocationRef = useRef({
-    key: location.key,
+    key: null,
     pathname: location.pathname
   });
   const pendingProductNavigationRef = useRef(null);
@@ -402,7 +405,13 @@ export default function ScrollRestorationManager() {
 
     if (navigationType === "PUSH") {
       if (location.hash) {
-        const id = decodeURIComponent(location.hash.slice(1));
+        // A malformed percent-escape must not break an otherwise valid route.
+        let id = location.hash.slice(1);
+        try {
+          id = decodeURIComponent(id);
+        } catch {
+          // Fall back to the literal fragment; it may still be a valid DOM id.
+        }
 
         window.requestAnimationFrame(() => {
           if (activeLocationRef.current.key !== location.key) return;
