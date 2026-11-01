@@ -4,7 +4,7 @@ import { fetchProfilesForEvents } from "../nostr/profiles.js";
 import { normalizeComments } from "../nostr/normalize.js";
 import { publishProductComment } from "../nostr/publish-comment.js";
 import { useSettings } from "../store/settings.jsx";
-import { isEventBlocked, makeBlockedSets, nostrCommentsEnabled } from "../nostr/config.js";
+import { isEventBlocked, makeBlockedSets, nostrCommentsEnabled, normalizePubkey } from "../nostr/config.js";
 import { useNostr } from "../providers/NostrProvider.jsx";
 
 function timeAgo(ts) {
@@ -99,8 +99,9 @@ export default function ProductComments({ productId }) {
   const maxLen = 600;
   const [input, setInput] = useState("");
   const relays = useMemo(() => settings?.nostrRelays, [settings]);
-  const storePubkey = useMemo(() => String(settings?.nostrShopPubkey || "").toLowerCase(), [settings]);
-  const enabled = nostrCommentsEnabled(settings) && !!storePubkey;
+  const storePubkey = useMemo(() => String(settings?.nostrShopPubkey || normalizePubkey(settings?.nostrNpub) || "").toLowerCase(), [settings]);
+  const previewReadOnly = import.meta.env.VITE_PREVIEW_MODE === "true";
+  const enabled = (nostrCommentsEnabled(settings) || import.meta.env.VITE_ENABLE_NOSTR_COMMENTS === "true") && !!storePubkey;
   const blocked = useMemo(() => makeBlockedSets(settings), [settings]);
   const cancelledRef = useRef(false);
 
@@ -199,17 +200,20 @@ export default function ProductComments({ productId }) {
     }
   };
 
-  const canPost = hasSigner && !!nostrPubkey;
+  const canPost = !previewReadOnly && hasSigner && !!nostrPubkey;
 
   return (
     <section className="mt-10">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-lg font-semibold">Comment through NOSTR</h3>
-        {!canPost && (
+        {previewReadOnly ? (
+          <span className="text-xs text-white/60">Preview · read only</span>
+        ) : !canPost ? (
           <span className="text-xs text-white/60">Login with Nostr to post</span>
-        )}
+        ) : null}
       </div>
 
+      {!previewReadOnly && (
       <div className="rounded-2xl bg-slate-950/80 ring-1 ring-white/10 p-3 sm:p-4 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
         <form onSubmit={handleSubmit} className="space-y-2">
           <textarea
@@ -235,6 +239,7 @@ export default function ProductComments({ productId }) {
           </div>
         </form>
       </div>
+      )}
 
       <div className="mt-4 space-y-3">
         {loading && (
