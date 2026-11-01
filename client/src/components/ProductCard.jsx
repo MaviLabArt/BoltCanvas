@@ -69,6 +69,7 @@ export default function ProductCard({ p, radiusScale = "3xl" }) {
       whileInView={reduce ? undefined : { opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.14, margin: "0px 0px -32px 0px" }}
       whileTap={reduce ? undefined : { scale: 0.992 }}
+      tabIndex={-1}
       transition={reduce ? { duration: 0 } : { duration: 0.58, ease: [0.22, 1, 0.36, 1] }}
       className={`text-left ${cardRadius} overflow-hidden bg-slate-900 ring-1 ring-white/10`}
       aria-label={`${p.title || "Untitled"}${isForSale ? `, ${formatSats(p.priceSats)} sats` : `, ${statusLabel}`}`}

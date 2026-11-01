@@ -136,7 +136,7 @@ export default function Home() {
       }
     }
 
-    if (effective === "light") {
+    if (effective === "light" || effective === "enhanced-light") {
       return logoLight || logoDark || "";
     }
     // Dark Ink + Ember Night both use the dark logo

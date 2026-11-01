@@ -462,7 +462,7 @@ export default function Header() {
                 )
               ) : (
                 nostrPk ? (
-                  <div className="relative lg:hidden">
+                  <div className="relative lg:hidden" data-nostr-account-menu>
                     <button
                       onClick={() => setMobileNostrMenuOpen((v) => !v)}
                       className="h-10 w-10 rounded-full overflow-hidden bg-[#292B2A] ring-1 ring-[#B8734F]/35 flex items-center justify-center text-xs font-semibold"
