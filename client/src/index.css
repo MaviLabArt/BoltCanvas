@@ -560,6 +560,31 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
 }
 
 
+/* Accent-tinted glass header: follows the accent selected in Admin. */
+.site-header-accent-gradient {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--ct-accent, #B8734F) 38%, #292B2A) 0%,
+    color-mix(in srgb, var(--ct-accent, #B8734F) 27%, #292B2A) 52%,
+    color-mix(in srgb, var(--ct-accent, #B8734F) 14%, #292B2A) 100%
+  );
+  border-bottom: 1px solid color-mix(in srgb, var(--ct-accent, #B8734F) 42%, transparent);
+}
+
+/* Gallery and cart use the same restrained gold hover as the artwork action. */
+@media (hover: hover) and (pointer: fine) {
+  .site-nav-gold-hover:hover {
+    background-color: #d8b363 !important;
+    color: #11110f !important;
+    translate: 0 -1px;
+    box-shadow: 0 0 0 1px #d8b363, 0 7px 18px rgba(20, 18, 15, 0.16);
+  }
+
+  .site-nav-gold-hover:hover svg {
+    color: #11110f !important;
+  }
+}
+
 /* Subtle public-site interactions: short, transform-only feedback. */
 .site-nav-control,
 .site-nav-avatar,
