@@ -123,13 +123,13 @@ export default function ScrollRestorationManager() {
   const location = useLocation();
   const navigationType = useNavigationType();
 
-  // A null key lets the initial POP pass through the same restoration
-  // path as a browser back/forward navigation. The real key is installed
-  // before any asynchronous restoration work is scheduled.
   const activeLocationRef = useRef({
-    key: null,
+    key: location.key,
     pathname: location.pathname
   });
+  // Keep the initial POP eligible until its restoration completes. This also
+  // lets React StrictMode safely replay the layout effect after its cleanup.
+  const initialRestorePendingRef = useRef(true);
   const pendingProductNavigationRef = useRef(null);
   const scrollFrameRef = useRef(0);
   const lastScrollPositionRef = useRef({
@@ -244,8 +244,11 @@ export default function ScrollRestorationManager() {
   // new page, preserving the conventional navigation behavior.
   useLayoutEffect(() => {
     const previous = activeLocationRef.current;
+    const isInitialMount =
+      initialRestorePendingRef.current && previous.key === location.key;
 
-    if (previous.key === location.key) return;
+    if (previous.key === location.key && !isInitialMount) return;
+    if (!isInitialMount) initialRestorePendingRef.current = false;
 
     const pending = pendingProductNavigationRef.current;
     const previousPosition = lastScrollPositionRef.current;
@@ -253,6 +256,7 @@ export default function ScrollRestorationManager() {
       pending?.key === previous.key &&
       location.pathname.startsWith("/product/");
     if (
+      !isInitialMount &&
       !openingClickedProduct &&
       previousPosition?.key === previous.key
     ) {
@@ -289,7 +293,10 @@ export default function ScrollRestorationManager() {
 
     if (navigationType === "POP") {
       const snapshot = readSnapshot(location.key);
-      if (!snapshot) return;
+      if (!snapshot) {
+        if (isInitialMount) initialRestorePendingRef.current = false;
+        return;
+      }
 
       lastScrollPositionRef.current = {
         key: location.key,
@@ -305,6 +312,7 @@ export default function ScrollRestorationManager() {
           pathname: location.pathname,
           ...restored
         };
+        if (isInitialMount) initialRestorePendingRef.current = false;
       };
 
       const needsPageReady = READY_ROUTES.has(location.pathname);
@@ -404,6 +412,7 @@ export default function ScrollRestorationManager() {
     }
 
     if (navigationType === "PUSH") {
+      if (isInitialMount) initialRestorePendingRef.current = false;
       if (location.hash) {
         // A malformed percent-escape must not break an otherwise valid route.
         let id = location.hash.slice(1);
