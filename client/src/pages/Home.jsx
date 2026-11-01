@@ -183,28 +183,35 @@ export default function Home() {
         </div>
       )}
       {/* --- HERO / Masthead (big logo only + optional subheading) --- */}
-      <motion.div
-        className="mb-8 text-center"
-        initial={reduceMotion ? false : { opacity: 0, y: 10 }}
-        animate={reduceMotion ? {} : { opacity: 1, y: 0 }}
-        transition={reduceMotion ? { duration: 0 } : { duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-      >
+      <div className="mb-8 text-center">
         {heroLogo ? (
-          <div className="mb-4 flex justify-center">
+          <motion.div
+            className="mb-4 flex justify-center"
+            initial={reduceMotion ? false : { opacity: 0, y: 7, scale: 0.992 }}
+            animate={reduceMotion ? {} : { opacity: 1, y: 0, scale: 1 }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 0.68, ease: [0.22, 1, 0.36, 1] }}
+          >
             <img
               src={heroLogo}
               alt="logo"
-              className="max-h-32 w-auto sm:max-h-40 rounded-none object-contain"
+              className="home-hero-logo max-h-32 w-auto sm:max-h-40 rounded-none object-contain"
               decoding="async"
             />
-          </div>
+          </motion.div>
         ) : null}
         {/* ⬇️ Store name removed from Home per request */}
         {settings.heroLine && (
-          <p className="text-white/80">{settings.heroLine}</p>
+          <motion.p
+            className="home-hero-tagline text-white/80"
+            initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+            animate={reduceMotion ? {} : { opacity: 1, y: 0 }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 0.52, delay: 0.14, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {settings.heroLine}
+          </motion.p>
         )}
         {/* ⬇️ Removed hero CTA buttons */}
-      </motion.div>
+      </div>
 
       {/* --- About teaser (Option A: Text-first on phones) --- */}
       {settings && (settings.aboutImage || settings.aboutBody) && (
