@@ -169,7 +169,7 @@ export default function Header() {
       }
     } catch {}
     return () => cleanup();
-  }, [s.themeChoice]);
+  }, [s.themeChoice, s.themeTokens]);
 
   useEffect(() => {
     // Show "Orders" only if there is at least one order for this session (or linked nostr)
@@ -258,7 +258,7 @@ export default function Header() {
 
   return (
     <>
-      <header className="sticky top-0 z-20 text-[#F5F0E6] backdrop-blur-sm bg-[#353735]/95 supports-[backdrop-filter]:bg-[#353735]/90 border-b border-[#B8734F]/40">
+      <header className="site-header-accent-gradient sticky top-0 z-20 text-[#F5F0E6] backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             {/* Left: Home button (logo only; hidden on detail/cart/checkout/orders) */}
@@ -292,7 +292,7 @@ export default function Header() {
 
               <Link
                 to="/gallery"
-                className="site-nav-control inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap px-3 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F]"
+                className="site-nav-control site-nav-gold-hover inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap px-3 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F]"
                 title="Gallery"
               >
                 Gallery
@@ -310,7 +310,7 @@ export default function Header() {
 
               <Link
                 to="/cart"
-                className={`site-nav-control relative inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap px-3 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F] transition-transform duration-300 ease-out ${
+                className={`site-nav-control site-nav-gold-hover relative inline-flex h-10 shrink-0 items-center justify-center whitespace-nowrap px-3 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 focus-visible:ring-2 focus-visible:ring-[#B8734F] transition-transform duration-300 ease-out ${
                   flashCart
                     ? "scale-110 ring-2 ring-[#B8734F] shadow-[0_8px_30px_rgba(184,115,79,0.35)]"
                     : ""
@@ -319,7 +319,7 @@ export default function Header() {
               >
                 <svg
                   viewBox="0 0 24 24"
-                  className="h-5 w-5 text-[#F5F0E6]"
+                  className="h-5 w-5 text-current"
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="1.6"
