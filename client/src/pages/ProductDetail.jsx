@@ -289,7 +289,7 @@ export default function ProductDetail() {
                 add(p, 1);
               }}
             >
-              Add to Cart
+              Make it yours!
             </button>
             {stockLabel && (
               <div className="w-full flex justify-start">
