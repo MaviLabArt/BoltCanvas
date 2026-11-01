@@ -267,7 +267,7 @@ export default function Header() {
             ) : (
               <button
                 onClick={() => nav("/")}
-                className="site-nav-control text-left flex items-center justify-center h-10 w-10 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 hover:ring-[#B8734F]/70 transition"
+                className="site-nav-control site-nav-gold-hover text-left flex items-center justify-center h-10 w-10 rounded-xl bg-[#292B2A] ring-1 ring-[#B8734F]/35 hover:ring-[#B8734F]/70 transition"
                 title="Home"
                 aria-label="Home"
               >
