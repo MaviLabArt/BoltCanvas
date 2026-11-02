@@ -17,6 +17,42 @@ const SettingsContext = createContext({
 
 const CACHE_KEY = "ls-public-settings";
 
+const GOOGLE_FONT_FAMILIES = {
+  "space-grotesk": { family: "Space Grotesk", query: "Space+Grotesk:wght@400;500;600;700" },
+  fraunces: { family: "Fraunces", query: "Fraunces:opsz,wght@9..144,300..700" },
+  "playfair-display": { family: "Playfair Display", query: "Playfair+Display:wght@400;500;600;700" },
+  "cormorant-garamond": { family: "Cormorant Garamond", query: "Cormorant+Garamond:wght@400;500;600;700" },
+  lora: { family: "Lora", query: "Lora:wght@400;500;600;700" },
+  inter: { family: "Inter", query: "Inter:wght@400;500;600;700" },
+  "dm-sans": { family: "DM Sans", query: "DM+Sans:wght@400;500;600;700" },
+  lato: { family: "Lato", query: "Lato:wght@400;700" },
+  manrope: { family: "Manrope", query: "Manrope:wght@400;500;600;700" },
+  "source-sans-3": { family: "Source Sans 3", query: "Source+Sans+3:wght@400;500;600;700" }
+};
+
+const FONT_FALLBACK = 'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+
+function applySelectedFonts(displayFont, bodyFont) {
+  if (typeof document === "undefined") return;
+
+  const display = GOOGLE_FONT_FAMILIES[displayFont] || GOOGLE_FONT_FAMILIES["space-grotesk"];
+  const body = GOOGLE_FONT_FAMILIES[bodyFont] || GOOGLE_FONT_FAMILIES.inter;
+  const families = [...new Map([display, body].map((font) => [font.family, font])).values()];
+  const href = `https://fonts.googleapis.com/css2?${families.map((font) => `family=${font.query}`).join("&")}&display=swap`;
+
+  document.documentElement.style.setProperty("--font-display", `"${display.family}", ${FONT_FALLBACK}`);
+  document.documentElement.style.setProperty("--font-body", `"${body.family}", ${FONT_FALLBACK}`);
+
+  let link = document.querySelector('link[data-managed="ls-google-fonts"]');
+  if (!link) {
+    link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.setAttribute("data-managed", "ls-google-fonts");
+    document.head.appendChild(link);
+  }
+  if (link.href !== href) link.href = href;
+}
+
 function loadCachedSettings() {
   if (typeof window === "undefined") return null;
   try {
@@ -84,6 +120,10 @@ export function SettingsProvider({ children }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    applySelectedFonts(settings?.displayFont, settings?.bodyFont);
+  }, [settings?.displayFont, settings?.bodyFont]);
 
   useEffect(() => {
     try {
