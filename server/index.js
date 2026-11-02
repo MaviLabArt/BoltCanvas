@@ -652,10 +652,14 @@ function buildDefaultMeta(req, settings) {
   const siteName = settings?.storeName || "Lightning Shop";
   const description = settings?.heroLine || settings?.contactNote || "A curated selection available for sats.";
   const logo = settings?.logoLight || settings?.logo || settings?.logoDark || "";
+  const parsedLogo = parseDataUrl(logo);
+  const image = parsedLogo?.buffer?.length
+    ? ensureAbsoluteFromReq(req, "/api/public/store-logo")
+    : (logo && !/^data:/i.test(logo) ? ensureAbsoluteFromReq(req, logo) : "");
   return {
     title: siteName,
     description,
-    image: logo ? ensureAbsoluteFromReq(req, logo) : "",
+    image,
     url: absoluteUrlFromRequest(req),
     type: "website",
     siteName
@@ -1201,6 +1205,24 @@ app.get("/api/public/nostr-testimonials", async (req, res) => {
     res.status(500).json({ testimonials: [], error: "Unable to load testimonials" });
   }
 });
+// Expose the storefront logo as a crawlable image URL for Open Graph.
+app.get("/api/public/store-logo", (req, res) => {
+  try {
+    const settings = Settings.getAll();
+    const rawImage = settings.logoLight || settings.logo || settings.logoDark || "";
+    const parsed = parseDataUrl(rawImage);
+    if (!parsed || !parsed.buffer?.length) {
+      return res.status(404).end();
+    }
+    res.set("Content-Type", parsed.mime || "image/png");
+    res.set("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
+    res.set("X-Content-Type-Options", "nosniff");
+    res.send(parsed.buffer);
+  } catch (err) {
+    res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
 // Expose the stall logo when stored as a data URL (for Nostr publishing)
 app.get("/api/public/stall-logo", (req, res) => {
   try {
