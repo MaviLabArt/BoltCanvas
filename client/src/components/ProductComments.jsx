@@ -101,7 +101,11 @@ export default function ProductComments({ productId }) {
   const maxLen = 600;
   const [input, setInput] = useState("");
   const relays = useMemo(() => settings?.nostrRelays, [settings]);
-  const storePubkey = useMemo(() => String(settings?.nostrShopPubkey || normalizePubkey(settings?.nostrNpub) || "").toLowerCase(), [settings]);
+  const storePubkey = useMemo(() => {
+    const fallback = String(normalizePubkey(settings?.nostrNpub) || "").toLowerCase();
+    const key = String(settings?.nostrShopPubkey || fallback || "").toLowerCase();
+    return /^[0-9a-f]{64}$/.test(key) ? key : "";
+  }, [settings]);
   const previewReadOnly = settings?.nostrCommentsReadOnly === true;
   const enabled = nostrCommentsEnabled(settings) && !!storePubkey;
   const commentsReady =
