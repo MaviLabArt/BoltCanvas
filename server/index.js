@@ -9,6 +9,7 @@ import { createProxyMiddleware } from "http-proxy-middleware";
 import crypto from "crypto";
 import sharp from "sharp";
 import { createBufferCache } from "./buffer-cache.js";
+import { createNip05ResolutionCache } from "./nip05-cache.js";
 import { verifyEvent } from "nostr-tools/pure";
 import { nip19 } from "nostr-tools";
 
@@ -61,6 +62,11 @@ import { createNtfySender } from "./ntfy.js";
 import { verifySvixSignature } from "./svix.js";
 
 let nostrTestimonialsCache = { key: "", expiresAt: 0, data: [] };
+const resolvePublicNostrPubkey = createNip05ResolutionCache(resolveToPubkey, {
+  ttlMs: 5 * 60 * 1000,
+  negativeTtlMs: 30 * 1000,
+  maxEntries: 128
+});
 
 const app = express();
 const adminLoginLimiter = createAdminLoginLimiter();
@@ -653,8 +659,11 @@ function buildDefaultMeta(req, settings) {
   const description = settings?.heroLine || settings?.contactNote || "A curated selection available for sats.";
   const logo = settings?.logoLight || settings?.logo || settings?.logoDark || "";
   const parsedLogo = parseDataUrl(logo);
+  const logoVersion = parsedLogo?.buffer?.length
+    ? crypto.createHash("sha256").update(logo).digest("hex").slice(0, 16)
+    : "";
   const image = parsedLogo?.buffer?.length
-    ? ensureAbsoluteFromReq(req, "/api/public/store-logo")
+    ? ensureAbsoluteFromReq(req, `/api/public/store-logo?v=${logoVersion}`)
     : (logo && !/^data:/i.test(logo) ? ensureAbsoluteFromReq(req, logo) : "");
   return {
     title: siteName,
@@ -1076,7 +1085,7 @@ app.get("/api/public-settings", async (req, res) => {
   // Signing new comment proofs still requires the server private key.
   if (!nostrShopPubkey && settings.nostrNpub) {
     try {
-      nostrShopPubkey = await resolveToPubkey(settings.nostrNpub) || "";
+      nostrShopPubkey = await resolvePublicNostrPubkey(settings.nostrNpub) || "";
     } catch {
       nostrShopPubkey = "";
     }

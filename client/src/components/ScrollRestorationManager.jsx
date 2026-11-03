@@ -298,6 +298,13 @@ export default function ScrollRestorationManager() {
         return;
       }
 
+      // The browser can reuse the "default" key for a fresh direct entry.
+      // Never apply a snapshot captured for a different route.
+      if (snapshot.pathname !== location.pathname) {
+        if (isInitialMount) initialRestorePendingRef.current = false;
+        return;
+      }
+
       lastScrollPositionRef.current = {
         key: location.key,
         pathname: location.pathname,
@@ -315,7 +322,10 @@ export default function ScrollRestorationManager() {
         if (isInitialMount) initialRestorePendingRef.current = false;
       };
 
-      const needsPageReady = READY_ROUTES.has(location.pathname);
+      const needsPageReady =
+        READY_ROUTES.has(location.pathname) ||
+        location.pathname.startsWith("/product/");
+      const hasBoundedPageReadyFallback = READY_ROUTES.has(location.pathname);
 
       let cancelled = false;
       let observer = null;
@@ -365,7 +375,7 @@ export default function ScrollRestorationManager() {
         });
       };
 
-      if (needsPageReady) {
+      if (needsPageReady && hasBoundedPageReadyFallback) {
         maxWaitTimer = window.setTimeout(() => {
           maxWaitTimer = 0;
           maxWaitExpired = true;

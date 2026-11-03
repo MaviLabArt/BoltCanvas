@@ -147,7 +147,7 @@ export default function ProductDetail() {
   const zoomLabel = `${zoomLevel.toFixed(1).replace(/\\.0$/, "")}x`;
 
   // Early return is fine now - all hooks above have already run this render
-  if (!p) return null;
+  if (!p || String(p.id) !== String(id)) return null;
   const handleBack = () => {
     if (canGoBack) {
       nav(-1);
@@ -184,7 +184,7 @@ export default function ProductDetail() {
   const mainImageAbsolute = hasImages ? mainImgsAbs[Math.max(0, Math.min(active, mainImgsAbs.length - 1))] || mainImgsAbs[0] : "";
 
   return (
-    <section className="product-detail-page pt-6">
+    <section className="product-detail-page pt-6" data-scroll-restoration-ready="true">
       <div className="mb-4">
         <button
           className="px-3 py-2 rounded-xl bg-slate-900 ring-1 ring-white/10"
