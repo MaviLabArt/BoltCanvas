@@ -4,7 +4,7 @@ import { fetchProfilesForEvents } from "../nostr/profiles.js";
 import { normalizeComments } from "../nostr/normalize.js";
 import { publishProductComment } from "../nostr/publish-comment.js";
 import { useSettings } from "../store/settings.jsx";
-import { isEventBlocked, makeBlockedSets, nostrCommentsEnabled } from "../nostr/config.js";
+import { isEventBlocked, makeBlockedSets, nostrCommentsEnabled, normalizePubkey } from "../nostr/config.js";
 import { useNostr } from "../providers/NostrProvider.jsx";
 
 function timeAgo(ts) {
@@ -99,7 +99,8 @@ export default function ProductComments({ productId }) {
   const maxLen = 600;
   const [input, setInput] = useState("");
   const relays = useMemo(() => settings?.nostrRelays, [settings]);
-  const storePubkey = useMemo(() => String(settings?.nostrShopPubkey || "").toLowerCase(), [settings]);
+  const storePubkey = useMemo(() => String(settings?.nostrShopPubkey || normalizePubkey(settings?.nostrNpub) || "").toLowerCase(), [settings]);
+  const previewReadOnly = settings?.nostrCommentsReadOnly === true;
   const enabled = nostrCommentsEnabled(settings) && !!storePubkey;
   const blocked = useMemo(() => makeBlockedSets(settings), [settings]);
   const cancelledRef = useRef(false);
@@ -181,6 +182,7 @@ export default function ProductComments({ productId }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (previewReadOnly) return;
     if (!hasSigner || !nostrPubkey) {
       alert("Connect a Nostr signer to post");
       return;
@@ -199,15 +201,17 @@ export default function ProductComments({ productId }) {
     }
   };
 
-  const canPost = hasSigner && !!nostrPubkey;
+  const canPost = !previewReadOnly && hasSigner && !!nostrPubkey;
 
   return (
     <section className="mt-10">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-lg font-semibold">Comment through NOSTR</h3>
-        {!canPost && (
+        <h3 className="text-lg font-semibold">Your Thoughts!</h3>
+        {previewReadOnly ? (
+          <span className="text-xs text-white/60">Preview · read only</span>
+        ) : !canPost ? (
           <span className="text-xs text-white/60">Login with Nostr to post</span>
-        )}
+        ) : null}
       </div>
 
       <div className="rounded-2xl bg-slate-950/80 ring-1 ring-white/10 p-3 sm:p-4 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
@@ -216,10 +220,17 @@ export default function ProductComments({ productId }) {
             value={input}
             onChange={(e) => setInput(e.target.value.slice(0, maxLen))}
             maxLength={maxLen}
-            placeholder={canPost ? "Share your thoughts… (text only, 600 chars max)" : "Connect Nostr in the header to leave a note."}
+            placeholder={
+              previewReadOnly
+                ? "Commenting is disabled in this preview."
+                : canPost
+                  ? "Share your thoughts… (text only, 600 chars max)"
+                  : "Connect Nostr in the header to leave a note."
+            }
             className="w-full rounded-xl bg-slate-900 ring-1 ring-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 resize-y focus:outline-hidden focus:ring-2 focus:ring-indigo-400"
             rows={3}
-            disabled={!canPost}
+            readOnly={previewReadOnly}
+            disabled={!previewReadOnly && !canPost}
           />
           <div className="flex items-center justify-end text-xs text-white/70">
             <span className="mr-3">{maxLen - input.length} chars left</span>
