@@ -325,7 +325,8 @@ export default function ScrollRestorationManager() {
       const isProductRoute = location.pathname.startsWith("/product/");
       const needsPageReady =
         READY_ROUTES.has(location.pathname) || isProductRoute;
-      const hasBoundedPageReadyFallback = READY_ROUTES.has(location.pathname);
+      const hasBoundedPageReadyFallback =
+        READY_ROUTES.has(location.pathname) || isProductRoute;
 
       let cancelled = false;
       let observer = null;
