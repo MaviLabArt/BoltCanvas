@@ -1622,3 +1622,15 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
 :root .cart-toast-panel .cart-toast-product-title {
   color: #F5F0E6 !important;
 }
+
+
+/* Enhanced Light/Dark: copper base for the three primary navigation controls. */
+[data-theme="enhanced-light"] .site-nav-copper-control:not(:hover),
+[data-theme="enhanced-dark"] .site-nav-copper-control:not(:hover) {
+  background-color: #B8734F !important;
+  color: #11110F !important;
+}
+[data-theme="enhanced-light"] .site-nav-copper-control:not(:hover) svg,
+[data-theme="enhanced-dark"] .site-nav-copper-control:not(:hover) svg {
+  color: #11110F !important;
+}
