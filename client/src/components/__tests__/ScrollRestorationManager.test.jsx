@@ -8,6 +8,7 @@ import ScrollRestorationManager from "../ScrollRestorationManager.jsx";
 let currentY = 0;
 let listingReady = true;
 let productCommentsReady = true;
+let productPageReady = true;
 
 function Listing() {
   return (
@@ -28,7 +29,7 @@ function Listing() {
 function Detail() {
   const navigate = useNavigate();
   return (
-    <main data-scroll-restoration-ready="true">
+    <main {...(productPageReady ? { "data-scroll-restoration-ready": "true" } : {})}>
       <button onClick={() => navigate(-1)}>Back</button>
       <section
         data-scroll-restoration-comments="true"
@@ -66,6 +67,7 @@ beforeEach(() => {
   currentY = 0;
   listingReady = true;
   productCommentsReady = true;
+  productPageReady = true;
   sessionStorage.clear();
 
   Object.defineProperty(window, "scrollY", {
@@ -111,6 +113,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
   listingReady = true;
+  productPageReady = true;
   window.requestAnimationFrame = originalRaf;
   window.cancelAnimationFrame = originalCaf;
   window.scrollTo = originalScrollTo;
@@ -387,5 +390,28 @@ describe("Scroll restoration edge cases", () => {
     });
 
     expect(window.scrollTo).toHaveBeenCalledWith(0, 1100);
+  });
+
+  it("uses a bounded fallback when a product page never signals readiness", async () => {
+    productPageReady = false;
+    vi.useFakeTimers();
+    sessionStorage.setItem(
+      "isolabellart:scroll:v1:product-entry",
+      JSON.stringify({ pathname: "/product/p1", scrollX: 0, scrollY: 900 })
+    );
+
+    render(
+      <MemoryRouter initialEntries={[{ pathname: "/product/p1", key: "product-entry" }]}>
+        <Harness />
+      </MemoryRouter>
+    );
+
+    expect(window.scrollTo).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 900);
   });
 });
