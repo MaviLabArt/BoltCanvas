@@ -322,9 +322,9 @@ export default function ScrollRestorationManager() {
         if (isInitialMount) initialRestorePendingRef.current = false;
       };
 
+      const isProductRoute = location.pathname.startsWith("/product/");
       const needsPageReady =
-        READY_ROUTES.has(location.pathname) ||
-        location.pathname.startsWith("/product/");
+        READY_ROUTES.has(location.pathname) || isProductRoute;
       const hasBoundedPageReadyFallback = READY_ROUTES.has(location.pathname);
 
       let cancelled = false;
@@ -346,16 +346,61 @@ export default function ScrollRestorationManager() {
         if (maxWaitTimer) window.clearTimeout(maxWaitTimer);
       };
 
-      const scheduleRestore = () => {
+      const restoreAfterMaxWait = () => {
+        maxWaitTimer = 0;
+        maxWaitExpired = true;
+        observer?.disconnect();
+        if (fallbackTimer) {
+          window.clearTimeout(fallbackTimer);
+          fallbackTimer = 0;
+        }
         if (cancelled || scheduled) return;
+        scheduled = true;
+        rememberRestoredPosition();
+      };
 
-        const ready =
+      const startMaxWait = () => {
+        if (maxWaitTimer) return;
+        maxWaitTimer = window.setTimeout(restoreAfterMaxWait, 5000);
+      };
+
+      const scheduleRestore = () => {
+        if (cancelled || scheduled) return true;
+
+        const pageReady =
           !needsPageReady ||
-          document.querySelector(
+          Boolean(document.querySelector(
             '[data-scroll-restoration-ready="true"]'
+          ));
+
+        if (!pageReady) return false;
+
+        if (isProductRoute) {
+          const commentsSection = document.querySelector(
+            '[data-scroll-restoration-comments="true"]'
           );
 
-        if (!ready) return;
+          if (commentsSection) {
+            const commentsTop =
+              (window.scrollY || 0) +
+              commentsSection.getBoundingClientRect().top;
+            const targetY = Math.max(0, Number(snapshot.scrollY) || 0);
+            const needsCommentsReady =
+              Number.isFinite(commentsTop) && targetY >= commentsTop;
+            const commentsReady =
+              commentsSection.getAttribute(
+                "data-scroll-restoration-comments-ready"
+              ) === "true";
+
+            if (needsCommentsReady && !commentsReady) {
+              // Do not restore into a shortened product page while its
+              // comments are still loading. If a relay stalls, fall back
+              // after a bounded wait instead of blocking navigation forever.
+              startMaxWait();
+              return false;
+            }
+          }
+        }
 
         scheduled = true;
         observer?.disconnect();
@@ -373,21 +418,11 @@ export default function ScrollRestorationManager() {
             if (!cancelled) rememberRestoredPosition();
           });
         });
+        return true;
       };
 
       if (needsPageReady && hasBoundedPageReadyFallback) {
-        maxWaitTimer = window.setTimeout(() => {
-          maxWaitTimer = 0;
-          maxWaitExpired = true;
-          observer?.disconnect();
-          if (fallbackTimer) {
-            window.clearTimeout(fallbackTimer);
-            fallbackTimer = 0;
-          }
-          if (cancelled || scheduled) return;
-          scheduled = true;
-          rememberRestoredPosition();
-        }, 5000);
+        startMaxWait();
       }
 
       if (needsPageReady && "MutationObserver" in window) {
@@ -397,19 +432,16 @@ export default function ScrollRestorationManager() {
           childList: true,
           subtree: true,
           attributes: true,
-          attributeFilter: ["data-scroll-restoration-ready"]
+          attributeFilter: [
+            "data-scroll-restoration-ready",
+            "data-scroll-restoration-comments-ready"
+          ]
         });
       } else if (needsPageReady) {
         const waitForReady = () => {
           if (cancelled) return;
 
-          if (
-            document.querySelector(
-              '[data-scroll-restoration-ready="true"]'
-            )
-          ) {
-            scheduleRestore();
-          } else if (!maxWaitExpired) {
+          if (!scheduleRestore() && !maxWaitExpired) {
             fallbackTimer = window.setTimeout(waitForReady, 60);
           }
         };
