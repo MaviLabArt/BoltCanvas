@@ -1242,6 +1242,7 @@ app.get("/api/public/store-logo", (req, res) => {
     res.set("Content-Type", parsed.mime || "image/png");
     res.set("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
     res.set("X-Content-Type-Options", "nosniff");
+    res.set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox");
     res.send(parsed.buffer);
   } catch (err) {
     res.status(500).json({ error: String(err?.message || err) });
