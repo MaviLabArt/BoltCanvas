@@ -92,9 +92,10 @@ function CommentCard({ comment }) {
 
 export default function ProductComments({ productId }) {
   const { pubkey: nostrPubkey, hasSigner } = useNostr();
-  const { settings } = useSettings();
+  const { settings, loading: settingsLoading } = useSettings();
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [commentsReadyFor, setCommentsReadyFor] = useState(null);
   const [coordinates, setCoordinates] = useState("");
   const maxLen = 600;
   const [input, setInput] = useState("");
@@ -102,6 +103,11 @@ export default function ProductComments({ productId }) {
   const storePubkey = useMemo(() => String(settings?.nostrShopPubkey || normalizePubkey(settings?.nostrNpub) || "").toLowerCase(), [settings]);
   const previewReadOnly = settings?.nostrCommentsReadOnly === true;
   const enabled = nostrCommentsEnabled(settings) && !!storePubkey;
+  const commentsReady =
+    !settingsLoading &&
+    (!enabled ||
+      (commentsReadyFor?.settings === settings &&
+        commentsReadyFor?.productId === productId));
   const blocked = useMemo(() => makeBlockedSets(settings), [settings]);
   const cancelledRef = useRef(false);
 
@@ -111,12 +117,14 @@ export default function ProductComments({ productId }) {
     cancelledRef.current = false;
 
     async function load() {
+      setCommentsReadyFor(null);
       if (!settings) {
         return;
       }
       if (!enabled) {
         setComments([]);
         setLoading(false);
+        setCommentsReadyFor({ settings, productId });
         return;
       }
       setLoading(true);
@@ -129,7 +137,10 @@ export default function ProductComments({ productId }) {
       } catch (err) {
         console.warn("[comments] load failed", err);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setCommentsReadyFor({ settings, productId });
+        }
       }
 
       unsubscribe = subscribeToProductComments({
@@ -178,7 +189,16 @@ export default function ProductComments({ productId }) {
     };
   }, [productId, relays, storePubkey, enabled, blocked, settings]);
 
-  if (!enabled) return null;
+  if (!enabled) {
+    return (
+      <section
+        className="mt-10"
+        hidden
+        data-scroll-restoration-comments="true"
+        data-scroll-restoration-comments-ready={commentsReady ? "true" : "false"}
+      />
+    );
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -204,7 +224,11 @@ export default function ProductComments({ productId }) {
   const canPost = !previewReadOnly && hasSigner && !!nostrPubkey;
 
   return (
-    <section className="mt-10">
+    <section
+      className="mt-10"
+      data-scroll-restoration-comments="true"
+      data-scroll-restoration-comments-ready={commentsReady ? "true" : "false"}
+    >
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-lg font-semibold">Your Thoughts!</h3>
         {previewReadOnly ? (
