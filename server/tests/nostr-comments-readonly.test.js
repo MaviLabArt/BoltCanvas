@@ -1,7 +1,8 @@
 import fs from "fs";
+import os from "os";
 import path from "path";
 import request from "supertest";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { generateSecretKey, getPublicKey } from "nostr-tools/pure";
 import { nip19 } from "nostr-tools";
 
@@ -11,17 +12,28 @@ const SHOP_KEY_ENV = [
   "SHOP_NOSTR_SECRET_HEX",
   "NOSTR_SECRET_HEX"
 ];
-const TEST_DB_PATH = path.join(process.cwd(), ".tmp-nostr-comments-readonly-" + process.pid + ".sqlite");
+const EMPTY_DOTENV_PATH = path.join(os.tmpdir(), "boltcanvas-nostr-comments-empty-" + process.pid + ".env");
+const previousDotenvConfigPath = process.env.DOTENV_CONFIG_PATH;
+fs.writeFileSync(EMPTY_DOTENV_PATH, "");
+process.env.DOTENV_CONFIG_PATH = EMPTY_DOTENV_PATH;
+let testDbCounter = 0;
+
+afterAll(() => {
+  if (previousDotenvConfigPath === undefined) delete process.env.DOTENV_CONFIG_PATH;
+  else process.env.DOTENV_CONFIG_PATH = previousDotenvConfigPath;
+  if (fs.existsSync(EMPTY_DOTENV_PATH)) fs.rmSync(EMPTY_DOTENV_PATH);
+});
 
 async function runWithIsolatedApp(serverSecretHex, assertion) {
   const previousKeys = Object.fromEntries(SHOP_KEY_ENV.map((name) => [name, process.env[name]]));
   const previousDbFile = process.env.DB_FILE;
-  for (const name of SHOP_KEY_ENV) delete process.env[name];
+  const testDbPath = path.join(os.tmpdir(), "boltcanvas-nostr-comments-" + process.pid + "-" + (++testDbCounter) + ".sqlite");
+
+  for (const name of SHOP_KEY_ENV) process.env[name] = "";
   if (serverSecretHex) process.env.SHOP_NOSTR_SECRET_HEX = serverSecretHex;
-  process.env.DB_FILE = TEST_DB_PATH;
+  process.env.DB_FILE = testDbPath;
 
   try {
-    if (fs.existsSync(TEST_DB_PATH)) fs.rmSync(TEST_DB_PATH);
     vi.resetModules();
     const { app } = await import("../index.js");
     await assertion(app);
@@ -32,7 +44,10 @@ async function runWithIsolatedApp(serverSecretHex, assertion) {
     }
     if (previousDbFile === undefined) delete process.env.DB_FILE;
     else process.env.DB_FILE = previousDbFile;
-    if (fs.existsSync(TEST_DB_PATH)) fs.rmSync(TEST_DB_PATH);
+    for (const suffix of ["", "-wal", "-shm"]) {
+      const file = testDbPath + suffix;
+      if (fs.existsSync(file)) fs.rmSync(file);
+    }
   }
 }
 
