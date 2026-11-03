@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import api from "../services/api.js";
 import { fetchProductComments, subscribeToProductComments } from "../nostr/read-comments.js";
 import { fetchProfilesForEvents } from "../nostr/profiles.js";
 import { normalizeComments } from "../nostr/normalize.js";
