@@ -194,7 +194,7 @@ export default function NostrTestimonials() {
           id="nostr-testimonials-heading"
           className="text-lg font-semibold"
         >
-          What people say on Nostr
+          They Loved It!
         </h2>
         <div className="flex shrink-0 items-center gap-3">
           <span className="text-xs text-white/60">
