@@ -7,6 +7,7 @@ import ScrollRestorationManager from "../ScrollRestorationManager.jsx";
 
 let currentY = 0;
 let listingReady = true;
+let productCommentsReady = true;
 
 function Listing() {
   return (
@@ -26,7 +27,15 @@ function Listing() {
 
 function Detail() {
   const navigate = useNavigate();
-  return <button onClick={() => navigate(-1)}>Back</button>;
+  return (
+    <main data-scroll-restoration-ready="true">
+      <button onClick={() => navigate(-1)}>Back</button>
+      <section
+        data-scroll-restoration-comments="true"
+        data-scroll-restoration-comments-ready={productCommentsReady ? "true" : "false"}
+      />
+    </main>
+  );
 }
 
 function RouteProbe() {
@@ -56,6 +65,7 @@ const originalMutationObserver = window.MutationObserver;
 beforeEach(() => {
   currentY = 0;
   listingReady = true;
+  productCommentsReady = true;
   sessionStorage.clear();
 
   Object.defineProperty(window, "scrollY", {
@@ -81,7 +91,13 @@ beforeEach(() => {
     .mockImplementation(function () {
       const isCard =
         this.getAttribute?.("data-product-card-id") === "p1";
-      const top = isCard ? (currentY === 0 ? 1140 : 240) : 0;
+      const isCommentsSection =
+        this.getAttribute?.("data-scroll-restoration-comments") === "true";
+      const top = isCard
+        ? (currentY === 0 ? 1140 : 240)
+        : isCommentsSection
+          ? 800 - currentY
+          : 0;
 
       return {
         x: 0, y: top, top, bottom: top + 200,
@@ -303,5 +319,73 @@ describe("Scroll restoration edge cases", () => {
     });
 
     expect(window.scrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for product comments before restoring a position inside that section", async () => {
+    productCommentsReady = false;
+    sessionStorage.setItem(
+      "isolabellart:scroll:v1:product-entry",
+      JSON.stringify({ pathname: "/product/p1", scrollX: 0, scrollY: 1100 })
+    );
+
+    render(
+      <MemoryRouter initialEntries={[{ pathname: "/product/p1", key: "product-entry" }]}>
+        <Harness />
+      </MemoryRouter>
+    );
+
+    expect(window.scrollTo).not.toHaveBeenCalled();
+
+    await act(async () => {
+      document.querySelector("[data-scroll-restoration-comments]").setAttribute(
+        "data-scroll-restoration-comments-ready",
+        "true"
+      );
+    });
+
+    await waitFor(() => {
+      expect(window.scrollTo).toHaveBeenCalledWith(0, 1100);
+    });
+  });
+
+  it("does not wait for comments when the saved position is above the section", async () => {
+    productCommentsReady = false;
+    sessionStorage.setItem(
+      "isolabellart:scroll:v1:product-entry",
+      JSON.stringify({ pathname: "/product/p1", scrollX: 0, scrollY: 400 })
+    );
+
+    render(
+      <MemoryRouter initialEntries={[{ pathname: "/product/p1", key: "product-entry" }]}>
+        <Harness />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(window.scrollTo).toHaveBeenCalledWith(0, 400);
+    });
+  });
+
+  it("uses a bounded fallback when product comments remain unavailable", async () => {
+    productCommentsReady = false;
+    vi.useFakeTimers();
+    sessionStorage.setItem(
+      "isolabellart:scroll:v1:product-entry",
+      JSON.stringify({ pathname: "/product/p1", scrollX: 0, scrollY: 1100 })
+    );
+
+    render(
+      <MemoryRouter initialEntries={[{ pathname: "/product/p1", key: "product-entry" }]}>
+        <Harness />
+      </MemoryRouter>
+    );
+
+    expect(window.scrollTo).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 1100);
   });
 });
