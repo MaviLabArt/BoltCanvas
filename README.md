@@ -6,7 +6,7 @@ BoltCanvas is a small, opinionated shop template:
 - A simple admin area where you manage products, texts and orders.
 - Bitcoin-only payments in **sats** (Blink, LND, BTCPay Server, Nostr Wallet Connect, or LNURL), with the option to let buyers pay **on-chain** while you still receive Lightning.
 - **on-chain** payments can either:
-  - settle via Lightning through **Boltz** (default),
+  - settle via Lightning through **SatsRouting** (default),
   - settle **natively on-chain** via **BTCPay Server**, or
   - go straight to your own wallet via an **XPUB** (addresses derived from your xpub and tracked via mempool.space / Esplora).
 - **extremely** lightweight.
@@ -94,7 +94,7 @@ All the Nostr parts are optional; if you don’t configure them, the shop still 
 - **On-chain**  
   - **BTCPay Server (`ONCHAIN_PROVIDER=btcpay`):**
   - **XPUB (`ONCHAIN_PROVIDER=xpub`):** derives fresh on-chain addresses from your XPUB and watches them via an mempool.space API.
-  - **Boltz (`ONCHAIN_PROVIDER=boltz`, default):** uses Boltz “Submarine swaps” to turn the Lightning invoice into a one-time Bitcoin address/amount. Boltz pays your Lightning invoice once the on-chain tx confirms, so you still receive Lightning.
+  - **SatsRouting (`ONCHAIN_PROVIDER=satsrouting`, default):** uses a BTC-to-BTC Submarine Swap to create a one-time Bitcoin address/amount. After the customer pays on-chain, SatsRouting settles the Lightning invoice created for your configured Lightning wallet, so the merchant still receives Lightning.
 
 From the buyer’s point of view: Lightning is instant; on-chain shows a mempool/confirmation progress and then the same receipt.
 
@@ -115,7 +115,7 @@ From the buyer’s point of view: Lightning is instant; on-chain shows a mempool
     - `btcpay.store.canmodifyinvoices`
     - `btcpay.store.canviewstoresettings`
     - also set the webhook payload url into: https://yourdomain.com/api/webhooks/btcpay
-- An **XPUB** from your Bitcoin wallet if you want pure on-chain payments without Boltz or BTCPay.
+- An **XPUB** from your Bitcoin wallet if you want pure on-chain payments without a swap provider or BTCPay.
 - Optional:
   - SMTP/IMAP for email updates.
   - Nostr keys if you want Nostr features.
@@ -133,13 +133,13 @@ The default example config (`server/.env.example`) is designed to be a good star
 - `LIGHTNING_PAYMENT_PROVIDER=blink`: set `BLINK_API_KEY`, optional `BLINK_BTC_WALLET_ID`.
 - `PAYMENT_PROVIDER=lnd`: set `LND_REST_URL`, `LND_MACAROON_HEX`, TLS settings.
 - `PAYMENT_PROVIDER=btcpay`: set `BTCPAY_URL`, `BTCPAY_API_KEY`, `BTCPAY_STORE_ID` (+ webhook secret for status updates).
-- `PAYMENT_PROVIDER=nwc` (Nostr Wallet Connect): set `NWC_URL=nostr+walletconnect://...` (include `relay=` and `secret=`). Optionally override relay with `NWC_RELAYS_CSV=wss://relay.example.com`. On-chain still works via Boltz, same as Blink/LND.
-- `PAYMENT_PROVIDER=lnurl` (LNURL-pay + LNURL-verify): set one of `LNURL_LIGHTNING_ADDRESS`, `LNURL_BECH32`, or `LNURL_PAY_URL`. Status is polled via LNURL-verify (no push); on-chain still works via Boltz.
+- `PAYMENT_PROVIDER=nwc` (Nostr Wallet Connect): set `NWC_URL=nostr+walletconnect://...` (include `relay=` and `secret=`). Optionally override relay with `NWC_RELAYS_CSV=wss://relay.example.com`. On-chain still works via SatsRouting, same as Blink/LND.
+- `PAYMENT_PROVIDER=lnurl` (LNURL-pay + LNURL-verify): set one of `LNURL_LIGHTNING_ADDRESS`, `LNURL_BECH32`, or `LNURL_PAY_URL`. Status is polled via LNURL-verify (no push); on-chain still works via SatsRouting.
 
 **On-chain provider options**
 
-- `ONCHAIN_PROVIDER=boltz`:  
-  Uses Boltz Submarine swaps. You receive Lightning to your LIGHTNING_PAYMENT_PROVIDER; buyers can still pay a normal on-chain address/amount. Frictionless and clean, shop owner just receive lightning and does not even realize on the backend an onchain tx was made.
+- `ONCHAIN_PROVIDER=satsrouting` (default):  
+  Uses SatsRouting BTC-to-BTC Submarine swaps. Buyers pay a normal on-chain address and amount; after the on-chain payment is accepted, SatsRouting settles a Lightning invoice issued by your configured `LIGHTNING_PAYMENT_PROVIDER`. The merchant continues to receive Lightning, with the checkout flow unchanged.
 - `ONCHAIN_PROVIDER=btcpay`:  
   Uses your BTCPay Server’s on-chain wallet. Set `BTCPAY_URL`, `BTCPAY_API_KEY`, `BTCPAY_STORE_ID`, and configure the webhook (see `.env.example`). Buyers see a BIP21 link; you receive coins directly into BTCPay.
 - `ONCHAIN_PROVIDER=xpub`:  
