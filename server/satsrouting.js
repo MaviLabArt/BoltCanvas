@@ -1,6 +1,7 @@
 // server/satsrouting.js
 // SatsRouting Submarine Swap adapter: customer BTC on-chain -> merchant Lightning.
 import fetch from "node-fetch";
+import * as bip39 from "bip39";
 import WebSocket from "ws";
 import dns from "dns";
 import http from "http";
@@ -8,6 +9,35 @@ import https from "https";
 import { deriveRefundKey } from "./boltz.js";
 
 export { deriveRefundKey };
+
+/**
+ * Submarine swaps need a recoverable refund key. Never create a random key
+ * that cannot be reconstructed after the server loses process memory.
+ * Keep the old Boltz variable as a migration fallback for existing stores.
+ */
+export function resolveSatsRoutingRescueMnemonic({
+  satsroutingMnemonic = process.env.SATSROUTING_RESCUE_MNEMONIC,
+  legacyBoltzMnemonic = process.env.BOLTZ_RESCUE_MNEMONIC
+} = {}) {
+  const mnemonic = String(satsroutingMnemonic || legacyBoltzMnemonic || "").trim();
+  if (!mnemonic) {
+    throw new Error(
+      "Set SATSROUTING_RESCUE_MNEMONIC (or the existing BOLTZ_RESCUE_MNEMONIC) to a valid BIP39 recovery phrase before accepting on-chain Submarine swaps"
+    );
+  }
+  if (!bip39.validateMnemonic(mnemonic)) {
+    throw new Error("SatsRouting rescue phrase is not a valid BIP39 mnemonic");
+  }
+  return mnemonic;
+}
+
+/** A Submarine lockup that reached chain needs an active user refund on expiry. */
+export function hasSubmarineLockupTransaction(swap) {
+  return Boolean(
+    String(swap?.transaction?.id || "").trim() ||
+    String(swap?.transaction?.hex || "").trim()
+  );
+}
 
 export const SATSROUTING_REST_URL = (
   process.env.SATSROUTING_REST_URL || "https://api.satsrouting.exchange"
