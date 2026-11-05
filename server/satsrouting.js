@@ -236,7 +236,7 @@ export async function createSubmarineSwap({ invoice, webhookUrl, refundKey, pair
   if (!invoice) throw new Error("invoice is required for SatsRouting swap");
   if (!pairHash) throw new Error("SatsRouting pair hash is required; refresh the live pair limits");
 
-  const keys = refundKey || deriveRefundKey(0, { mnemonic: "" });
+  const keys = assertRecoverableRefundKey(refundKey);
   const body = {
     invoice,
     from: "BTC",
@@ -302,7 +302,31 @@ export function buildBip21({ address, amountSats, label } = {}) {
   return "bitcoin:" + addr + (params.length ? "?" + params.join("&") : "");
 }
 
-/** WebSocket updates with a six-second REST polling fallback. */
+/** Require a deterministic refund key that can be restored from the rescue mnemonic and index. */
+export function assertRecoverableRefundKey(refundKey) {
+  const publicKey = String(refundKey?.refundPublicKey || "").trim();
+  const rescueIndex = refundKey?.rescueIndex;
+  if (!publicKey || !Number.isSafeInteger(rescueIndex) || rescueIndex < 0) {
+    throw new Error(
+      "A recoverable SatsRouting refundKey with refundPublicKey and a non-negative rescueIndex is required"
+    );
+  }
+  return refundKey;
+}
+
+/** Dispatch one swap update without allowing callback failures to become unhandled rejections. */
+export function dispatchSwapStatusUpdate(onUpdate, update) {
+  let result;
+  try {
+    result = onUpdate?.(update);
+  } catch {
+    return Promise.resolve();
+  }
+  return Promise.resolve(result).catch((error) => {
+    console.warn("[satsrouting] status update failed:", error?.message || error);
+  });
+}
+
 /** Subscribe to WebSocket updates and retain REST polling as a fallback. */
 export function subscribeSwapStatus({ swapId, onUpdate } = {}) {
   if (!swapId) throw new Error("swapId is required for SatsRouting subscription");
@@ -324,7 +348,7 @@ export function subscribeSwapStatus({ swapId, onUpdate } = {}) {
     if (!swap) return;
     const rawStatus = swap.status || "";
     const mappedStatus = mapSatsRoutingStatus(rawStatus);
-    try { onUpdate?.({ swap, rawStatus, mappedStatus }); } catch {}
+    void dispatchSwapStatusUpdate(onUpdate, { swap, rawStatus, mappedStatus });
     if (["PAID", "EXPIRED", "FAILED"].includes(mappedStatus)) unsubscribe();
   };
 
