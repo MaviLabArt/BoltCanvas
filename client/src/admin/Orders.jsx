@@ -326,7 +326,7 @@ export default function Orders() {
             {o.paymentMethod === "onchain" && o.onchainProvider !== "xpub" && (o.status === "PENDING" || o.status === "FAILED") && (o.onchainSwapId || o.onchainId || o.boltzSwapId) && (
               <div className="mt-2 rounded-2xl bg-slate-800/60 ring-1 ring-white/10 px-3 py-3 text-sm">
                 {(() => {
-                  const ref = String(o.onchainProvider || "").toLowerCase() === "boltz"
+                  const ref = ["boltz", "satsrouting"].includes(String(o.onchainProvider || "").toLowerCase())
                     ? (o.onchainSwapId || o.boltzSwapId)
                     : (o.onchainId || o.onchainSwapId);
                   return (
