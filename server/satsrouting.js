@@ -47,6 +47,10 @@ function shouldRetryIpv4(error) {
 }
 
 async function fetchWithFallback(url, init = {}) {
+  // Mirror the former Boltz adapter when IPv4 is explicitly forced.
+  if (ipv4Lookup) {
+    init = { ...init, lookup: ipv4Lookup, agent: init.agent || ipv4Agent?.(url) };
+  }
   const attempt = async (useIpv4) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new Error("timeout")), 10000);
