@@ -1735,6 +1735,7 @@ export const Orders = {
   remove(id) {
     db.prepare(`DELETE FROM orders WHERE id=?`).run(id);
   },
+  /** Remove aged pending orders while retaining swap-backed orders for their extended refund window. */
   prunePendingOlderThan(ms, swapMs) {
     const cutoffRegular = now() - ms;
     const cutoffSwap = now() - (swapMs ?? ms);
