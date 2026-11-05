@@ -22,15 +22,12 @@ import { makeId, now } from "./utils.js";
 import {
   ensureBtcWalletId,
   createInvoiceSats,
-  createOnchainSwapViaBoltz,
   createOnchainSwapViaSatsRouting,
   createOnchainPaymentForOrder,
   invoiceStatus,
   subscribeInvoiceStatus,
   subscribeBoltzSwapStatus,
   subscribeSatsRoutingSwapStatus,
-  boltzSwapStatus,
-  satsroutingSwapStatus,
   getOnchainStatus,
   startPaymentWatcher,
   PAYMENT_PROVIDER,
@@ -2364,7 +2361,7 @@ app.post("/api/zaps/create-invoice", async (req, res) => {
 // ---------------------------------------------------------------------
 // Boltz helpers (shared by status + SSE)
 // ---------------------------------------------------------------------
-const BOLTZ_FINAL_STATUSES = new Set(["PAID", "EXPIRED", "FAILED"]);
+const SWAP_FINAL_STATUSES = new Set(["PAID", "EXPIRED", "FAILED"]);
 
 async function handleBoltzStatusSideEffects({ swapId, mappedStatus, rawStatus }) {
   if (!swapId) return null;
@@ -2709,11 +2706,15 @@ async function handleOnchainStream(req, res) {
     };
     send(payload);
 
-    if (orderProvider === "boltz") {
-      await handleBoltzStatusSideEffects({ swapId, mappedStatus, rawStatus });
+    if (orderProvider === "boltz" || orderProvider === "satsrouting") {
+      if (orderProvider === "boltz") {
+        await handleBoltzStatusSideEffects({ swapId, mappedStatus, rawStatus });
+      } else {
+        await handleSatsRoutingStatusSideEffects({ swapId, mappedStatus, rawStatus });
+      }
       const latest = Orders.bySwapId(swapId) || order;
       const alreadyPaid = String(latest.status || "").toUpperCase() === "PAID";
-      if (BOLTZ_FINAL_STATUSES.has(mappedStatus) || alreadyPaid) {
+      if (SWAP_FINAL_STATUSES.has(mappedStatus) || alreadyPaid) {
         if (alreadyPaid && mappedStatus !== "PAID") {
           send({ ...payload, status: "PAID", rawStatus: rawStatus || "invoice.paid" });
         }
@@ -3235,7 +3236,7 @@ if (!TEST_MODE) (function startPendingInvoiceSweeper() {
                   mappedStatus,
                   rawStatus
                 });
-                if (BOLTZ_FINAL_STATUSES.has(mappedStatus)) {
+                if (SWAP_FINAL_STATUSES.has(mappedStatus)) {
                   continue;
                 }
               } else if (provider === "satsrouting") {
@@ -3244,7 +3245,7 @@ if (!TEST_MODE) (function startPendingInvoiceSweeper() {
                   mappedStatus,
                   rawStatus
                 });
-                if (BOLTZ_FINAL_STATUSES.has(mappedStatus)) continue;
+                if (SWAP_FINAL_STATUSES.has(mappedStatus)) continue;
               } else {
                 if (mappedStatus === "CONFIRMED") {
                   const updated =
