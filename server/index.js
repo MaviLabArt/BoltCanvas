@@ -2406,7 +2406,7 @@ async function handleSatsRoutingStatusSideEffects({
 }) {
   if (!swapId) return null;
 
-  let current = Orders.bySwapId(swapId);
+  let current = Orders.bySwapId(swapId, "satsrouting");
   if (!satsrouting.isSatsRoutingOrder(current)) return null;
 
   let nextMappedStatus = String(mappedStatus || "").toUpperCase();
@@ -2425,7 +2425,7 @@ async function handleSatsRoutingStatusSideEffects({
     }
 
     // Re-read after the network await: the order may have been paid meanwhile.
-    current = Orders.bySwapId(swapId);
+    current = Orders.bySwapId(swapId, "satsrouting");
     if (!satsrouting.isSatsRoutingOrder(current)) return null;
 
     if (lookupFailed) {
@@ -2467,7 +2467,7 @@ async function handleSatsRoutingStatusSideEffects({
   }
 
   // Re-read before all status transitions; terminal orders must not regress.
-  current = Orders.bySwapId(swapId);
+  current = Orders.bySwapId(swapId, "satsrouting");
   if (!satsrouting.isSatsRoutingOrder(current)) return null;
   const orderStatus = String(current.status || "").toUpperCase();
   const alreadyCompleted = ["PAID", "PREPARATION", "SHIPPED"].includes(orderStatus);
@@ -2479,7 +2479,7 @@ async function handleSatsRoutingStatusSideEffects({
   if (!updated) return null;
 
   if (nextMappedStatus === "PAID") {
-    const order = Orders.markPaidBySwapId(swapId);
+    const order = Orders.markPaidBySwapId(swapId, "satsrouting");
     if (order?.__justPaid && order?.items?.length) {
       for (const it of order.items) Products.consumeStock(it.productId, it.qty || 1);
     }
