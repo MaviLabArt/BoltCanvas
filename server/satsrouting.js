@@ -107,17 +107,26 @@ export function canRetryWithIpv4(init = {}, error) {
   return ["ENETUNREACH", "EAI_AGAIN", "ECONNREFUSED"].includes(code);
 }
 
-/** Perform a SatsRouting request, using IPv4 only for safe network retries. */
-async function fetchWithFallback(url, init = {}) {
+/**
+ * Perform a SatsRouting request and consume its response before releasing the timeout.
+ * The injectable reader and transport keep timeout behavior testable without network access.
+ */
+export async function fetchWithFallback(
+  url,
+  init = {},
+  readResponse = (response) => response,
+  { fetchImpl = fetch, timeoutMs = 10000 } = {}
+) {
   const attempt = async (useIpv4) => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(new Error("timeout")), 10000);
+    const timer = setTimeout(() => controller.abort(new Error("timeout")), timeoutMs);
     try {
-      return await fetch(url, {
+      const response = await fetchImpl(url, {
         ...init,
         signal: controller.signal,
         agent: useIpv4 ? ipv4Agent(url) : init.agent
       });
+      return await readResponse(response);
     } finally {
       clearTimeout(timer);
     }
@@ -138,19 +147,27 @@ function requireRestUrl() {
   if (!SATSROUTING_REST_URL) throw new Error("SATSROUTING_REST_URL is not configured");
 }
 
-/** Fetch and validate one JSON response from the SatsRouting API. */
+/** Fetch, fully read, and validate one JSON response within the request timeout. */
 async function requestJson(url, init, context) {
   let response;
   try {
-    response = await fetchWithFallback(url, init);
+    response = await fetchWithFallback(url, init, async (res) => ({
+      ok: res?.ok,
+      status: res?.status,
+      body: await res.text()
+    }));
   } catch (error) {
     throw new Error("SatsRouting request failed: " + sanitize(describeError(error)));
   }
   if (!response?.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error("SatsRouting HTTP " + response.status + " " + sanitize(body));
+    throw new Error("SatsRouting HTTP " + response.status + " " + sanitize(response.body));
   }
-  const data = await response.json().catch(() => null);
+  let data = null;
+  try {
+    data = JSON.parse(response.body);
+  } catch {
+    // Preserve the existing invalid-payload error for malformed JSON.
+  }
   if (!data || typeof data !== "object") throw new Error("Invalid SatsRouting " + context + " payload");
   return data;
 }
