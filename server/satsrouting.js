@@ -161,7 +161,12 @@ async function requestJson(url, init, context) {
  */
 /** Parse the provider's live BTC-to-BTC pair and its dynamic limits. */
 export function resolveBtcSubmarinePair(payload) {
-  const pair = payload?.BTC?.BTC || payload?.pairs?.BTC?.BTC || payload?.submarine?.BTC?.BTC;
+  const pair =
+    payload?.BTC?.BTC ||
+    payload?.pairs?.BTC?.BTC ||
+    payload?.pairs?.BTC ||
+    payload?.submarine?.BTC?.BTC ||
+    payload?.submarine?.BTC;
   const hash = String(pair?.hash || "").trim();
   const minimal = Number(pair?.limits?.minimal);
   const minimalBatched = Number(pair?.limits?.minimalBatched);
