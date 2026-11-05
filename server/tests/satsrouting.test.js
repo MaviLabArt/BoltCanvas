@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   assertSubmarineAmount,
+  assertRecoverableRefundKey,
+  dispatchSwapStatusUpdate,
   buildBip21,
   canRetryWithIpv4,
   isSatsRoutingOrder,
@@ -117,6 +119,54 @@ describe("SatsRouting Submarine swap adapter", () => {
     expect(isSatsRoutingOrder({ onchainProvider: "boltz" })).toBe(false);
     expect(isSatsRoutingOrder({})).toBe(false);
     expect(isSatsRoutingOrder(null)).toBe(false);
+  });
+
+  it("requires recoverable refund key material before creating a swap", () => {
+    expect(() => assertRecoverableRefundKey()).toThrow(/recoverable SatsRouting refundKey/);
+    expect(() => assertRecoverableRefundKey({
+      refundPublicKey: "02".repeat(33),
+      rescueIndex: null
+    })).toThrow(/recoverable SatsRouting refundKey/);
+    expect(() => assertRecoverableRefundKey({
+      refundPublicKey: "02".repeat(33),
+      rescueIndex: -1
+    })).toThrow(/recoverable SatsRouting refundKey/);
+
+    const refundKey = {
+      refundPublicKey: "02".repeat(33),
+      rescueIndex: 0
+    };
+    expect(assertRecoverableRefundKey(refundKey)).toBe(refundKey);
+  });
+
+  it("contains rejected asynchronous status callbacks", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await dispatchSwapStatusUpdate(
+        () => Promise.reject(new Error("database write failed")),
+        { mappedStatus: "PAID" }
+      );
+      expect(warning).toHaveBeenCalledWith(
+        "[satsrouting] status update failed:",
+        "database write failed"
+      );
+    } finally {
+      warning.mockRestore();
+    }
+  });
+
+  it("contains synchronous status callback exceptions", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(
+        dispatchSwapStatusUpdate(() => {
+          throw new Error("synchronous callback failure");
+        }, {})
+      ).resolves.toBeUndefined();
+      expect(warning).not.toHaveBeenCalled();
+    } finally {
+      warning.mockRestore();
+    }
   });
 
   it("detects expired swaps whose on-chain lockup still needs refunding", () => {
