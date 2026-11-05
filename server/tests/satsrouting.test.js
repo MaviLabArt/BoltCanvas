@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   assertSubmarineAmount,
   buildBip21,
+  hasSubmarineLockupTransaction,
   mapSatsRoutingStatus,
-  resolveBtcSubmarinePair
+  resolveBtcSubmarinePair,
+  resolveSatsRoutingRescueMnemonic
 } from "../satsrouting.js";
 
 describe("SatsRouting Submarine swap adapter", () => {
@@ -67,5 +69,31 @@ describe("SatsRouting Submarine swap adapter", () => {
       amountSats: 125000,
       label: "Art order 42"
     })).toBe("bitcoin:bc1qexample?amount=0.00125&label=Art%20order%2042");
+  });
+
+  it("requires a valid recoverable BIP39 rescue phrase", () => {
+    const validMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+    expect(resolveSatsRoutingRescueMnemonic({
+      satsroutingMnemonic: validMnemonic,
+      legacyBoltzMnemonic: ""
+    })).toBe(validMnemonic);
+    expect(resolveSatsRoutingRescueMnemonic({
+      satsroutingMnemonic: "",
+      legacyBoltzMnemonic: validMnemonic
+    })).toBe(validMnemonic);
+    expect(() => resolveSatsRoutingRescueMnemonic({
+      satsroutingMnemonic: "",
+      legacyBoltzMnemonic: ""
+    })).toThrow(/SATSROUTING_RESCUE_MNEMONIC/);
+    expect(() => resolveSatsRoutingRescueMnemonic({
+      satsroutingMnemonic: "word1 word2 word3",
+      legacyBoltzMnemonic: ""
+    })).toThrow(/valid BIP39/);
+  });
+
+  it("detects expired swaps whose on-chain lockup still needs refunding", () => {
+    expect(hasSubmarineLockupTransaction({ transaction: { id: "txid" } })).toBe(true);
+    expect(hasSubmarineLockupTransaction({ transaction: { hex: "020000..." } })).toBe(true);
+    expect(hasSubmarineLockupTransaction({ status: "swap.expired" })).toBe(false);
   });
 });
