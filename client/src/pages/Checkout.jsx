@@ -773,7 +773,7 @@ function OnchainModal({ onClose, status, live, onchainAddress, onchainAmountSats
         </div>
         {feeSats > 0 && (
           <div className="mt-1 text-xs text-white/60">
-            Includes Boltz (submarine swap) fee: <span className="font-semibold text-white/80">{formatSats(feeSats)} sats</span>
+            Includes SatsRouting (submarine swap) fee: <span className="font-semibold text-white/80">{formatSats(feeSats)} sats</span>
           </div>
         )}
         <div className="mt-4 grid place-items-center">
