@@ -112,6 +112,7 @@ describe("SatsRouting Submarine swap adapter", () => {
 
   it("applies webhook lookup only to SatsRouting orders", () => {
     expect(isSatsRoutingOrder({ onchainProvider: "satsrouting" })).toBe(true);
+    expect(isSatsRoutingOrder({ onchainProvider: " SATSROUTING " })).toBe(true);
     expect(isSatsRoutingOrder({ onchainProvider: "SAT SROUTING" })).toBe(false);
     expect(isSatsRoutingOrder({ onchainProvider: "boltz" })).toBe(false);
     expect(isSatsRoutingOrder({})).toBe(false);
