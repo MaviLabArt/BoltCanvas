@@ -46,14 +46,13 @@ export const SATSROUTING_WS_URL =
   process.env.SATSROUTING_WS_URL || "wss://api.satsrouting.exchange/v2/ws";
 const SATSROUTING_FORCE_IPV4 = String(process.env.SATSROUTING_FORCE_IPV4 || "0") === "1";
 
-const ipv4Lookup = SATSROUTING_FORCE_IPV4
-  ? (hostname, opts, cb) => dns.lookup(hostname, { ...opts, family: 4, all: false }, cb)
-  : undefined;
-const ipv4Agent = SATSROUTING_FORCE_IPV4
-  ? (url) => url.startsWith("https:")
-    ? new https.Agent({ family: 4, lookup: ipv4Lookup })
-    : new http.Agent({ family: 4, lookup: ipv4Lookup })
-  : undefined;
+// Keep an IPv4-only resolver available for both explicit IPv4 mode and
+// automatic retry after a transient IPv6/network routing failure.
+const ipv4Lookup = (hostname, opts, cb) =>
+  dns.lookup(hostname, { ...opts, family: 4, all: false }, cb);
+const ipv4Agent = (url) => url.startsWith("https:")
+  ? new https.Agent({ family: 4, lookup: ipv4Lookup })
+  : new http.Agent({ family: 4, lookup: ipv4Lookup });
 
 function describeError(error) {
   if (!error) return "unknown error";
@@ -77,10 +76,6 @@ function shouldRetryIpv4(error) {
 }
 
 async function fetchWithFallback(url, init = {}) {
-  // Mirror the former Boltz adapter when IPv4 is explicitly forced.
-  if (ipv4Lookup) {
-    init = { ...init, lookup: ipv4Lookup, agent: init.agent || ipv4Agent?.(url) };
-  }
   const attempt = async (useIpv4) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(new Error("timeout")), 10000);
@@ -88,20 +83,19 @@ async function fetchWithFallback(url, init = {}) {
       return await fetch(url, {
         ...init,
         signal: controller.signal,
-        agent: useIpv4 ? (init.agent || ipv4Agent?.(url)) : init.agent,
-        lookup: useIpv4 ? ipv4Lookup : init.lookup
+        agent: useIpv4 ? ipv4Agent(url) : init.agent
       });
     } finally {
       clearTimeout(timer);
     }
   };
+
   try {
-    return await attempt(false);
+    return await attempt(SATSROUTING_FORCE_IPV4);
   } catch (error) {
-    // Match the previous Boltz adapter: retry network errors over IPv4 unless
-    // IPv4 was explicitly forced for the first attempt already.
-    const alreadyForced = !!ipv4Lookup;
-    if (!alreadyForced && shouldRetryIpv4(error)) return await attempt(true);
+    if (!SATSROUTING_FORCE_IPV4 && shouldRetryIpv4(error)) {
+      return await attempt(true);
+    }
     throw error;
   }
 }
