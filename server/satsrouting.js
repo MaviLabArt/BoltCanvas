@@ -64,7 +64,10 @@ async function fetchWithFallback(url, init = {}) {
   try {
     return await attempt(false);
   } catch (error) {
-    if (SATSROUTING_FORCE_IPV4 && shouldRetryIpv4(error)) return await attempt(true);
+    // Match the previous Boltz adapter: retry network errors over IPv4 unless
+    // IPv4 was explicitly forced for the first attempt already.
+    const alreadyForced = !!ipv4Lookup;
+    if (!alreadyForced && shouldRetryIpv4(error)) return await attempt(true);
     throw error;
   }
 }
