@@ -1503,6 +1503,7 @@ export const Orders = {
     const o = db.prepare(`SELECT * FROM orders WHERE paymentHash=?`).get(paymentHash);
     return o ? normalizeOrderRow(o) : null;
   },
+  /** Find an order by any persisted on-chain or swap identifier; callers must still verify its provider. */
   bySwapId(swapId) {
     if (!swapId) return null;
     const o = db
@@ -1652,6 +1653,7 @@ export const Orders = {
     db.prepare(`UPDATE orders SET onchainId=? WHERE id=?`).run(swapId || "", id);
     return this.get(id);
   },
+  /** Persist the latest observed on-chain status and optional chain totals for an order. */
   updateOnchainStatus(id, status, extras = {}) {
     const current = this.get(id);
     if (!current) return null;
@@ -1685,6 +1687,7 @@ export const Orders = {
     if (next) next.__justPaid = !alreadyPaid;
     return next;
   },
+  /** Mark a swap-backed order paid once, returning a one-time stock-consumption marker. */
   markPaidBySwapId(boltzSwapId) {
     const current = this.bySwapId(boltzSwapId);
     if (!current) return null;
