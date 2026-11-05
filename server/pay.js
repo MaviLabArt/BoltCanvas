@@ -283,6 +283,19 @@ export async function createOnchainSwapViaSatsRouting(args = {}) {
   const pair = await satsrouting.getBtcSubmarinePair();
   satsrouting.assertSubmarineAmount(amount, pair);
 
+  // Submarine swaps can require an active refund transaction. Use a deterministic
+  // key that can be restored from the backed-up mnemonic and stored rescue index.
+  // Existing Boltz installations may keep using their previous mnemonic during migration.
+  const rescueMnemonic = satsrouting.resolveSatsRoutingRescueMnemonic();
+  const rescuePath =
+    process.env.SATSROUTING_RESCUE_PATH || process.env.BOLTZ_RESCUE_PATH || undefined;
+  const rescueIndex = Settings.nextRescueIndex();
+  const refundKey = deriveRefundKey(rescueIndex, {
+    mnemonic: rescueMnemonic,
+    pathBase: rescuePath
+  });
+
+  // Do not issue a merchant Lightning invoice until the refund key is ready.
   const invoice = await createInvoiceSats({
     url: args.url,
     apiKey: args.apiKey,
@@ -292,29 +305,6 @@ export async function createOnchainSwapViaSatsRouting(args = {}) {
     memo: args.memo,
     expiresIn: args.expiresIn
   });
-
-  const rescueMnemonic = String(
-    process.env.SATSROUTING_RESCUE_MNEMONIC || process.env.BOLTZ_RESCUE_MNEMONIC || ""
-  ).trim();
-  const rescuePath =
-    process.env.SATSROUTING_RESCUE_PATH || process.env.BOLTZ_RESCUE_PATH || undefined;
-  let rescueIndex = null;
-  let refundKey = null;
-
-  if (rescueMnemonic) {
-    try {
-      // Keep the existing database sequence key so rescue derivation never reuses an old index.
-      rescueIndex = Settings.nextRescueIndex();
-      refundKey = deriveRefundKey(rescueIndex, {
-        mnemonic: rescueMnemonic,
-        pathBase: rescuePath
-      });
-    } catch {
-      rescueIndex = null;
-      refundKey = null;
-    }
-  }
-  if (!refundKey) refundKey = deriveRefundKey(0, { mnemonic: "" });
 
   const { swap, refundPublicKey, rescueIndex: derivedIndex } = await satsrouting.createSubmarineSwap({
     invoice: invoice.paymentRequest,
