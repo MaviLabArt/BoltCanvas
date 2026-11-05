@@ -140,6 +140,7 @@ The default example config (`server/.env.example`) is designed to be a good star
 
 - `ONCHAIN_PROVIDER=satsrouting` (default):  
   Uses SatsRouting BTC-to-BTC Submarine swaps. Buyers pay a normal on-chain address and amount; after the on-chain payment is accepted, SatsRouting settles a Lightning invoice issued by your configured `LIGHTNING_PAYMENT_PROVIDER`. The merchant continues to receive Lightning, with the checkout flow unchanged.
+  A valid `SATSROUTING_RESCUE_MNEMONIC` (BIP39) is required so failed Submarine swaps can be refunded. Back it up securely. Existing installations may temporarily reuse their previous `BOLTZ_RESCUE_MNEMONIC` during migration.
 - `ONCHAIN_PROVIDER=btcpay`:  
   Uses your BTCPay Server’s on-chain wallet. Set `BTCPAY_URL`, `BTCPAY_API_KEY`, `BTCPAY_STORE_ID`, and configure the webhook (see `.env.example`). Buyers see a BIP21 link; you receive coins directly into BTCPay.
 - `ONCHAIN_PROVIDER=xpub`:  
