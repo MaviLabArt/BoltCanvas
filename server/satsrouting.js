@@ -42,8 +42,24 @@ export function hasSubmarineLockupTransaction(swap) {
 export const SATSROUTING_REST_URL = (
   process.env.SATSROUTING_REST_URL || "https://api.satsrouting.exchange"
 ).replace(/\/+$/, "");
+/**
+ * Identify persisted orders that belong to SatsRouting, not a legacy swap
+ * provider whose identifiers may share the generic on-chain lookup columns.
+ */
+export function isSatsRoutingOrder(order) {
+  return String(order?.onchainProvider || "").trim().toLowerCase() === "satsrouting";
+}
+
 export const SATSROUTING_WS_URL =
   process.env.SATSROUTING_WS_URL || "wss://api.satsrouting.exchange/v2/ws";
+
+/** Return only a generated webhook secret; empty or example values keep callbacks disabled. */
+export function resolveSatsRoutingWebhookSecret(secret = process.env.SATSROUTING_WEBHOOK_SECRET) {
+  const value = String(secret || "").trim();
+  if (value.length < 32 || value.toLowerCase() === "replace-with-long-random-string") return "";
+  return value;
+}
+
 const SATSROUTING_FORCE_IPV4 = String(process.env.SATSROUTING_FORCE_IPV4 || "0") === "1";
 
 // Keep an IPv4-only resolver available for both explicit IPv4 mode and
@@ -70,11 +86,26 @@ function sanitize(message) {
   return String(message || "").replace(/\b[0-9a-fA-F]{20,}\b/g, "[redacted]");
 }
 
+/** Identify network errors for which a second address-family attempt may help. */
 function shouldRetryIpv4(error) {
   const code = String(error?.code || error?.errno || "").toUpperCase();
   return ["ETIMEDOUT", "ENETUNREACH", "EAI_AGAIN", "ECONNREFUSED", "ECONNRESET"].includes(code);
 }
 
+/**
+ * Decide whether an IPv4 retry is safe for this request.
+ * GET requests are repeatable; other methods retry only when connection
+ * errors establish that the request could not have reached the server.
+ */
+export function canRetryWithIpv4(init = {}, error) {
+  if (!shouldRetryIpv4(error)) return false;
+  const method = String(init.method || "GET").toUpperCase();
+  if (method === "GET") return true;
+  const code = String(error?.code || error?.errno || "").toUpperCase();
+  return ["ENETUNREACH", "EAI_AGAIN", "ECONNREFUSED"].includes(code);
+}
+
+/** Perform a SatsRouting request, using IPv4 only for safe network retries. */
 async function fetchWithFallback(url, init = {}) {
   const attempt = async (useIpv4) => {
     const controller = new AbortController();
@@ -93,17 +124,19 @@ async function fetchWithFallback(url, init = {}) {
   try {
     return await attempt(SATSROUTING_FORCE_IPV4);
   } catch (error) {
-    if (!SATSROUTING_FORCE_IPV4 && shouldRetryIpv4(error)) {
+    if (!SATSROUTING_FORCE_IPV4 && canRetryWithIpv4(init, error)) {
       return await attempt(true);
     }
     throw error;
   }
 }
 
+/** Fail early when the SatsRouting API base URL is unavailable. */
 function requireRestUrl() {
   if (!SATSROUTING_REST_URL) throw new Error("SATSROUTING_REST_URL is not configured");
 }
 
+/** Fetch and validate one JSON response from the SatsRouting API. */
 async function requestJson(url, init, context) {
   let response;
   try {
@@ -124,6 +157,7 @@ async function requestJson(url, init, context) {
  * Resolve the live BTC -> BTC submarine pair.
  * Pair limits and fee hashes are dynamic and must never be hard-coded.
  */
+/** Parse the provider's live BTC-to-BTC pair and its dynamic limits. */
 export function resolveBtcSubmarinePair(payload) {
   const pair = payload?.BTC?.BTC || payload?.pairs?.BTC?.BTC || payload?.submarine?.BTC?.BTC;
   const hash = String(pair?.hash || "").trim();
@@ -136,6 +170,7 @@ export function resolveBtcSubmarinePair(payload) {
   return { ...pair, hash, limits: { ...pair.limits, minimal, minimalBatched, maximal } };
 }
 
+/** Retrieve the current BTC-to-BTC Submarine pair from SatsRouting. */
 export async function getBtcSubmarinePair() {
   requireRestUrl();
   const payload = await requestJson(
@@ -146,6 +181,7 @@ export async function getBtcSubmarinePair() {
   return resolveBtcSubmarinePair(payload);
 }
 
+/** Reject swap amounts outside the limits currently advertised by the provider. */
 export function assertSubmarineAmount(amountSats, pair) {
   const amount = Number(amountSats);
   const minimal = Number(pair?.limits?.minimal);
@@ -166,8 +202,9 @@ export function assertSubmarineAmount(amountSats, pair) {
   return amount;
 }
 
+/** Add the configured high-entropy callback token to a valid HTTPS webhook URL. */
 function withWebhookToken(webhookUrl) {
-  const secret = String(process.env.SATSROUTING_WEBHOOK_SECRET || "").trim();
+  const secret = resolveSatsRoutingWebhookSecret();
   if (!webhookUrl || !secret) return undefined;
   let parsed;
   try {
@@ -191,6 +228,7 @@ function withWebhookToken(webhookUrl) {
   };
 }
 
+/** Create one BTC-on-chain to Lightning Submarine swap using the live pair hash. */
 export async function createSubmarineSwap({ invoice, webhookUrl, refundKey, pairHash } = {}) {
   requireRestUrl();
   if (!invoice) throw new Error("invoice is required for SatsRouting swap");
@@ -225,6 +263,7 @@ export async function createSubmarineSwap({ invoice, webhookUrl, refundKey, pair
   };
 }
 
+/** Read the authoritative provider state for a known SatsRouting swap ID. */
 export async function getSwapStatus({ swapId } = {}) {
   requireRestUrl();
   if (!swapId) throw new Error("swapId is required");
@@ -235,6 +274,7 @@ export async function getSwapStatus({ swapId } = {}) {
   );
 }
 
+/** Normalize a SatsRouting lifecycle status to BoltCanvas's internal status vocabulary. */
 export function mapSatsRoutingStatus(status) {
   const value = String(status || "").toLowerCase();
   if (value === "invoice.paid") return "PAID";
@@ -249,6 +289,7 @@ export function mapSatsRoutingStatus(status) {
   return "PENDING";
 }
 
+/** Build the Bitcoin payment URI shown to the customer at checkout. */
 export function buildBip21({ address, amountSats, label } = {}) {
   const addr = String(address || "").trim();
   if (!addr) return "";
@@ -260,6 +301,7 @@ export function buildBip21({ address, amountSats, label } = {}) {
 }
 
 /** WebSocket updates with a six-second REST polling fallback. */
+/** Subscribe to WebSocket updates and retain REST polling as a fallback. */
 export function subscribeSwapStatus({ swapId, onUpdate } = {}) {
   if (!swapId) throw new Error("swapId is required for SatsRouting subscription");
   let closed = false;
