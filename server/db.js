@@ -1488,7 +1488,7 @@ export const Orders = {
   all() {
     this.prunePendingOlderThan(
       24 * 60 * 60 * 1000,          // regular pending TTL (24h)
-      14 * 24 * 60 * 60 * 1000      // Boltz on-chain pending TTL (14 days)
+      14 * 24 * 60 * 60 * 1000      // Submarine swap pending TTL (14 days)
     );
     return db
       .prepare(`SELECT * FROM orders ORDER BY createdAt DESC`)
@@ -1714,10 +1714,10 @@ export const Orders = {
   remove(id) {
     db.prepare(`DELETE FROM orders WHERE id=?`).run(id);
   },
-  prunePendingOlderThan(ms, boltzMs) {
+  prunePendingOlderThan(ms, swapMs) {
     const cutoffRegular = now() - ms;
-    const cutoffBoltz = now() - (boltzMs ?? ms);
-    // Delete non-Boltz pending older than regular cutoff
+    const cutoffSwap = now() - (swapMs ?? ms);
+    // Delete regular non-swap pending orders older than the standard cutoff
     db.prepare(`
       DELETE FROM orders
        WHERE status='PENDING'
@@ -1737,7 +1737,7 @@ export const Orders = {
          AND boltzRefundPubKey IS NOT NULL
          AND boltzRefundPubKey <> ''
          AND createdAt < ?
-    `).run(cutoffBoltz);
+    `).run(cutoffSwap);
   },
 };
 
