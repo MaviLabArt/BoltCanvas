@@ -158,10 +158,12 @@ describe("SatsRouting Submarine swap adapter", () => {
         readResponse,
         { fetchImpl, timeoutMs }
       );
+      // Attach the rejection handler before advancing fake timers to avoid a transient unhandled rejection.
+      const requestRejection = expect(pendingRequest).rejects.toThrow("timeout");
 
       await bodyStarted;
       await vi.advanceTimersByTimeAsync(timeoutMs);
-      await expect(pendingRequest).rejects.toThrow("timeout");
+      await requestRejection;
       expect(fetchImpl).toHaveBeenCalledTimes(1);
       expect(readResponse).toHaveBeenCalledTimes(1);
     } finally {
