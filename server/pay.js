@@ -2,21 +2,27 @@
 import WebSocket from "ws";
 import { EventEmitter } from "events";
 import { Settings } from "./db.js";
-import { deriveRefundKey } from "./boltz.js";
+import { deriveRefundKey } from "./satsrouting.js";
+import * as satsrouting from "./satsrouting.js";
 
 // Choose providers
 // - Lightning: "blink" (default) | "lnd" | "btcpay" | "nwc" | "lnurl"
-// - On-chain: "boltz" (default) | "btcpay" | "xpub"
+// - On-chain: "satsrouting" (default) | "btcpay" | "xpub"
 export const LIGHTNING_PAYMENT_PROVIDER = String(
   process.env.LIGHTNING_PAYMENT_PROVIDER ||
   process.env.PAYMENT_PROVIDER || // backward compat
   "blink"
 ).toLowerCase();
-export const ONCHAIN_PROVIDER = String(
+const CONFIGURED_ONCHAIN_PROVIDER = String(
   process.env.ONCHAIN_PROVIDER ||
   process.env.ONCHAIN_PAYMENT_PROVIDER ||
-  (String(process.env.PAYMENT_PROVIDER || "").toLowerCase() === "btcpay" ? "btcpay" : "boltz")
+  (String(process.env.PAYMENT_PROVIDER || "").toLowerCase() === "btcpay" ? "btcpay" : "satsrouting")
 ).toLowerCase();
+// Treat the former "boltz" setting as SatsRouting for new swaps.
+// Historical orders retain onchainProvider="boltz" and continue using the legacy adapter.
+export const ONCHAIN_PROVIDER = CONFIGURED_ONCHAIN_PROVIDER === "boltz"
+  ? "satsrouting"
+  : CONFIGURED_ONCHAIN_PROVIDER;
 // Backward compat alias (used throughout codebase)
 export const PAYMENT_PROVIDER = LIGHTNING_PAYMENT_PROVIDER;
 
@@ -267,6 +273,106 @@ export async function createOnchainSwapViaBoltz(args = {}) {
   };
 }
 
+
+export async function createOnchainSwapViaSatsRouting(args = {}) {
+  const amount = Number(args.amount || 0);
+
+  // Preflight against the live BTC -> BTC pair before issuing a Lightning invoice.
+  const pair = await satsrouting.getBtcSubmarinePair();
+  satsrouting.assertSubmarineAmount(amount, pair);
+
+  const invoice = await createInvoiceSats({
+    url: args.url,
+    apiKey: args.apiKey,
+    walletId: args.walletId,
+    relayUrls: args.relayUrls,
+    amount,
+    memo: args.memo,
+    expiresIn: args.expiresIn
+  });
+
+  const rescueMnemonic = String(
+    process.env.SATSROUTING_RESCUE_MNEMONIC || process.env.BOLTZ_RESCUE_MNEMONIC || ""
+  ).trim();
+  const rescuePath =
+    process.env.SATSROUTING_RESCUE_PATH || process.env.BOLTZ_RESCUE_PATH || undefined;
+  let rescueIndex = null;
+  let refundKey = null;
+
+  if (rescueMnemonic) {
+    try {
+      // Keep the existing database sequence key so rescue derivation never reuses an old index.
+      rescueIndex = Settings.nextRescueIndex();
+      refundKey = deriveRefundKey(rescueIndex, {
+        mnemonic: rescueMnemonic,
+        pathBase: rescuePath
+      });
+    } catch {
+      rescueIndex = null;
+      refundKey = null;
+    }
+  }
+  if (!refundKey) refundKey = deriveRefundKey(0, { mnemonic: "" });
+
+  const { swap, refundPublicKey, rescueIndex: derivedIndex } = await satsrouting.createSubmarineSwap({
+    invoice: invoice.paymentRequest,
+    webhookUrl: args.webhookUrl,
+    refundKey,
+    pairHash: pair.hash
+  });
+
+  const onchainAddress = String(swap?.lockupAddress || swap?.address || "").trim();
+  const onchainAmountSats = Math.max(
+    0,
+    Math.floor(Number(swap?.expectedAmount ?? swap?.expected ?? swap?.onchainAmount ?? 0))
+  );
+  const timeoutBlockHeight = Math.max(
+    0,
+    Math.floor(Number(swap?.timeoutBlockHeight ?? swap?.lockupTimeoutBlock ?? swap?.timeoutHeight ?? 0))
+  );
+  if (!onchainAddress || onchainAmountSats <= 0) {
+    throw new Error("SatsRouting returned an incomplete on-chain payment request");
+  }
+  const bip21 = satsrouting.buildBip21({
+    address: onchainAddress,
+    amountSats: onchainAmountSats,
+    label: args.memo || undefined
+  });
+
+  return {
+    ...invoice,
+    paymentMethod: "onchain",
+    swapId: swap.id,
+    onchainSwapId: swap.id,
+    swapStatus: swap.status || "",
+    satsroutingRefundPubKey: refundPublicKey || "",
+    satsroutingRescueIndex: derivedIndex ?? rescueIndex,
+    onchainAddress,
+    onchainAmountSats,
+    timeoutBlockHeight,
+    bip21
+  };
+}
+
+export async function satsroutingSwapStatus({ swapId }) {
+  const swap = await satsrouting.getSwapStatus({ swapId });
+  const mappedStatus = satsrouting.mapSatsRoutingStatus(swap?.status);
+  const onchainAddress = String(swap?.lockupAddress || swap?.address || "").trim();
+  const onchainAmountSats = Math.max(
+    0,
+    Math.floor(Number(swap?.expectedAmount ?? swap?.expected ?? swap?.onchainAmount ?? 0))
+  );
+  const timeoutBlockHeight = Math.max(
+    0,
+    Math.floor(Number(swap?.timeoutBlockHeight ?? swap?.lockupTimeoutBlock ?? swap?.timeoutHeight ?? 0))
+  );
+  return { swap, mappedStatus, onchainAddress, onchainAmountSats, timeoutBlockHeight };
+}
+
+export function subscribeSatsRoutingSwapStatus({ swapId, onUpdate }) {
+  return satsrouting.subscribeSwapStatus({ swapId, onUpdate });
+}
+
 export async function boltzSwapStatus({ swapId }) {
   const swap = await boltz.getSwapStatus({ swapId });
   const mappedStatus = boltz.mapBoltzStatus(swap?.status);
@@ -282,7 +388,8 @@ function resolveOnchainProvider(preferred) {
   const provider = (preferred || ONCHAIN_PROVIDER || "boltz").toLowerCase();
   if (provider === "xpub") return "xpub";
   if (provider === "btcpay") return "btcpay";
-  return "boltz";
+  if (provider === "boltz") return "boltz"; // historical orders only
+  return "satsrouting";
 }
 
 export async function createOnchainPaymentForOrder({
@@ -328,7 +435,13 @@ export async function createOnchainPaymentForOrder({
     };
   }
 
-  // Default: Boltz
+  if (provider === "satsrouting") {
+    return createOnchainSwapViaSatsRouting({
+      url, apiKey, walletId, relayUrls, amount: sats, memo, webhookUrl, expiresIn
+    });
+  }
+
+  // Historical Boltz orders/configuration only.
   return createOnchainSwapViaBoltz({
     url,
     apiKey,
@@ -379,16 +492,20 @@ export async function getOnchainStatus(paymentRow, { btcpayConfig } = {}) {
     };
   }
 
-  const swapId = paymentRow.boltzSwapId || paymentRow.onchainSwapId || paymentRow.onchainId;
-  const { swap, mappedStatus, onchainAddress, onchainAmountSats, timeoutBlockHeight } =
-    await boltzSwapStatus({ swapId });
+  const swapId = provider === "boltz"
+    ? (paymentRow.boltzSwapId || paymentRow.onchainSwapId || paymentRow.onchainId)
+    : (paymentRow.onchainSwapId || paymentRow.onchainId || paymentRow.boltzSwapId);
+  const result = provider === "boltz"
+    ? await boltzSwapStatus({ swapId })
+    : await satsroutingSwapStatus({ swapId });
+  const { swap, mappedStatus, onchainAddress, onchainAmountSats, timeoutBlockHeight } = result;
 
   return {
     status: mappedStatus,
     rawStatus: swap?.status || "",
-    onchainAddress: onchainAddress || paymentRow.onchainAddress || "",
-    onchainAmountSats: onchainAmountSats || paymentRow.onchainAmountSats || 0,
-    timeoutBlockHeight
+    onchainAddress: onchainAddress || paymentRow.onchainAddress || paymentRow.boltzAddress || "",
+    onchainAmountSats: onchainAmountSats || paymentRow.onchainAmountSats || paymentRow.boltzExpectedAmountSats || 0,
+    timeoutBlockHeight: timeoutBlockHeight || paymentRow.boltzTimeoutBlockHeight || 0
   };
 }
 
