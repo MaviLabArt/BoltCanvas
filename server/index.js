@@ -23,11 +23,14 @@ import {
   ensureBtcWalletId,
   createInvoiceSats,
   createOnchainSwapViaBoltz,
+  createOnchainSwapViaSatsRouting,
   createOnchainPaymentForOrder,
   invoiceStatus,
   subscribeInvoiceStatus,
   subscribeBoltzSwapStatus,
+  subscribeSatsRoutingSwapStatus,
   boltzSwapStatus,
+  satsroutingSwapStatus,
   getOnchainStatus,
   startPaymentWatcher,
   PAYMENT_PROVIDER,
@@ -35,6 +38,7 @@ import {
   emitBtcpayStatus
 } from "./pay.js";
 import * as boltz from "./boltz.js";
+import * as satsrouting from "./satsrouting.js";
 import * as btcpay from "./btcpay.js";
 
 // NEW: Nostr helpers
@@ -134,7 +138,13 @@ const ONCHAIN_ENABLED = String(process.env.ONCHAIN_ENABLED || "true").toLowerCas
 const ONCHAIN_MIN_SATS = Math.max(0, Number(process.env.ONCHAIN_MIN_SATS || 0));
 const ONCHAIN_INVOICE_EXPIRES_IN = Math.max(600, Number(process.env.ONCHAIN_INVOICE_EXPIRES_IN || 7200)); // seconds
 
-// Boltz (on-chain → Lightning) defaults
+// SatsRouting (on-chain → Lightning) defaults for new Submarine Swaps.
+const SATSROUTING_REST_URL = (process.env.SATSROUTING_REST_URL || "https://api.satsrouting.exchange").replace(/\/+$/, "");
+const SATSROUTING_WS_URL = process.env.SATSROUTING_WS_URL || "wss://api.satsrouting.exchange/v2/ws";
+const SATSROUTING_WEBHOOK_URL = process.env.SATSROUTING_WEBHOOK_URL || "";
+const SATSROUTING_WEBHOOK_SECRET = process.env.SATSROUTING_WEBHOOK_SECRET || "";
+
+// Legacy Boltz settings are retained only for status handling of existing historical orders.
 const BOLTZ_REST_URL = (process.env.BOLTZ_REST_URL || "https://api.boltz.exchange").replace(/\/+$/, "");
 const BOLTZ_WS_URL = process.env.BOLTZ_WS_URL || "wss://api.boltz.exchange/v2/ws";
 const BOLTZ_WEBHOOK_URL = process.env.BOLTZ_WEBHOOK_URL || "";
@@ -1224,6 +1234,12 @@ app.get("/api/payments/config", (req, res) => {
     onchainProvider: ONCHAIN_PROVIDER,
     onchainEnabled: ONCHAIN_ENABLED,
     onchainMinSats: ONCHAIN_MIN_SATS,
+    satsrouting: {
+      rest: SATSROUTING_REST_URL,
+      ws: SATSROUTING_WS_URL,
+      webhookConfigured: !!(SATSROUTING_WEBHOOK_URL && SATSROUTING_WEBHOOK_SECRET)
+    },
+    // Kept only to inspect configuration for legacy orders; not used for new swaps.
     boltz: {
       rest: BOLTZ_REST_URL,
       ws: BOLTZ_WS_URL,
@@ -2073,7 +2089,7 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
     let inv;
     let created;
 
-    if (paymentMethod === "onchain" && ONCHAIN_PROVIDER !== "boltz") {
+    if (paymentMethod === "onchain" && ONCHAIN_PROVIDER !== "satsrouting") {
       const pre = Orders.create({
         ...baseOrderPayload,
         paymentHash: null,
@@ -2119,7 +2135,7 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
       }
     } else {
       if (paymentMethod === "onchain") {
-        inv = await createOnchainSwapViaBoltz(
+        inv = await createOnchainSwapViaSatsRouting(
           PAYMENT_PROVIDER === "blink"
             ? {
                 url: BLINK_GRAPHQL_URL,
@@ -2127,14 +2143,14 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
                 walletId,
                 amount: total,
                 memo,
-                webhookUrl: BOLTZ_WEBHOOK_URL || undefined,
+                webhookUrl: SATSROUTING_WEBHOOK_URL || undefined,
                 expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
               }
             : PAYMENT_PROVIDER === "lnurl"
               ? {
                   amount: total,
                   memo,
-                  webhookUrl: BOLTZ_WEBHOOK_URL || undefined,
+                  webhookUrl: SATSROUTING_WEBHOOK_URL || undefined,
                   expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
                 }
             : PAYMENT_PROVIDER === "nwc"
@@ -2143,7 +2159,7 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
                   relayUrls: NWC_RELAYS,
                   amount: total,
                   memo,
-                  webhookUrl: BOLTZ_WEBHOOK_URL || undefined,
+                  webhookUrl: SATSROUTING_WEBHOOK_URL || undefined,
                   expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
                 }
             : PAYMENT_PROVIDER === "btcpay"
@@ -2159,7 +2175,7 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
               : {
                   amount: total,
                   memo,
-                  webhookUrl: BOLTZ_WEBHOOK_URL || undefined,
+                  webhookUrl: SATSROUTING_WEBHOOK_URL || undefined,
                   expiresIn: ONCHAIN_INVOICE_EXPIRES_IN
                 }
         );
@@ -2206,20 +2222,21 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
         ...baseOrderPayload,
         paymentHash: inv.paymentHash,
         paymentRequest: inv.paymentRequest,
-        boltzSwapId: inv.boltzSwapId || inv.swapId || "",
-        boltzAddress: inv.onchainAddress || "",
-        boltzExpectedAmountSats: inv.onchainAmountSats || 0,
+        // Generic swap identifiers are used for new SatsRouting orders.
+        boltzSwapId: "",
+        boltzAddress: "",
+        boltzExpectedAmountSats: 0,
         boltzTimeoutBlockHeight: inv.timeoutBlockHeight || 0,
         boltzRefundPrivKey: "",
-        boltzRefundPubKey: inv.boltzRefundPubKey || "",
+        boltzRefundPubKey: inv.satsroutingRefundPubKey || "",
         boltzRedeemScript: "",
-        boltzRescueIndex: inv.boltzRescueIndex ?? inv.rescueIndex ?? null,
+        boltzRescueIndex: inv.satsroutingRescueIndex ?? null,
         boltzSwapTree: "",
-        boltzStatus: inv.boltzStatus || "",
+        boltzStatus: "",
         lnurlVerifyUrl: inv.verifyUrl || "",
         lnurlExpiresAt: inv.expiresAt || 0,
-        onchainId: paymentMethod === "onchain" && ONCHAIN_PROVIDER !== "boltz" ? (inv.onchainId || inv.onchainSwapId || "") : "",
-        onchainSwapId: paymentMethod === "onchain" && ONCHAIN_PROVIDER === "boltz" ? (inv.boltzSwapId || inv.swapId || "") : "",
+        onchainId: "",
+        onchainSwapId: paymentMethod === "onchain" ? (inv.onchainSwapId || inv.swapId || "") : "",
         onchainProvider: paymentMethod === "onchain" ? ONCHAIN_PROVIDER : "",
         onchainAddress: inv.onchainAddress || "",
         onchainAmountSats: inv.onchainAmountSats || 0,
@@ -2230,8 +2247,8 @@ app.post("/api/checkout/create-invoice", async (req, res) => {
     }
 
     const onchainIdOut = inv?.onchainId || inv?.onchainSwapId || created.onchainId || created.onchainSwapId || created.id;
-    const swapIdOut = (paymentMethod === "onchain" && ONCHAIN_PROVIDER === "boltz")
-      ? (inv?.boltzSwapId || inv?.swapId || created.onchainSwapId || "")
+    const swapIdOut = (paymentMethod === "onchain" && ONCHAIN_PROVIDER === "satsrouting")
+      ? (inv?.onchainSwapId || inv?.swapId || created.onchainSwapId || "")
       : "";
 
     res.json({
@@ -2379,13 +2396,38 @@ async function handleBoltzStatusSideEffects({ swapId, mappedStatus, rawStatus })
   return orderBefore;
 }
 
+async function handleSatsRoutingStatusSideEffects({ swapId, mappedStatus, rawStatus }) {
+  if (!swapId) return null;
+  const current = Orders.bySwapId(swapId);
+  if (!current) return null;
+  const orderBefore = Orders.updateOnchainStatus(current.id, rawStatus || "");
+  if (!orderBefore) return null;
+
+  if (mappedStatus === "PAID") {
+    const order = Orders.markPaidBySwapId(swapId);
+    if (order?.__justPaid && order?.items?.length) {
+      for (const it of order.items) Products.consumeStock(it.productId, it.qty || 1);
+    }
+    notifyPaidOnce(order);
+    try { await dmOrderUpdate(order, "PAID"); } catch {}
+    try { await sendOrderStatusEmail(order, "PAID"); } catch {}
+    return order;
+  }
+  if (mappedStatus === "EXPIRED") {
+    if (orderBefore.status === "PENDING") Orders.remove(orderBefore.id);
+    return orderBefore;
+  }
+  if (mappedStatus === "FAILED") return Orders.setStatus(orderBefore.id, "FAILED");
+  return orderBefore;
+}
+
 // Resolve a payment identifier into type + normalized ids
 function resolvePaymentById(id) {
   if (!id) return null;
   const bySwap = Orders.bySwapId(id);
   if (bySwap) {
-    const isBoltz = String(bySwap.onchainProvider || "").toLowerCase() === "boltz" || !!bySwap.boltzSwapId;
-    const swapId = isBoltz ? (bySwap.boltzSwapId || bySwap.onchainSwapId || id) : (bySwap.onchainId || bySwap.onchainSwapId || id);
+    const isSwapProvider = ["boltz", "satsrouting"].includes(String(bySwap.onchainProvider || "").toLowerCase()) || !!bySwap.boltzSwapId || !!bySwap.onchainSwapId;
+    const swapId = isSwapProvider ? (bySwap.onchainSwapId || bySwap.boltzSwapId || bySwap.onchainId || id) : (bySwap.onchainId || bySwap.onchainSwapId || id);
     return { type: "onchain", swapId, order: bySwap };
   }
   const byHash = Orders.byPaymentHash(id);
@@ -2393,8 +2435,8 @@ function resolvePaymentById(id) {
   const byId = Orders.get(id);
   if (!byId) return null;
   if (String(byId.paymentMethod || "").toLowerCase() === "onchain") {
-    const isBoltz = String(byId.onchainProvider || "").toLowerCase() === "boltz" || !!byId.boltzSwapId;
-    const swapId = isBoltz ? (byId.boltzSwapId || byId.onchainSwapId || byId.id) : (byId.onchainId || byId.onchainSwapId || byId.id);
+    const isSwapProvider = ["boltz", "satsrouting"].includes(String(byId.onchainProvider || "").toLowerCase()) || !!byId.boltzSwapId || !!byId.onchainSwapId;
+    const swapId = isSwapProvider ? (byId.onchainSwapId || byId.boltzSwapId || byId.onchainId || byId.id) : (byId.onchainId || byId.onchainSwapId || byId.id);
     return { type: "onchain", swapId, order: byId };
   }
   return { type: "lightning", hash: byId.paymentHash || id, order: byId };
@@ -2492,6 +2534,8 @@ async function handleOnchainStatus(req, res) {
 
     if (orderProvider === "boltz") {
       await handleBoltzStatusSideEffects({ swapId, mappedStatus, rawStatus });
+    } else if (orderProvider === "satsrouting") {
+      await handleSatsRoutingStatusSideEffects({ swapId, mappedStatus, rawStatus });
     } else if (mappedStatus === "CONFIRMED") {
       const updated =
         Orders.markPaidBySwapId(swapId) ||
@@ -2730,8 +2774,11 @@ async function handleOnchainStream(req, res) {
     // ignore prime failure; SSE will still start
   }
 
-  if (orderProvider === "boltz") {
-    unsub = subscribeBoltzSwapStatus({
+  if (orderProvider === "boltz" || orderProvider === "satsrouting") {
+    const subscribeSwapStatus = orderProvider === "boltz"
+      ? subscribeBoltzSwapStatus
+      : subscribeSatsRoutingSwapStatus;
+    unsub = subscribeSwapStatus({
       swapId,
       onUpdate: async ({ swap, rawStatus, mappedStatus }) => {
         const addr = swap?.lockupAddress || swap?.address || order.onchainAddress || order.boltzAddress || "";
@@ -2826,6 +2873,48 @@ app.post("/api/webhooks/boltz", async (req, res) => {
     await handleBoltzStatusSideEffects({ swapId, mappedStatus, rawStatus });
   } catch (e) {
     console.warn("[boltz webhook] error:", e?.message || e);
+  }
+  res.status(204).end();
+});
+
+// ---------------------------------------------------------------------
+// SatsRouting webhook (optional; WebSocket + REST polling remain available)
+// ---------------------------------------------------------------------
+app.get("/api/webhooks/satsrouting", (req, res) => {
+  if (!(SATSROUTING_WEBHOOK_URL && SATSROUTING_WEBHOOK_SECRET)) {
+    return res.status(503).json({ ok: false, error: "SatsRouting webhook not configured" });
+  }
+  return res.json({
+    ok: true,
+    note: "SatsRouting sends swap.update events to this endpoint using the configured token query parameter",
+    configured: true,
+    requiresSecret: true
+  });
+});
+
+app.post("/api/webhooks/satsrouting", async (req, res) => {
+  try {
+    if (!(SATSROUTING_WEBHOOK_URL && SATSROUTING_WEBHOOK_SECRET)) {
+      return res.status(503).json({ error: "SatsRouting webhook not configured" });
+    }
+    const providedSecret =
+      req.headers["x-satsrouting-secret"] ||
+      req.headers["x-webhook-secret"] ||
+      req.query?.token ||
+      "";
+    if (String(providedSecret) !== SATSROUTING_WEBHOOK_SECRET) {
+      return res.status(401).json({ error: "Invalid webhook secret" });
+    }
+    const payload = req.body || {};
+    const data = payload.data || payload;
+    const swapId = data.id || payload.id || "";
+    const rawStatus = data.status || payload.status || "";
+    if (!swapId || !rawStatus) return res.status(400).json({ error: "Invalid payload" });
+
+    const mappedStatus = satsrouting.mapSatsRoutingStatus(rawStatus);
+    await handleSatsRoutingStatusSideEffects({ swapId, mappedStatus, rawStatus });
+  } catch (e) {
+    console.warn("[satsrouting webhook] error:", e?.message || e);
   }
   res.status(204).end();
 });
@@ -3149,6 +3238,13 @@ if (!TEST_MODE) (function startPendingInvoiceSweeper() {
                 if (BOLTZ_FINAL_STATUSES.has(mappedStatus)) {
                   continue;
                 }
+              } else if (provider === "satsrouting") {
+                await handleSatsRoutingStatusSideEffects({
+                  swapId: o.onchainSwapId || o.boltzSwapId,
+                  mappedStatus,
+                  rawStatus
+                });
+                if (BOLTZ_FINAL_STATUSES.has(mappedStatus)) continue;
               } else {
                 if (mappedStatus === "CONFIRMED") {
                   const updated =
