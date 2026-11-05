@@ -97,11 +97,12 @@ export function resolveBtcSubmarinePair(payload) {
   const pair = payload?.BTC?.BTC || payload?.pairs?.BTC?.BTC || payload?.submarine?.BTC?.BTC;
   const hash = String(pair?.hash || "").trim();
   const minimal = Number(pair?.limits?.minimal);
+  const minimalBatched = Number(pair?.limits?.minimalBatched);
   const maximal = Number(pair?.limits?.maximal);
   if (!hash || !Number.isFinite(minimal) || !Number.isFinite(maximal) || minimal <= 0 || maximal < minimal) {
     throw new Error("SatsRouting does not currently publish a valid BTC-to-BTC submarine pair");
   }
-  return { ...pair, hash, limits: { ...pair.limits, minimal, maximal } };
+  return { ...pair, hash, limits: { ...pair.limits, minimal, minimalBatched, maximal } };
 }
 
 export async function getBtcSubmarinePair() {
@@ -117,13 +118,20 @@ export async function getBtcSubmarinePair() {
 export function assertSubmarineAmount(amountSats, pair) {
   const amount = Number(amountSats);
   const minimal = Number(pair?.limits?.minimal);
+  const minimalBatched = Number(pair?.limits?.minimalBatched);
   const maximal = Number(pair?.limits?.maximal);
   if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error("Invalid submarine swap amount");
   if (!Number.isFinite(minimal) || !Number.isFinite(maximal) || minimal <= 0 || maximal < minimal) {
     throw new Error("SatsRouting BTC-to-BTC swap limits are unavailable");
   }
-  if (amount < minimal) throw new Error("SatsRouting minimum on-chain swap amount is " + minimal + " sats");
-  if (amount > maximal) throw new Error("SatsRouting maximum on-chain swap amount is " + maximal + " sats");
+  // SatsRouting may accept a lower minimum when the swap is processed in a batch.
+  const effectiveMinimum = Number.isFinite(minimalBatched) && minimalBatched > 0
+    ? Math.min(minimal, minimalBatched)
+    : minimal;
+  if (amount < effectiveMinimum) {
+    throw new Error("SatsRouting minimum on-chain swap invoice amount is " + effectiveMinimum + " sats");
+  }
+  if (amount > maximal) throw new Error("SatsRouting maximum on-chain swap invoice amount is " + maximal + " sats");
   return amount;
 }
 
