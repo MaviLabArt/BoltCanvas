@@ -70,6 +70,7 @@ const ipv4Agent = (url) => url.startsWith("https:")
   ? new https.Agent({ family: 4, lookup: ipv4Lookup })
   : new http.Agent({ family: 4, lookup: ipv4Lookup });
 
+/** Format provider/network failures into a compact diagnostic string without exposing request secrets. */
 function describeError(error) {
   if (!error) return "unknown error";
   return [
@@ -82,6 +83,7 @@ function describeError(error) {
   ].filter(Boolean).join(" ").trim() || "unknown error";
 }
 
+/** Redact long hexadecimal identifiers before including remote error text in logs. */
 function sanitize(message) {
   return String(message || "").replace(/\b[0-9a-fA-F]{20,}\b/g, "[redacted]");
 }
