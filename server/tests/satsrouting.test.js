@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   assertSubmarineAmount,
   assertRecoverableRefundKey,
+  fetchWithFallback,
   dispatchSwapStatusUpdate,
   buildBip21,
   canRetryWithIpv4,
@@ -137,6 +138,35 @@ describe("SatsRouting Submarine swap adapter", () => {
       rescueIndex: 0
     };
     expect(assertRecoverableRefundKey(refundKey)).toBe(refundKey);
+  });
+
+  it("keeps the request timeout active while reading the response body", async () => {
+    vi.useFakeTimers();
+    const timeoutMs = 25;
+    let markBodyStarted;
+    const bodyStarted = new Promise((resolve) => { markBodyStarted = resolve; });
+    const fetchImpl = vi.fn(async (_url, init) => ({ signal: init.signal }));
+    const readResponse = vi.fn(({ signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      markBodyStarted();
+    }));
+
+    try {
+      const pendingRequest = fetchWithFallback(
+        "https://satsrouting.example/v2/swap/submarine",
+        { method: "GET" },
+        readResponse,
+        { fetchImpl, timeoutMs }
+      );
+
+      await bodyStarted;
+      await vi.advanceTimersByTimeAsync(timeoutMs);
+      await expect(pendingRequest).rejects.toThrow("timeout");
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(readResponse).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("contains rejected asynchronous status callbacks", async () => {
