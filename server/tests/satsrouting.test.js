@@ -12,7 +12,7 @@ describe("SatsRouting Submarine swap adapter", () => {
       BTC: {
         hash: "pair-hash",
         rate: 1,
-        limits: { minimal: 50000, maximal: 25000000 },
+        limits: { minimal: 50000, minimalBatched: 25000, maximal: 25000000 },
         fees: { percentage: 0.1, minerFees: 4379 }
       }
     }
@@ -39,9 +39,10 @@ describe("SatsRouting Submarine swap adapter", () => {
 
   it("checks invoice amount against the current pair limits", () => {
     const pair = resolveBtcSubmarinePair(pairPayload);
+    expect(assertSubmarineAmount(25000, pair)).toBe(25000);
     expect(assertSubmarineAmount(50000, pair)).toBe(50000);
     expect(assertSubmarineAmount(25000000, pair)).toBe(25000000);
-    expect(() => assertSubmarineAmount(49999, pair)).toThrow(/minimum.*50000/);
+    expect(() => assertSubmarineAmount(24999, pair)).toThrow(/minimum.*25000/);
     expect(() => assertSubmarineAmount(25000001, pair)).toThrow(/maximum.*25000000/);
     expect(() => assertSubmarineAmount(0, pair)).toThrow(/Invalid submarine/);
   });
