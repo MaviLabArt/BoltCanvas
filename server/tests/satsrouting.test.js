@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   assertSubmarineAmount,
   buildBip21,
+  canRetryWithIpv4,
+  isSatsRoutingOrder,
+  resolveSatsRoutingWebhookSecret,
   hasSubmarineLockupTransaction,
   mapSatsRoutingStatus,
   resolveBtcSubmarinePair,
@@ -89,6 +92,30 @@ describe("SatsRouting Submarine swap adapter", () => {
       satsroutingMnemonic: "word1 word2 word3",
       legacyBoltzMnemonic: ""
     })).toThrow(/valid BIP39/);
+  });
+
+  it("does not retry ambiguous failures for non-idempotent POST requests", () => {
+    expect(canRetryWithIpv4({ method: "GET" }, { code: "ECONNRESET" })).toBe(true);
+    expect(canRetryWithIpv4({ method: "POST" }, { code: "ECONNRESET" })).toBe(false);
+    expect(canRetryWithIpv4({ method: "POST" }, { code: "ETIMEDOUT" })).toBe(false);
+    expect(canRetryWithIpv4({ method: "POST" }, { code: "EAI_AGAIN" })).toBe(true);
+    expect(canRetryWithIpv4({ method: "POST" }, { code: "ECONNREFUSED" })).toBe(true);
+  });
+
+  it("keeps webhook callbacks disabled without a generated high-entropy secret", () => {
+    expect(resolveSatsRoutingWebhookSecret("")).toBe("");
+    expect(resolveSatsRoutingWebhookSecret("replace-with-long-random-string")).toBe("");
+    expect(resolveSatsRoutingWebhookSecret("too-short")).toBe("");
+    const generatedSecret = "ab".repeat(32);
+    expect(resolveSatsRoutingWebhookSecret(generatedSecret)).toBe(generatedSecret);
+  });
+
+  it("applies webhook lookup only to SatsRouting orders", () => {
+    expect(isSatsRoutingOrder({ onchainProvider: "satsrouting" })).toBe(true);
+    expect(isSatsRoutingOrder({ onchainProvider: "SAT SROUTING" })).toBe(false);
+    expect(isSatsRoutingOrder({ onchainProvider: "boltz" })).toBe(false);
+    expect(isSatsRoutingOrder({})).toBe(false);
+    expect(isSatsRoutingOrder(null)).toBe(false);
   });
 
   it("detects expired swaps whose on-chain lockup still needs refunding", () => {
