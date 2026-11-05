@@ -276,6 +276,10 @@ export async function createOnchainSwapViaBoltz(args = {}) {
 }
 
 
+/**
+ * Create the merchant Lightning invoice and its matching customer-paid BTC
+ * Submarine swap after validating the live provider limits and refund key.
+ */
 export async function createOnchainSwapViaSatsRouting(args = {}) {
   const amount = Number(args.amount || 0);
 
@@ -346,6 +350,7 @@ export async function createOnchainSwapViaSatsRouting(args = {}) {
   };
 }
 
+/** Retrieve and normalize the current status and on-chain payment details for one SatsRouting swap. */
 export async function satsroutingSwapStatus({ swapId }) {
   const swap = await satsrouting.getSwapStatus({ swapId });
   const mappedStatus = satsrouting.mapSatsRoutingStatus(swap?.status);
