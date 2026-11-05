@@ -366,6 +366,7 @@ export async function satsroutingSwapStatus({ swapId }) {
   return { swap, mappedStatus, onchainAddress, onchainAmountSats, timeoutBlockHeight };
 }
 
+/** Subscribe a checkout/order observer to SatsRouting status updates and return its unsubscribe function. */
 export function subscribeSatsRoutingSwapStatus({ swapId, onUpdate }) {
   return satsrouting.subscribeSwapStatus({ swapId, onUpdate });
 }
