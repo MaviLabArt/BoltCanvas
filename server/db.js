@@ -1605,8 +1605,9 @@ export const Orders = {
     const confirmed = payload.onchainConfirmedSats ?? payload.confirmedReceived ?? current.onchainConfirmedSats ?? 0;
     const provider = payload.provider ?? payload.onchainProvider ?? current.onchainProvider ?? "";
     const incomingId = payload.swapId ?? payload.onchainId ?? payload.onchainSwapId ?? current.onchainId ?? current.onchainSwapId ?? "";
-    const nextOnchainId = provider === "boltz" ? (current.onchainId || "") : incomingId;
-    const nextOnchainSwapId = provider === "boltz"
+    const isSwapProvider = provider === "boltz" || provider === "satsrouting";
+    const nextOnchainId = isSwapProvider ? (current.onchainId || "") : incomingId;
+    const nextOnchainSwapId = isSwapProvider
       ? (incomingId || current.onchainSwapId || "")
       : (current.onchainSwapId || "");
     db.prepare(`
@@ -1722,17 +1723,17 @@ export const Orders = {
        WHERE status='PENDING'
          AND (paymentMethod <> 'onchain' OR (
            (onchainId IS NULL OR onchainId = '')
+           AND (onchainSwapId IS NULL OR onchainSwapId = '')
            AND (boltzSwapId IS NULL OR boltzSwapId = '')
          ))
          AND createdAt < ?
     `).run(cutoffRegular);
-    // Delete Boltz on-chain pending older than extended cutoff
+    // Keep swap-backed on-chain orders (legacy Boltz and SatsRouting) for the extended refund window.
     db.prepare(`
       DELETE FROM orders
        WHERE status='PENDING'
          AND paymentMethod='onchain'
-         AND boltzSwapId IS NOT NULL
-         AND boltzSwapId <> ''
+         AND ((onchainSwapId IS NOT NULL AND onchainSwapId <> '') OR (boltzSwapId IS NOT NULL AND boltzSwapId <> ''))
          AND boltzRefundPubKey IS NOT NULL
          AND boltzRefundPubKey <> ''
          AND createdAt < ?
@@ -1752,7 +1753,7 @@ function normalizeOrderRow(o) {
     paymentMethod: o.paymentMethod || "lightning",
     onchainSwapId: o.onchainSwapId || o.boltzSwapId || "",
     onchainProvider: o.onchainProvider || "",
-    onchainId: (o.onchainProvider === "boltz")
+    onchainId: (o.onchainProvider === "boltz" || o.onchainProvider === "satsrouting")
       ? ""
       : (o.onchainId || o.onchainSwapId || ""),
     onchainAddress: o.onchainAddress || o.boltzAddress || "",
