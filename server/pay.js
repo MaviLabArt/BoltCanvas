@@ -22,7 +22,9 @@ const CONFIGURED_ONCHAIN_PROVIDER = String(
 // Historical orders retain onchainProvider="boltz" and continue using the legacy adapter.
 export const ONCHAIN_PROVIDER = CONFIGURED_ONCHAIN_PROVIDER === "boltz"
   ? "satsrouting"
-  : CONFIGURED_ONCHAIN_PROVIDER;
+  : ["satsrouting", "btcpay", "xpub"].includes(CONFIGURED_ONCHAIN_PROVIDER)
+    ? CONFIGURED_ONCHAIN_PROVIDER
+    : "satsrouting";
 // Backward compat alias (used throughout codebase)
 export const PAYMENT_PROVIDER = LIGHTNING_PAYMENT_PROVIDER;
 
@@ -385,7 +387,7 @@ export function subscribeBoltzSwapStatus({ swapId, onUpdate }) {
 }
 
 function resolveOnchainProvider(preferred) {
-  const provider = (preferred || ONCHAIN_PROVIDER || "boltz").toLowerCase();
+  const provider = (preferred || ONCHAIN_PROVIDER || "satsrouting").toLowerCase();
   if (provider === "xpub") return "xpub";
   if (provider === "btcpay") return "btcpay";
   if (provider === "boltz") return "boltz"; // historical orders only
