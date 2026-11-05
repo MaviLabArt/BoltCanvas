@@ -139,7 +139,7 @@ const ONCHAIN_INVOICE_EXPIRES_IN = Math.max(600, Number(process.env.ONCHAIN_INVO
 const SATSROUTING_REST_URL = (process.env.SATSROUTING_REST_URL || "https://api.satsrouting.exchange").replace(/\/+$/, "");
 const SATSROUTING_WS_URL = process.env.SATSROUTING_WS_URL || "wss://api.satsrouting.exchange/v2/ws";
 const SATSROUTING_WEBHOOK_URL = process.env.SATSROUTING_WEBHOOK_URL || "";
-const SATSROUTING_WEBHOOK_SECRET = process.env.SATSROUTING_WEBHOOK_SECRET || "";
+const SATSROUTING_WEBHOOK_SECRET = satsrouting.resolveSatsRoutingWebhookSecret();
 
 // Legacy Boltz settings are retained only for status handling of existing historical orders.
 const BOLTZ_REST_URL = (process.env.BOLTZ_REST_URL || "https://api.boltz.exchange").replace(/\/+$/, "");
@@ -2393,14 +2393,92 @@ async function handleBoltzStatusSideEffects({ swapId, mappedStatus, rawStatus })
   return orderBefore;
 }
 
-async function handleSatsRoutingStatusSideEffects({ swapId, mappedStatus, rawStatus }) {
+/**
+ * Apply a verified SatsRouting state only to its own orders.
+ * Expiry is rechecked with the provider before deleting or failing a pending
+ * order, then the database row is reloaded so a concurrent payment is not lost.
+ */
+async function handleSatsRoutingStatusSideEffects({
+  swapId,
+  mappedStatus,
+  rawStatus,
+  swapSnapshot = null
+}) {
   if (!swapId) return null;
-  const current = Orders.bySwapId(swapId);
-  if (!current) return null;
-  const orderBefore = Orders.updateOnchainStatus(current.id, rawStatus || "");
-  if (!orderBefore) return null;
 
-  if (mappedStatus === "PAID") {
+  let current = Orders.bySwapId(swapId);
+  if (!satsrouting.isSatsRoutingOrder(current)) return null;
+
+  let nextMappedStatus = String(mappedStatus || "").toUpperCase();
+  let nextRawStatus = String(rawStatus || "");
+
+  if (nextMappedStatus === "EXPIRED") {
+    let latestSwap = swapSnapshot;
+    let lookupFailed = false;
+    if (!latestSwap) {
+      try {
+        latestSwap = await satsrouting.getSwapStatus({ swapId });
+      } catch (error) {
+        lookupFailed = true;
+        console.warn("[satsrouting] could not verify expired swap lockup; retaining order:", error?.message || error);
+      }
+    }
+
+    // Re-read after the network await: the order may have been paid meanwhile.
+    current = Orders.bySwapId(swapId);
+    if (!satsrouting.isSatsRoutingOrder(current)) return null;
+
+    if (lookupFailed) {
+      const updated = Orders.updateOnchainStatus(current.id, nextRawStatus);
+      if (String(current.status || "").toUpperCase() === "PENDING") {
+        return Orders.setStatus(current.id, "FAILED");
+      }
+      return updated;
+    }
+
+    const verifiedRawStatus = String(latestSwap?.status || "").trim();
+    const verifiedMappedStatus = satsrouting.mapSatsRoutingStatus(verifiedRawStatus);
+    if (!verifiedRawStatus || verifiedMappedStatus === "PENDING") {
+      // An empty or unknown provider state is not sufficient to expire an order.
+      return Orders.updateOnchainStatus(current.id, nextRawStatus);
+    }
+
+    nextMappedStatus = verifiedMappedStatus;
+    nextRawStatus = verifiedRawStatus;
+
+    if (nextMappedStatus === "EXPIRED") {
+      const updated = Orders.updateOnchainStatus(current.id, nextRawStatus);
+      if (!updated) return null;
+
+      const orderStatus = String(current.status || "").toUpperCase();
+      const alreadyCompleted = ["PAID", "PREPARATION", "SHIPPED"].includes(orderStatus);
+      if (alreadyCompleted) return updated;
+
+      const hasLockup = satsrouting.hasSubmarineLockupTransaction(latestSwap);
+      if (hasLockup && orderStatus === "PENDING") {
+        return Orders.setStatus(current.id, "FAILED");
+      }
+      if (!hasLockup && orderStatus === "PENDING") {
+        Orders.remove(current.id);
+        return null;
+      }
+      return updated;
+    }
+  }
+
+  // Re-read before all status transitions; terminal orders must not regress.
+  current = Orders.bySwapId(swapId);
+  if (!satsrouting.isSatsRoutingOrder(current)) return null;
+  const orderStatus = String(current.status || "").toUpperCase();
+  const alreadyCompleted = ["PAID", "PREPARATION", "SHIPPED"].includes(orderStatus);
+  if (alreadyCompleted && nextMappedStatus !== "PAID") {
+    return Orders.updateOnchainStatus(current.id, nextRawStatus);
+  }
+
+  const updated = Orders.updateOnchainStatus(current.id, nextRawStatus);
+  if (!updated) return null;
+
+  if (nextMappedStatus === "PAID") {
     const order = Orders.markPaidBySwapId(swapId);
     if (order?.__justPaid && order?.items?.length) {
       for (const it of order.items) Products.consumeStock(it.productId, it.qty || 1);
@@ -2410,27 +2488,14 @@ async function handleSatsRoutingStatusSideEffects({ swapId, mappedStatus, rawSta
     try { await sendOrderStatusEmail(order, "PAID"); } catch {}
     return order;
   }
-  if (mappedStatus === "EXPIRED") {
-    // An expired Submarine swap may still contain the buyer's on-chain lockup.
-    // In that case the buyer must actively refund it, so never delete the order
-    // (and its rescue-key index) until the API confirms no lockup was made.
-    let hasLockupTransaction = true;
-    try {
-      const swap = await satsrouting.getSwapStatus({ swapId });
-      hasLockupTransaction = satsrouting.hasSubmarineLockupTransaction(swap);
-    } catch (error) {
-      // Fail safe: preserve the refund record if SatsRouting cannot be queried.
-      console.warn("[satsrouting] could not verify expired swap lockup; retaining order:", error?.message || error);
-    }
-    if (hasLockupTransaction) return Orders.setStatus(orderBefore.id, "FAILED");
-    if (orderBefore.status === "PENDING") Orders.remove(orderBefore.id);
-    return orderBefore;
+
+  if (nextMappedStatus === "FAILED" && orderStatus === "PENDING") {
+    return Orders.setStatus(current.id, "FAILED");
   }
-  if (mappedStatus === "FAILED") return Orders.setStatus(orderBefore.id, "FAILED");
-  return orderBefore;
+  return updated;
 }
 
-// Resolve a payment identifier into type + normalized ids
+/** Resolve a public payment identifier into a normalized payment kind and provider-specific ID. */
 function resolvePaymentById(id) {
   if (!id) return null;
   const bySwap = Orders.bySwapId(id);
@@ -2910,26 +2975,47 @@ app.post("/api/webhooks/satsrouting", async (req, res) => {
     if (!(SATSROUTING_WEBHOOK_URL && SATSROUTING_WEBHOOK_SECRET)) {
       return res.status(503).json({ error: "SatsRouting webhook not configured" });
     }
-    const providedSecret =
+
+    const candidateSecret =
       req.headers["x-satsrouting-secret"] ||
       req.headers["x-webhook-secret"] ||
       req.query?.token ||
       "";
-    if (String(providedSecret) !== SATSROUTING_WEBHOOK_SECRET) {
+    const suppliedSecret = Array.isArray(candidateSecret)
+      ? (candidateSecret.length === 1 ? candidateSecret[0] : "")
+      : candidateSecret;
+    const supplied = Buffer.from(typeof suppliedSecret === "string" ? suppliedSecret : "", "utf8");
+    const expected = Buffer.from(SATSROUTING_WEBHOOK_SECRET, "utf8");
+    if (!expected.length || supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) {
       return res.status(401).json({ error: "Invalid webhook secret" });
     }
-    const payload = req.body || {};
-    const data = payload.data || payload;
-    const swapId = data.id || payload.id || "";
-    const rawStatus = data.status || payload.status || "";
-    if (!swapId || !rawStatus) return res.status(400).json({ error: "Invalid payload" });
 
-    const mappedStatus = satsrouting.mapSatsRoutingStatus(rawStatus);
-    await handleSatsRoutingStatusSideEffects({ swapId, mappedStatus, rawStatus });
+    const payload = req.body && typeof req.body === "object" ? req.body : {};
+    const data = payload.data && typeof payload.data === "object" ? payload.data : payload;
+    const candidateSwapId = data.id || payload.id || "";
+    const swapId = typeof candidateSwapId === "string" ? candidateSwapId.trim() : "";
+    if (!swapId) return res.status(400).json({ error: "Invalid payload" });
+
+    // The callback is only a wake-up signal; never trust its claimed payment status.
+    const swap = await satsrouting.getSwapStatus({ swapId });
+    const verifiedSwapId = String(swap?.id || "").trim();
+    const verifiedStatus = String(swap?.status || "").trim();
+    const mappedStatus = satsrouting.mapSatsRoutingStatus(verifiedStatus);
+    if (verifiedSwapId !== swapId || !verifiedStatus || mappedStatus === "PENDING") {
+      return res.status(502).json({ error: "SatsRouting returned an unverifiable swap state" });
+    }
+
+    await handleSatsRoutingStatusSideEffects({
+      swapId,
+      mappedStatus,
+      rawStatus: verifiedStatus,
+      swapSnapshot: swap
+    });
+    return res.status(204).end();
   } catch (e) {
-    console.warn("[satsrouting webhook] error:", e?.message || e);
+    console.warn("[satsrouting webhook] verification failed:", e?.message || e);
+    return res.status(502).json({ error: "SatsRouting webhook verification failed" });
   }
-  res.status(204).end();
 });
 
 // ---------------------------------------------------------------------
