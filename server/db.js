@@ -1503,12 +1503,19 @@ export const Orders = {
     const o = db.prepare(`SELECT * FROM orders WHERE paymentHash=?`).get(paymentHash);
     return o ? normalizeOrderRow(o) : null;
   },
-  /** Find an order by any persisted on-chain or swap identifier; callers must still verify its provider. */
-  bySwapId(swapId) {
+  /**
+   * Find an order by a persisted on-chain or swap identifier.
+   * Passing a provider scopes the lookup so webhook IDs cannot cross provider boundaries.
+   */
+  bySwapId(swapId, provider = "") {
     if (!swapId) return null;
-    const o = db
-      .prepare(`SELECT * FROM orders WHERE onchainId=? OR onchainSwapId=? OR boltzSwapId=?`)
-      .get(swapId, swapId, swapId);
+    const o = provider
+      ? db.prepare(`SELECT * FROM orders
+          WHERE (onchainId=? OR onchainSwapId=? OR boltzSwapId=?)
+            AND lower(onchainProvider)=lower(?)`)
+          .get(swapId, swapId, swapId, provider)
+      : db.prepare(`SELECT * FROM orders WHERE onchainId=? OR onchainSwapId=? OR boltzSwapId=?`)
+          .get(swapId, swapId, swapId);
     return o ? normalizeOrderRow(o) : null;
   },
   byClientId(clientId) {
@@ -1687,16 +1694,27 @@ export const Orders = {
     if (next) next.__justPaid = !alreadyPaid;
     return next;
   },
-  /** Mark a swap-backed order paid once, returning a one-time stock-consumption marker. */
-  markPaidBySwapId(boltzSwapId) {
-    const current = this.bySwapId(boltzSwapId);
+  /**
+   * Mark a swap-backed order paid once. An optional provider scopes both the
+   * initial lookup and UPDATE; the marker prevents duplicate stock consumption.
+   */
+  markPaidBySwapId(swapId, provider = "") {
+    const current = this.bySwapId(swapId, provider);
     if (!current) return null;
     const statusUpper = String(current.status || "").toUpperCase();
     const alreadyPaid = statusUpper === "PAID" || statusUpper === "PREPARATION" || statusUpper === "SHIPPED";
     if (!alreadyPaid) {
-      db.prepare(`UPDATE orders SET status='PAID' WHERE onchainId=? OR onchainSwapId=? OR boltzSwapId=?`).run(boltzSwapId, boltzSwapId, boltzSwapId);
+      if (provider) {
+        db.prepare(`UPDATE orders SET status='PAID'
+          WHERE (onchainId=? OR onchainSwapId=? OR boltzSwapId=?)
+            AND lower(onchainProvider)=lower(?)`)
+          .run(swapId, swapId, swapId, provider);
+      } else {
+        db.prepare(`UPDATE orders SET status='PAID' WHERE onchainId=? OR onchainSwapId=? OR boltzSwapId=?`)
+          .run(swapId, swapId, swapId);
+      }
     }
-    const next = alreadyPaid ? current : this.bySwapId(boltzSwapId);
+    const next = alreadyPaid ? current : this.bySwapId(swapId, provider);
     if (next) next.__justPaid = !alreadyPaid;
     return next;
   },
