@@ -2411,6 +2411,18 @@ async function handleSatsRoutingStatusSideEffects({ swapId, mappedStatus, rawSta
     return order;
   }
   if (mappedStatus === "EXPIRED") {
+    // An expired Submarine swap may still contain the buyer's on-chain lockup.
+    // In that case the buyer must actively refund it, so never delete the order
+    // (and its rescue-key index) until the API confirms no lockup was made.
+    let hasLockupTransaction = true;
+    try {
+      const swap = await satsrouting.getSwapStatus({ swapId });
+      hasLockupTransaction = satsrouting.hasSubmarineLockupTransaction(swap);
+    } catch (error) {
+      // Fail safe: preserve the refund record if SatsRouting cannot be queried.
+      console.warn("[satsrouting] could not verify expired swap lockup; retaining order:", error?.message || error);
+    }
+    if (hasLockupTransaction) return Orders.setStatus(orderBefore.id, "FAILED");
     if (orderBefore.status === "PENDING") Orders.remove(orderBefore.id);
     return orderBefore;
   }
