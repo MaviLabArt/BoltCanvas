@@ -10,16 +10,16 @@ const mocks = vi.hoisted(() => ({
   normalizeComments: vi.fn()
 }));
 
-vi.mock("../store/settings.jsx", () => ({
+vi.mock("../../store/settings.jsx", () => ({
   useSettings: mocks.useSettings
 }));
-vi.mock("../nostr/read-comments.js", () => ({
+vi.mock("../../nostr/read-comments.js", () => ({
   fetchRecentProductComments: mocks.fetchRecentProductComments
 }));
-vi.mock("../nostr/profiles.js", () => ({
+vi.mock("../../nostr/profiles.js", () => ({
   fetchProfilesForEvents: mocks.fetchProfilesForEvents
 }));
-vi.mock("../nostr/normalize.js", () => ({
+vi.mock("../../nostr/normalize.js", () => ({
   normalizeComments: mocks.normalizeComments
 }));
 
