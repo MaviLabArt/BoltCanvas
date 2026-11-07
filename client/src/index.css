@@ -1634,3 +1634,46 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
 [data-theme="enhanced-dark"] .site-nav-copper-control:not(:hover) svg {
   color: #11110F !important;
 }
+
+/* HOME ICON HOVER — MATCH GALLERY AND CART
+   Enhanced Light/Dark: stesso hover oro degli altri controlli.
+*/
+[data-theme="enhanced-light"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:hover,
+[data-theme="enhanced-light"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:focus-visible,
+[data-theme="enhanced-dark"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:hover,
+[data-theme="enhanced-dark"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:focus-visible {
+  background: var(--site-hover-bg, #D8B363) !important;
+  background-image: none !important;
+  color: var(--site-hover-fg, #11110F) !important;
+  border-color: var(--site-hover-bg, #D8B363) !important;
+  box-shadow: 0 0 0 1px var(--site-hover-bg, #D8B363),
+              0 7px 18px rgba(20, 18, 15, 0.16) !important;
+}
+
+[data-theme="enhanced-light"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:hover svg,
+[data-theme="enhanced-light"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:focus-visible svg,
+[data-theme="enhanced-dark"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:hover svg,
+[data-theme="enhanced-dark"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:focus-visible svg {
+  color: var(--site-hover-fg, #11110F) !important;
+  stroke: currentColor;
+}
+
+/* HOME ICON HOVER — CUSTOM THEME
+   Allinea il pulsante Home all'hover oro degli altri temi.
+   Sovrascrive esclusivamente il vecchio override del tema Custom.
+*/
+[data-theme="custom"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:hover,
+[data-theme="custom"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:focus-visible {
+  background: var(--site-hover-bg, #D8B363) !important;
+  background-image: none !important;
+  color: var(--site-hover-fg, #11110F) !important;
+  border-color: var(--site-hover-bg, #D8B363) !important;
+  box-shadow: 0 0 0 1px var(--site-hover-bg, #D8B363),
+              0 7px 18px rgba(20, 18, 15, 0.16) !important;
+}
+
+[data-theme="custom"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:hover svg,
+[data-theme="custom"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:focus-visible svg {
+  color: var(--site-hover-fg, #11110F) !important;
+  stroke: currentColor;
+}

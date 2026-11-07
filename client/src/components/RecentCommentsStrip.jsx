@@ -53,7 +53,7 @@ export default function RecentCommentsStrip({ products }) {
   return (
     <section className="mt-12">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-lg font-semibold">Our Customers say:</h3>
+        <h3 className="text-lg font-semibold">Your Thoughts!</h3>
         <span className="text-xs text-white/60">Live from Nostr</span>
       </div>
       <div className="flex gap-3 overflow-x-auto pb-2">
