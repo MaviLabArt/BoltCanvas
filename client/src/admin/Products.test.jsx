@@ -3,7 +3,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  apiGet: vi.fn()
+  apiGet: vi.fn(),
+  translate: (_it, en) => en ?? _it
 }));
 
 vi.mock("../services/api.js", () => ({
@@ -11,7 +12,7 @@ vi.mock("../services/api.js", () => ({
   absoluteApiUrl: value => value || ""
 }));
 vi.mock("./i18n.jsx", () => ({
-  useAdminI18n: () => ({ t: (_it, en) => en ?? _it })
+  useAdminI18n: () => ({ t: mocks.translate })
 }));
 vi.mock("../components/AsyncButton.jsx", () => ({
   default: ({ children, onClick, disabled, ...props }) => (
