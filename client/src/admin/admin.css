@@ -538,3 +538,32 @@
 .admin-shell .admin-header .admin-heading {
   color: var(--admin-text) !important;
 }
+
+
+/* Consistent feedback for Admin controls, including neutral actions that
+   previously had no hover state. Keep semantic action colors intact. */
+.admin-shell button:not(:disabled),
+.admin-shell a {
+  transition:
+    transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 160ms ease,
+    border-color 160ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .admin-shell button:not(:disabled):hover,
+  .admin-shell a:hover {
+    transform: translateY(-1px);
+    border-color: var(--admin-accent) !important;
+    box-shadow: 0 0 0 1px var(--admin-accent-soft), 0 5px 14px rgba(0, 0, 0, 0.14);
+  }
+
+  .admin-shell label:has(input[name="themeChoice"]):hover {
+    border-color: var(--admin-accent) !important;
+    box-shadow: 0 0 0 1px var(--admin-accent-soft);
+  }
+}
+
+.admin-shell button:not(:disabled):active {
+  transform: translateY(0);
+}

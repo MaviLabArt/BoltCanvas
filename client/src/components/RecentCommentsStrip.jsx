@@ -14,8 +14,6 @@ export default function RecentCommentsStrip({ products }) {
   const [comments, setComments] = useState([]);
   const blocked = useMemo(() => makeBlockedSets(settings), [settings]);
 
-  if (!enabled) return null;
-
   useEffect(() => {
     let cancelled = false;
     if (!settings) {
@@ -48,12 +46,13 @@ export default function RecentCommentsStrip({ products }) {
     return map;
   }, [products]);
 
+  if (!enabled) return null;
   if (!comments.length) return null;
 
   return (
     <section className="mt-12">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-lg font-semibold">Our Customers say:</h3>
+        <h3 className="text-lg font-semibold">Your Thoughts!</h3>
         <span className="text-xs text-white/60">Live from Nostr</span>
       </div>
       <div className="flex gap-3 overflow-x-auto pb-2">

@@ -9,6 +9,7 @@ import { createProxyMiddleware } from "http-proxy-middleware";
 import crypto from "crypto";
 import sharp from "sharp";
 import { createBufferCache } from "./buffer-cache.js";
+import { createNip05ResolutionCache } from "./nip05-cache.js";
 import { verifyEvent } from "nostr-tools/pure";
 import { nip19 } from "nostr-tools";
 
@@ -61,6 +62,11 @@ import { createNtfySender } from "./ntfy.js";
 import { verifySvixSignature } from "./svix.js";
 
 let nostrTestimonialsCache = { key: "", expiresAt: 0, data: [] };
+const resolvePublicNostrPubkey = createNip05ResolutionCache(resolveToPubkey, {
+  ttlMs: 5 * 60 * 1000,
+  negativeTtlMs: 30 * 1000,
+  maxEntries: 128
+});
 
 const app = express();
 const adminLoginLimiter = createAdminLoginLimiter();
@@ -652,10 +658,17 @@ function buildDefaultMeta(req, settings) {
   const siteName = settings?.storeName || "Lightning Shop";
   const description = settings?.heroLine || settings?.contactNote || "A curated selection available for sats.";
   const logo = settings?.logoLight || settings?.logo || settings?.logoDark || "";
+  const parsedLogo = parseDataUrl(logo);
+  const logoVersion = parsedLogo?.buffer?.length
+    ? crypto.createHash("sha256").update(logo).digest("hex").slice(0, 16)
+    : "";
+  const image = parsedLogo?.buffer?.length
+    ? ensureAbsoluteFromReq(req, `/api/public/store-logo?v=${logoVersion}`)
+    : (logo && !/^data:/i.test(logo) ? ensureAbsoluteFromReq(req, logo) : "");
   return {
     title: siteName,
     description,
-    image: logo ? ensureAbsoluteFromReq(req, logo) : "",
+    image,
     url: absoluteUrlFromRequest(req),
     type: "website",
     siteName
@@ -1064,9 +1077,25 @@ function imageHandler({ thumb }) {
 // Public API
 // ---------------------------------------------------------------------
 app.get("/api/health", (req, res) => res.json({ ok: true }));
-app.get("/api/public-settings", (req, res) => {
-  const nostrShopPubkey = getShopPubkey();
-  res.json({ ...Settings.getPublic(), nostrShopPubkey });
+app.get("/api/public-settings", async (req, res) => {
+  const settings = Settings.getPublic();
+  let nostrShopPubkey = getShopPubkey();
+
+  // Public identity is sufficient for reading and verifying shop comments.
+  // Signing new comment proofs still requires the server private key.
+  if (!nostrShopPubkey && settings.nostrNpub) {
+    try {
+      nostrShopPubkey = await resolvePublicNostrPubkey(settings.nostrNpub) || "";
+    } catch {
+      nostrShopPubkey = "";
+    }
+  }
+
+  res.json({
+    ...settings,
+    nostrShopPubkey,
+    nostrCommentsReadOnly: !getShopKeys()
+  });
 });
 app.get("/api/public/nostr-testimonials", async (req, res) => {
   const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -1201,6 +1230,25 @@ app.get("/api/public/nostr-testimonials", async (req, res) => {
     res.status(500).json({ testimonials: [], error: "Unable to load testimonials" });
   }
 });
+// Expose the storefront logo as a crawlable image URL for Open Graph.
+app.get("/api/public/store-logo", (req, res) => {
+  try {
+    const settings = Settings.getAll();
+    const rawImage = settings.logoLight || settings.logo || settings.logoDark || "";
+    const parsed = parseDataUrl(rawImage);
+    if (!parsed || !parsed.buffer?.length) {
+      return res.status(404).end();
+    }
+    res.set("Content-Type", parsed.mime || "image/png");
+    res.set("Cache-Control", "public, max-age=3600, stale-while-revalidate=86400");
+    res.set("X-Content-Type-Options", "nosniff");
+    res.set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+    res.send(parsed.buffer);
+  } catch (err) {
+    res.status(500).json({ error: String(err?.message || err) });
+  }
+});
+
 // Expose the stall logo when stored as a data URL (for Nostr publishing)
 app.get("/api/public/stall-logo", (req, res) => {
   try {
@@ -1492,6 +1540,7 @@ app.get("/api/admin/products", requireAdmin, (req, res) => {
       quantityAvailable: p.quantityAvailable,
       maxQuantity,
       available: p.available,
+      artworkStatus: p.artworkStatus,
       hidden: p.hidden,
       createdAt: p.createdAt,
       displayOrder: p.displayOrder,

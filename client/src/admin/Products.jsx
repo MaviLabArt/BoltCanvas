@@ -386,6 +386,20 @@ export default function Products() {
             p.depthCm ? `${p.depthCm}` : null,
           ].filter(Boolean) : [];
           const isHidden = !!p.hidden;
+          const artworkStatusOverlayLabel = {
+            sold: t("VENDUTO", "SOLD"),
+            gifted: t("REGALATO", "GIFTED"),
+            personal_collection: t("COLLEZIONE PERSONALE", "PERSONAL COLLECTION"),
+          }[p.artworkStatus] || null;
+          const statusOverlayLabel = isHidden
+            ? t("NASCOSTO", "HIDDEN")
+            : artworkStatusOverlayLabel;
+          const showUnclassifiedBadge = Boolean(
+            !isHidden &&
+            p.artworkStatus &&
+            p.artworkStatus !== "for_sale" &&
+            !artworkStatusOverlayLabel
+          );
           return (
             <div
               key={p.id}
@@ -408,26 +422,21 @@ export default function Products() {
                   </div>
                 )}
                 {reordering && (
-                  <div className="absolute top-2 left-2 px-2 py-1 rounded-full bg-black/60 text-xs text-white">
+                  <div className="absolute z-10 top-2 left-2 px-2 py-1 rounded-full bg-black/60 text-xs text-white">
                     #{position + 1}
                   </div>
                 )}
-                {isHidden && (
-                  <div className="absolute inset-0 bg-black/60 grid place-items-center">
-                    <span className="px-3 py-1 rounded-xl bg-white/10 ring-1 ring-white/20 text-white">
-                      {t("NASCOSTO", "HIDDEN")}
+                {statusOverlayLabel && (
+                  <div className="absolute inset-0 z-0 bg-black/60 grid place-items-center">
+                    <span className="px-3 py-1 rounded-xl bg-white/10 ring-1 ring-white/20 text-white text-center">
+                      {statusOverlayLabel}
                     </span>
                   </div>
                 )}
-                {!isHidden && p.artworkStatus && p.artworkStatus !== "for_sale" && (
+                {showUnclassifiedBadge && (
                   <div className="absolute bottom-2 right-2">
                     <span className="px-2 py-1 rounded-lg bg-black/65 ring-1 ring-white/20 text-white text-xs">
-                      {{
-                        sold: "SOLD",
-                        gifted: "GIFTED",
-                        personal_collection: "PERSONAL COLLECTION",
-                        unclassified: "UNCLASSIFIED",
-                      }[p.artworkStatus] || "UNCLASSIFIED"}
+                      {t("NON CLASSIFICATO", "UNCLASSIFIED")}
                     </span>
                   </div>
                 )}

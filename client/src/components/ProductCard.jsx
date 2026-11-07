@@ -65,30 +65,54 @@ export default function ProductCard({ p, radiusScale = "3xl" }) {
 
   return (
     <motion.div
-      initial={reduce ? false : { opacity: 0, y: 10 }}
-      animate={reduce ? {} : { opacity: 1, y: 0 }}
+      initial={reduce ? false : { opacity: 0, y: 16, scale: 0.988 }}
+      whileInView={reduce ? undefined : { opacity: 1, y: 0, scale: 1 }}
+      viewport={{ once: true, amount: 0.12, margin: "0px 0px -32px 0px" }}
+      whileTap={reduce ? undefined : { scale: 0.985 }}
+      tabIndex={-1}
+      transition={reduce ? { duration: 0 } : { duration: 0.64, ease: [0.22, 1, 0.36, 1] }}
       className={`text-left ${cardRadius} overflow-hidden bg-slate-900 ring-1 ring-white/10`}
       aria-label={`${p.title || "Untitled"}${isForSale ? `, ${formatSats(p.priceSats)} sats` : `, ${statusLabel}`}`}
     >
-      <Link to={`/product/${p.id}`} className="block group">
+      <Link
+        to={`/product/${p.id}`}
+        data-product-card-id={String(p.id)}
+        className="block group"
+      >
         <div className={`aspect-[4/3] bg-black/40 relative ${cardRadius} overflow-hidden`}>
           {main ? (
-            <img
+            <motion.img
               src={main}
               alt={p.title}
               className="w-full h-full object-cover"
               loading="lazy"
+              decoding="async"
+              initial={reduce ? false : { scale: 1.045 }}
+              whileInView={reduce ? undefined : { scale: 1 }}
+              viewport={{ once: true, amount: 0.2 }}
+              whileHover={reduce ? undefined : { scale: 1.025 }}
+              transition={reduce ? { duration: 0 } : { duration: 0.72, ease: [0.22, 1, 0.36, 1] }}
             />
           ) : (
             <div className="w-full h-full grid place-items-center text-white/40">No image</div>
           )}
 
           {isForSale && (
-            <div className="absolute top-3 right-3">
+            <motion.div
+              className="absolute top-3 right-3"
+              initial={reduce ? false : { opacity: 0, y: -5, scale: 0.98 }}
+              whileInView={reduce ? undefined : { opacity: 1, y: 0, scale: 1 }}
+              viewport={{ once: true, amount: 0.2 }}
+              transition={reduce ? { duration: 0 } : {
+                duration: 0.42,
+                delay: 0.14,
+                ease: [0.22, 1, 0.36, 1]
+              }}
+            >
               <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-[#292B2A]/95 text-[#F5F0E6] backdrop-blur-sm ring-1 ring-[#B8734F]">
                 {formatSats(p.priceSats)} sats
               </span>
-            </div>
+            </motion.div>
           )}
 
           {!isForSale && (
@@ -100,7 +124,7 @@ export default function ProductCard({ p, radiusScale = "3xl" }) {
           )}
 
           {/* Hover affordance on desktop */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 p-3 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+          <div className="product-card-view-affordance pointer-events-none absolute inset-x-0 bottom-0 p-3 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
             <div className="rounded-xl bg-gradient-to-t from-black/60 to-transparent px-2 py-1 w-fit flex items-center gap-1 view-pill">
               <span className="text-sm">View</span>
               <span aria-hidden>→</span>
@@ -109,7 +133,17 @@ export default function ProductCard({ p, radiusScale = "3xl" }) {
         </div>
 
         {/* Title + optional subtitle (price moved to pill) */}
-        <div className="p-4">
+        <motion.div
+          className="p-4"
+          initial={reduce ? false : { opacity: 0, y: 8 }}
+          whileInView={reduce ? undefined : { opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.15 }}
+          transition={reduce ? { duration: 0 } : {
+            duration: 0.46,
+            delay: 0.2,
+            ease: [0.22, 1, 0.36, 1]
+          }}
+        >
           <div className="flex items-center gap-2">
             <div className="font-medium truncate" title={p.title}>{p.title || "Untitled"}</div>
             {isForSale && (
@@ -127,7 +161,7 @@ export default function ProductCard({ p, radiusScale = "3xl" }) {
               {dims}
             </div>
           ) : null}
-        </div>
+        </motion.div>
       </Link>
     </motion.div>
   );
