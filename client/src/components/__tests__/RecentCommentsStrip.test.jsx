@@ -48,19 +48,19 @@ describe("RecentCommentsStrip", () => {
 
     mocks.useSettings.mockReturnValue({ settings: disabledSettings });
 
-    const tree = (
+    const renderTree = () => (
       <MemoryRouter>
         <RecentCommentsStrip products={[]} />
       </MemoryRouter>
     );
-    const { container, rerender } = render(tree);
+    const { container, rerender } = render(renderTree());
 
     expect(container.firstChild).toBeNull();
 
     mocks.useSettings.mockReturnValue({ settings: enabledSettings });
 
     await act(async () => {
-      rerender(tree);
+      rerender(renderTree());
     });
 
     await waitFor(() => {
