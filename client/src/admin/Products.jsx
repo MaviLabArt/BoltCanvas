@@ -422,12 +422,12 @@ export default function Products() {
                   </div>
                 )}
                 {reordering && (
-                  <div className="absolute top-2 left-2 px-2 py-1 rounded-full bg-black/60 text-xs text-white">
+                  <div className="absolute z-10 top-2 left-2 px-2 py-1 rounded-full bg-black/60 text-xs text-white">
                     #{position + 1}
                   </div>
                 )}
                 {statusOverlayLabel && (
-                  <div className="absolute inset-0 bg-black/60 grid place-items-center">
+                  <div className="absolute inset-0 z-0 bg-black/60 grid place-items-center">
                     <span className="px-3 py-1 rounded-xl bg-white/10 ring-1 ring-white/20 text-white text-center">
                       {statusOverlayLabel}
                     </span>
