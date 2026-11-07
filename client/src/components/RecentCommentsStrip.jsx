@@ -14,8 +14,6 @@ export default function RecentCommentsStrip({ products }) {
   const [comments, setComments] = useState([]);
   const blocked = useMemo(() => makeBlockedSets(settings), [settings]);
 
-  if (!enabled) return null;
-
   useEffect(() => {
     let cancelled = false;
     if (!settings) {
@@ -48,6 +46,7 @@ export default function RecentCommentsStrip({ products }) {
     return map;
   }, [products]);
 
+  if (!enabled) return null;
   if (!comments.length) return null;
 
   return (
