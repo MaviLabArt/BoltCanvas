@@ -60,18 +60,29 @@ export async function buildNip05Response({
     entries.push({ name, pubkey });
   };
 
-  // Preserve the existing single-identity settings and fallback behavior.
-  const primaryName = normalizeNip05Username(s.nostrNip05) || (!String(s.nostrNip05 || "").trim() ? requested : "");
-  await addIdentity(primaryName, s.nostrNpub);
-
-  // Aliases are resolved only for explicit name lookups.
+  // Resolve an explicitly requested alias before considering the legacy primary fallback.
+  // This prevents an empty primary NIP-05 setting from claiming the requested alias name.
   if (hasRequestedName) {
+    let matchingAliasFound = false;
     for (const identity of parseAdditionalIdentities(s.nostrAdditionalNip05Identities)) {
       if (!identity || typeof identity !== "object") continue;
       const name = identity.name ?? identity.username ?? identity.nip05 ?? "";
+      if (normalizeNip05Username(name) !== requested) continue;
+
+      matchingAliasFound = true;
       const key = identity.npub ?? identity.pubkey ?? identity.publicKey ?? "";
       await addIdentity(name, key);
     }
+
+    // Preserve the legacy query-name fallback only when no configured alias matches.
+    if (!matchingAliasFound) {
+      const primaryName = normalizeNip05Username(s.nostrNip05) ||
+        (!String(s.nostrNip05 || "").trim() ? requested : "");
+      await addIdentity(primaryName, s.nostrNpub);
+    }
+  } else {
+    // Without ?name=, preserve the legacy primary-only response.
+    await addIdentity(normalizeNip05Username(s.nostrNip05), s.nostrNpub);
   }
 
   // Without ?name=, preserve the legacy single-primary response.

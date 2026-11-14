@@ -2058,16 +2058,21 @@ export const Settings = {
     // ✨ Signature (admin)
     smtpSignature
   }) {
-    // Validate additional NIP-05 identities before writing ANY setting.
+    // Validate the resulting primary name and aliases before writing ANY setting.
+    const currentSettings = this.getAll();
+    const shouldValidateNip05Identities =
+      nostrNip05 !== undefined || nostrAdditionalNip05Identities !== undefined;
     let normalizedAdditionalNip05Identities;
-    if (nostrAdditionalNip05Identities !== undefined) {
+    if (shouldValidateNip05Identities) {
       const invalid = (message) => {
         const error = new Error(message);
         error.code = "INVALID_NIP05_IDENTITIES";
         return error;
       };
 
-      let parsed = nostrAdditionalNip05Identities;
+      let parsed = nostrAdditionalNip05Identities !== undefined
+        ? nostrAdditionalNip05Identities
+        : currentSettings.nostrAdditionalNip05Identities;
       if (typeof parsed === "string") {
         try {
           parsed = JSON.parse(parsed);
@@ -2083,7 +2088,6 @@ export const Settings = {
         throw invalid("A maximum of 25 additional NIP-05 identities is allowed.");
       }
 
-      const currentSettings = this.getAll();
       const primaryValue = nostrNip05 !== undefined
         ? nostrNip05
         : currentSettings.nostrNip05;

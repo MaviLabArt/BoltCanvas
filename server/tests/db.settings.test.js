@@ -101,6 +101,24 @@ describe("db: settings", () => {
     })).toThrowError(/Duplicate NIP-05 username/i);
   });
 
+  it("rejects changing the primary NIP-05 name to an existing alias without partial writes", async () => {
+    const { Settings } = await freshDb();
+    Settings.setAll({
+      storeName: "Before",
+      nostrNip05: "isolabellart",
+      nostrAdditionalNip05Identities: [
+        { name: "beaunique", npub: "b".repeat(64) }
+      ]
+    });
+
+    expect(() => Settings.setAll({
+      storeName: "Must Not Be Saved",
+      nostrNip05: "beaunique"
+    })).toThrowError(/Duplicate NIP-05 username/i);
+    expect(Settings.getAll().storeName).toBe("Before");
+    expect(Settings.getAll().nostrNip05).toBe("isolabellart");
+  });
+
   it("accepts a valid npub and stores normalized alias data", async () => {
     const { Settings } = await freshDb();
     const validNpub = "npub1ty8ptvutuptqxzws9nua6gpukttpmpe89hts3teatgg9ymefl6uspn6fgn";

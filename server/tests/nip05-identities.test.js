@@ -108,6 +108,29 @@ describe("NIP-05 multi-identity response", () => {
     expect(payload.names).toEqual({ isolabellart: MAIN });
   });
 
+  it("resolves a configured alias before the legacy fallback when the primary name is empty", async () => {
+    const resolvePubkey = makeResolver({
+      "npub-main": MAIN,
+      "npub-bea": BEA
+    });
+    const payload = await buildNip05Response({
+      settings: {
+        nostrNpub: "npub-main",
+        nostrNip05: "",
+        nostrAdditionalNip05Identities: [
+          { name: "beaunique", npub: "npub-bea" }
+        ]
+      },
+      requestedName: "beaunique",
+      resolvePubkey,
+      relays: RELAYS
+    });
+
+    expect(payload.names).toEqual({ beaunique: BEA });
+    expect(payload.relays).toEqual({ [BEA]: RELAYS });
+    expect(resolvePubkey).toHaveBeenCalledTimes(1);
+  });
+
   it("accepts additional identities stored as JSON text", async () => {
     const resolvePubkey = makeResolver({ "npub-bea": BEA });
     const payload = await buildNip05Response({
