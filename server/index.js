@@ -17,6 +17,7 @@ import { createAdminLoginLimiter } from "./admin-login-limiter.js";
 import { Products, Orders, Settings, ProductImages, ProductNostrPosts, NostrCarts, DEFAULT_TEASER_HASHTAGS } from "./db.js";
 import { isEurope } from "./countries.js";
 import { makeId, now } from "./utils.js";
+import { buildNip05Response } from "./nip05-identities.js";
 
 // ⬇️ Provider-agnostic payment API (Blink or LND)
 import {
@@ -1387,7 +1388,7 @@ app.put("/api/admin/settings", requireAdmin, (req, res) => {
     embedCode,
     nostrTestimonials,
     // NEW Nostr/LN
-    nostrNpub, nostrNip05, nostrRelays, lightningAddress, nostrDefaultHashtags, nostrCommentsEnabled,
+    nostrNpub, nostrNip05, nostrAdditionalNip05Identities, nostrRelays, lightningAddress, nostrDefaultHashtags, nostrCommentsEnabled,
     nostrBlockedPubkeys, nostrBlockedHashtags,
     // NEW Theme
     themeChoice,
@@ -1401,30 +1402,37 @@ app.put("/api/admin/settings", requireAdmin, (req, res) => {
     notifyEmailSubject_PAID, notifyEmailSubject_PREPARATION, notifyEmailSubject_SHIPPED,
     notifyEmailBody_PAID, notifyEmailBody_PREPARATION, notifyEmailBody_SHIPPED
   } = req.body || {};
-  res.json(
-    Settings.setAll({
-      storeName, contactNote, logo, logoDark, logoLight, favicon, productsHeading, featuredProductId, heroLine, radiusScale,
-      displayFont, bodyFont,
-      aboutTitle, aboutBody, aboutImage,
-      heroCtaLabel, heroCtaHref,
-      shippingTitle, shippingBullet1, shippingBullet2, shippingBullet3,
-      shippingZones,
-      commissionTitle, commissionBody, commissionCtaLabel, commissionCtaHref,
-      // NEW: Embedded Code
-      embedCode,
-      nostrTestimonials,
-      nostrNpub, nostrNip05, nostrRelays, lightningAddress, nostrDefaultHashtags, nostrCommentsEnabled,
-      nostrBlockedPubkeys, nostrBlockedHashtags,
-      themeChoice, themeTokens,
-      smtpEnabled, smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass,
-      smtpFromName, smtpFromAddress, smtpEnvelopeFrom, smtpReplyTo, smtpSignature, smtpSaveToSent,
-      imapHost, imapPort, imapSecure, imapUser, imapPass, imapMailbox,
-      // pass templates through
-      notifyDmTemplate_PAID, notifyDmTemplate_PREPARATION, notifyDmTemplate_SHIPPED,
-      notifyEmailSubject_PAID, notifyEmailSubject_PREPARATION, notifyEmailSubject_SHIPPED,
-      notifyEmailBody_PAID, notifyEmailBody_PREPARATION, notifyEmailBody_SHIPPED
-    })
-  );
+  try {
+    return res.json(
+      Settings.setAll({
+        storeName, contactNote, logo, logoDark, logoLight, favicon, productsHeading, featuredProductId, heroLine, radiusScale,
+        displayFont, bodyFont,
+        aboutTitle, aboutBody, aboutImage,
+        heroCtaLabel, heroCtaHref,
+        shippingTitle, shippingBullet1, shippingBullet2, shippingBullet3,
+        shippingZones,
+        commissionTitle, commissionBody, commissionCtaLabel, commissionCtaHref,
+        // NEW: Embedded Code
+        embedCode,
+        nostrTestimonials,
+        nostrNpub, nostrNip05, nostrAdditionalNip05Identities, nostrRelays, lightningAddress, nostrDefaultHashtags, nostrCommentsEnabled,
+        nostrBlockedPubkeys, nostrBlockedHashtags,
+        themeChoice, themeTokens,
+        smtpEnabled, smtpHost, smtpPort, smtpSecure, smtpUser, smtpPass,
+        smtpFromName, smtpFromAddress, smtpEnvelopeFrom, smtpReplyTo, smtpSignature, smtpSaveToSent,
+        imapHost, imapPort, imapSecure, imapUser, imapPass, imapMailbox,
+        // pass templates through
+        notifyDmTemplate_PAID, notifyDmTemplate_PREPARATION, notifyDmTemplate_SHIPPED,
+        notifyEmailSubject_PAID, notifyEmailSubject_PREPARATION, notifyEmailSubject_SHIPPED,
+        notifyEmailBody_PAID, notifyEmailBody_PREPARATION, notifyEmailBody_SHIPPED
+      })
+    );
+  } catch (error) {
+    if (error?.code === "INVALID_NIP05_IDENTITIES") {
+      return res.status(400).json({ ok: false, error: error.message });
+    }
+    throw error;
+  }
 });
 
 // NEW: Admin products list (full objects with images[])
@@ -2983,50 +2991,34 @@ app.post("/api/nostr/comment/notify", async (req, res) => {
 });
 
 // ---------------------------------------------------------------------
-// ✅ NEW: NIP-05 well-known endpoint
-// Serves /.well-known/nostr.json using settings (nostrNip05, nostrNpub, relays).
+// ✅ NIP-05 well-known endpoint
+// Serves the primary and additional NIP-05 identities configured in admin settings.
 // Sits before the Vite proxy/static so it works in DEV and PROD.
 // ---------------------------------------------------------------------
 app.get("/.well-known/nostr.json", async (req, res) => {
   try {
-    const s = Settings.getAll();
-
-    // Determine the username from settings (before any ?name= query)
-    const configuredName = String(s.nostrNip05 || "")
-      .split("@")[0]
-      .trim()
-      .toLowerCase();
-    const requestedName = String(req.query.name || "")
-      .trim()
-      .toLowerCase();
-    const name = configuredName || requestedName;
-
-    // Resolve pubkey to raw hex (accepts hex or npub in settings)
-    let hex = "";
-    const ident = String(s.nostrNpub || "").trim();
-    if (ident) {
-      try { hex = await resolveToPubkey(ident); } catch {}
-    }
-
-    // If not configured, return an empty mapping (valid JSON)
-    if (!hex || !name) {
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Cache-Control", "public, max-age=120");
-      return res.status(200).json({ names: {} });
-    }
-
-    const names = { [name]: hex };
-    const relaysArr = nostrRelays();
-    const relays = relaysArr?.length ? { [hex]: relaysArr } : undefined;
+    const settings = Settings.getAll();
+    const payload = await buildNip05Response({
+      settings,
+      requestedName: req.query.name,
+      resolvePubkey: resolveToPubkey,
+      relays: nostrRelays()
+    });
 
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
-
-    const payload = relays ? { names, relays } : { names };
-    return res.json(payload);
+    const hasMatches = Object.keys(payload.names || {}).length > 0;
+    res.setHeader(
+      "Cache-Control",
+      hasMatches
+        ? "public, max-age=300, stale-while-revalidate=600"
+        : "public, max-age=120"
+    );
+    return res.status(200).json(payload);
   } catch {
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cache-Control", "public, max-age=120");
     return res.status(200).json({ names: {} });
   }
 });
