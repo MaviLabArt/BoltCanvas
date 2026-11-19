@@ -113,6 +113,7 @@ export default function Settings() {
     // --- NEW: Nostr & Lightning ---
     nostrNpub: "",
     nostrNip05: "",
+    nostrAdditionalNip05Identities: [],
     nostrRelays: ["wss://relay.damus.io", "wss://nos.lol"],
     nostrDefaultHashtags: "#shop #lightning #bitcoin",
     nostrCommentsEnabled: true,
@@ -151,6 +152,9 @@ export default function Settings() {
     ? s.shippingContinentPrices
     : { EU: 0, AS: 0, NA: 0, SA: 0, OC: 0, AF: 0, ME: 0 };
   const overrides = Array.isArray(s.shippingOverrides) ? s.shippingOverrides : [];
+  const additionalNip05Identities = Array.isArray(s.nostrAdditionalNip05Identities)
+    ? s.nostrAdditionalNip05Identities
+    : [];
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -248,6 +252,42 @@ export default function Settings() {
     });
   };
 
+  const addAdditionalNip05Identity = () => {
+    setS((prev) => {
+      const current = Array.isArray(prev.nostrAdditionalNip05Identities)
+        ? prev.nostrAdditionalNip05Identities
+        : [];
+
+      if (current.length >= 25) return prev;
+
+      return {
+        ...prev,
+        nostrAdditionalNip05Identities: [
+          ...current,
+          { name: "", npub: "" }
+        ]
+      };
+    });
+  };
+  const updateAdditionalNip05Identity = (idx, patch) => {
+    setS((prev) => {
+      const list = Array.isArray(prev.nostrAdditionalNip05Identities)
+        ? prev.nostrAdditionalNip05Identities.slice()
+        : [];
+      if (!list[idx]) return prev;
+      list[idx] = { ...list[idx], ...patch };
+      return { ...prev, nostrAdditionalNip05Identities: list };
+    });
+  };
+  const removeAdditionalNip05Identity = (idx) => {
+    setS((prev) => ({
+      ...prev,
+      nostrAdditionalNip05Identities: (Array.isArray(prev.nostrAdditionalNip05Identities)
+        ? prev.nostrAdditionalNip05Identities
+        : []).filter((_, index) => index !== idx)
+    }));
+  };
+
   const buildSimpleZones = (state) => {
     const domesticCountry = String(state.shippingDomesticCountry || "IT").toUpperCase();
     const priceMap = (state.shippingContinentPrices && typeof state.shippingContinentPrices === "object")
@@ -341,6 +381,38 @@ export default function Settings() {
       setError(t("Correggi i campi evidenziati prima di salvare.", "Fix the highlighted fields before saving."));
       return;
     }
+
+    const mainNip05Name = String(s.nostrNip05 || "").split("@")[0].trim().toLowerCase();
+    const seenNip05Names = new Set(mainNip05Name ? [mainNip05Name] : []);
+    for (const identity of additionalNip05Identities) {
+      const name = String(identity?.name || "").split("@")[0].trim().toLowerCase();
+      const npub = String(identity?.npub || identity?.pubkey || "").trim();
+      if (!name && !npub) continue;
+      if (!name || !npub) {
+        setMessage("");
+        setError(t("Completa sia il nome NIP-05 sia il npub per ogni identità aggiuntiva.", "Enter both the NIP-05 username and npub for every additional identity."));
+        return;
+      }
+      if (!/^[a-z0-9._-]{1,64}$/.test(name)) {
+        setMessage("");
+        setError(t("Nome NIP-05 non valido: usa lettere, numeri, punto, trattino o underscore.", "Invalid NIP-05 username: use letters, numbers, dot, hyphen or underscore."));
+        return;
+      }
+      if (seenNip05Names.has(name)) {
+        setMessage("");
+        setError(t("Nome NIP-05 duplicato, incluso quello principale.", "Duplicate NIP-05 username, including the primary identity."));
+        return;
+      }
+      const isHexPubkey = /^[0-9a-f]{64}$/i.test(npub);
+      const isNpub = /^npub1[023456789acdefghjklmnpqrstuvwxyz]{58}$/i.test(npub);
+      if (!isHexPubkey && !isNpub) {
+        setMessage("");
+        setError(t("La chiave deve essere un npub valido o una pubkey esadecimale di 64 caratteri.", "The key must be an npub or a 64-character hexadecimal public key."));
+        return;
+      }
+      seenNip05Names.add(name);
+    }
+
     try {
       setSaving(true);
       setMessage("");
@@ -365,6 +437,12 @@ export default function Settings() {
       const payload = {
         ...stateWithoutBlockedHashtags,
         // ensure relays are serialized correctly (server accepts string/array)
+        nostrAdditionalNip05Identities: additionalNip05Identities
+          .map((identity) => ({
+            name: String(identity?.name || "").split("@")[0].trim().toLowerCase(),
+            npub: String(identity?.npub || identity?.pubkey || "").trim()
+          }))
+          .filter((identity) => identity.name && identity.npub),
         nostrRelays: Array.isArray(s.nostrRelays)
           ? s.nostrRelays
           : String(s.nostrRelays || ""),
@@ -1192,6 +1270,56 @@ export default function Settings() {
             value={s.nostrNip05 || ""}
             onChange={(e) => setS({ ...s, nostrNip05: e.target.value })}
           />
+          <div className="grid gap-3 rounded-2xl bg-slate-950/60 ring-1 ring-white/10 p-3">
+            <div className="font-semibold text-sm">
+              {t("Identità NIP-05 aggiuntive", "Additional NIP-05 identities")}
+            </div>
+            <p className="text-xs text-white/60 leading-relaxed">
+              {t(
+                "Inserisci solo il nome prima della @ e il relativo npub. Puoi aggiungere o rimuovere identità senza modificare quella principale. Puoi aggiungere fino a 25 identità NIP-05 aggiuntive, oltre a quella principale.",
+                "Enter the username before @ and its npub. You can add or remove identities without changing the primary one. You can add up to 25 additional NIP-05 identities, in addition to the primary identity."
+              )}
+            </p>
+            <p className="text-xs text-white/60">
+              {t("Identità aggiuntive: ", "Additional identities: ")}
+              {additionalNip05Identities.length} / 25
+            </p>
+            {additionalNip05Identities.map((identity, idx) => (
+              <div key={`additional-nip05-${idx}`} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto]">
+                <input
+                  className="min-w-0 px-3 py-3 rounded-xl bg-slate-900 ring-1 ring-white/10"
+                  aria-label={t("Nome NIP-05 aggiuntivo", "Additional NIP-05 username")}
+                  placeholder="beaunique"
+                  value={identity?.name || ""}
+                  onChange={(e) => updateAdditionalNip05Identity(idx, { name: e.target.value })}
+                />
+                <input
+                  className="min-w-0 px-3 py-3 rounded-xl bg-slate-900 ring-1 ring-white/10"
+                  aria-label={t("NPUB aggiuntivo", "Additional npub")}
+                  placeholder="npub1..."
+                  value={identity?.npub || identity?.pubkey || ""}
+                  onChange={(e) => updateAdditionalNip05Identity(idx, { npub: e.target.value, pubkey: undefined })}
+                />
+                <button
+                  type="button"
+                  className="rounded-xl px-3 py-2 bg-white/10 hover:bg-white/15 text-sm"
+                  onClick={() => removeAdditionalNip05Identity(idx)}
+                >
+                  {t("Rimuovi", "Remove")}
+                </button>
+              </div>
+            ))}
+            <div>
+              <button
+                type="button"
+                disabled={additionalNip05Identities.length >= 25}
+                className="rounded-xl px-3 py-2 bg-white/10 hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed text-sm"
+                onClick={addAdditionalNip05Identity}
+              >
+                + {t("Aggiungi identità", "Add identity")}
+              </button>
+            </div>
+          </div>
           <input
             className="px-4 py-3 rounded-2xl bg-slate-900 ring-1 ring-white/10"
             placeholder='Relays (JSON array or CSV), e.g. ["wss://relay.damus.io","wss://nos.lol"]'
