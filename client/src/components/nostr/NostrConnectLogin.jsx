@@ -61,22 +61,22 @@ export default function NostrConnectLogin({ onBack, onClose }) {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col items-center gap-3 rounded-2xl bg-slate-900 ring-1 ring-white/10 p-4">
-        <div className="p-4 rounded-2xl bg-white shadow-lg ring-1 ring-black/5">
+    <div className="space-y-4 nostr-connect-login">
+      <div className="flex flex-col items-center gap-3 rounded-2xl bg-slate-900 ring-1 ring-white/10 p-4 nostr-connect-qr-panel">
+        <div className="p-4 rounded-2xl bg-white shadow-lg ring-1 ring-black/5 nostr-connect-qr-frame">
           <QRCode value={connectionString} size={360} bgColor="#ffffff" fgColor="#000000" level="M" />
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 nostr-connect-actions">
           <button
             type="button"
             onClick={() => copyToClipboard(connectionString)}
-            className="text-xs px-3 py-2 rounded-lg bg-slate-800 ring-1 ring-white/10 hover:bg-slate-700"
+            className="text-xs px-3 py-2 rounded-lg bg-slate-800 ring-1 ring-white/10 hover:bg-slate-700 nostr-connect-action nostr-connect-action-primary"
           >
             Copy link
           </button>
           <a
             href={connectionString}
-            className="text-xs px-3 py-2 rounded-lg bg-slate-800 ring-1 ring-white/10 hover:bg-slate-700"
+            className="text-xs px-3 py-2 rounded-lg bg-slate-800 ring-1 ring-white/10 hover:bg-slate-700 nostr-connect-action nostr-connect-action-secondary no-theme-color"
             aria-label="Open with Nostr signer"
           >
             Open
@@ -85,19 +85,19 @@ export default function NostrConnectLogin({ onBack, onClose }) {
       </div>
 
       <div className="space-y-2">
-        <label className="text-xs text-white/60">
+        <label className="text-xs text-white/60 nostr-connect-field">
           Or paste bunker URI
           <input
             value={customUri}
             onChange={(e) => setCustomUri(e.target.value)}
-            className="mt-2 w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 focus:border-indigo-400 outline-hidden text-sm"
+            className="mt-2 w-full px-3 py-2 rounded-lg bg-slate-800 border border-white/10 focus:border-indigo-400 outline-hidden text-sm nostr-connect-input"
             placeholder="bunker://..."
           />
         </label>
       </div>
 
-      {error && <div className="text-xs text-rose-300 text-center">{error}</div>}
-      <div className="text-xs text-white/60 text-center">
+      {error && <div className="text-xs text-rose-300 text-center nostr-connect-error">{error}</div>}
+      <div className="text-xs text-white/60 text-center nostr-connect-status" data-state={status}>
         {status === "connecting"
           ? "Waiting for approval…"
           : status === "connected"
@@ -109,11 +109,11 @@ export default function NostrConnectLogin({ onBack, onClose }) {
                 : "Ready"}
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 nostr-connect-back-wrap">
         <button
           type="button"
           onClick={onBack}
-          className="flex-1 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm font-semibold ring-1 ring-white/10"
+          className="flex-1 px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm font-semibold ring-1 ring-white/10 nostr-connect-back"
         >
           Back
         </button>

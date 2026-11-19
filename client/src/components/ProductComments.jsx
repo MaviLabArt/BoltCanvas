@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import api from "../services/api.js";
 import { fetchProductComments, subscribeToProductComments } from "../nostr/read-comments.js";
 import { fetchProfilesForEvents } from "../nostr/profiles.js";
 import { normalizeComments } from "../nostr/normalize.js";
 import { publishProductComment } from "../nostr/publish-comment.js";
 import { useSettings } from "../store/settings.jsx";
-import { isEventBlocked, makeBlockedSets, nostrCommentsEnabled } from "../nostr/config.js";
+import { isEventBlocked, makeBlockedSets, nostrCommentsEnabled, normalizePubkey } from "../nostr/config.js";
 import { useNostr } from "../providers/NostrProvider.jsx";
 
 function timeAgo(ts) {
@@ -92,15 +93,26 @@ function CommentCard({ comment }) {
 
 export default function ProductComments({ productId }) {
   const { pubkey: nostrPubkey, hasSigner } = useNostr();
-  const { settings } = useSettings();
+  const { settings, loading: settingsLoading } = useSettings();
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [commentsReadyFor, setCommentsReadyFor] = useState(null);
   const [coordinates, setCoordinates] = useState("");
   const maxLen = 600;
   const [input, setInput] = useState("");
   const relays = useMemo(() => settings?.nostrRelays, [settings]);
-  const storePubkey = useMemo(() => String(settings?.nostrShopPubkey || "").toLowerCase(), [settings]);
+  const storePubkey = useMemo(() => {
+    const fallback = String(normalizePubkey(settings?.nostrNpub) || "").toLowerCase();
+    const key = String(settings?.nostrShopPubkey || fallback || "").toLowerCase();
+    return /^[0-9a-f]{64}$/.test(key) ? key : "";
+  }, [settings]);
+  const previewReadOnly = settings?.nostrCommentsReadOnly === true;
   const enabled = nostrCommentsEnabled(settings) && !!storePubkey;
+  const commentsReady =
+    !settingsLoading &&
+    (!enabled ||
+      (commentsReadyFor?.settings === settings &&
+        commentsReadyFor?.productId === productId));
   const blocked = useMemo(() => makeBlockedSets(settings), [settings]);
   const cancelledRef = useRef(false);
 
@@ -110,12 +122,14 @@ export default function ProductComments({ productId }) {
     cancelledRef.current = false;
 
     async function load() {
+      setCommentsReadyFor(null);
       if (!settings) {
         return;
       }
       if (!enabled) {
         setComments([]);
         setLoading(false);
+        setCommentsReadyFor({ settings, productId });
         return;
       }
       setLoading(true);
@@ -128,7 +142,10 @@ export default function ProductComments({ productId }) {
       } catch (err) {
         console.warn("[comments] load failed", err);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setCommentsReadyFor({ settings, productId });
+        }
       }
 
       unsubscribe = subscribeToProductComments({
@@ -177,10 +194,20 @@ export default function ProductComments({ productId }) {
     };
   }, [productId, relays, storePubkey, enabled, blocked, settings]);
 
-  if (!enabled) return null;
+  if (!enabled) {
+    return (
+      <section
+        className="mt-10"
+        hidden
+        data-scroll-restoration-comments="true"
+        data-scroll-restoration-comments-ready={commentsReady ? "true" : "false"}
+      />
+    );
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (previewReadOnly) return;
     if (!hasSigner || !nostrPubkey) {
       alert("Connect a Nostr signer to post");
       return;
@@ -199,15 +226,21 @@ export default function ProductComments({ productId }) {
     }
   };
 
-  const canPost = hasSigner && !!nostrPubkey;
+  const canPost = !previewReadOnly && hasSigner && !!nostrPubkey;
 
   return (
-    <section className="mt-10">
+    <section
+      className="mt-10"
+      data-scroll-restoration-comments="true"
+      data-scroll-restoration-comments-ready={commentsReady ? "true" : "false"}
+    >
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-lg font-semibold">Comment through NOSTR</h3>
-        {!canPost && (
+        <h3 className="text-lg font-semibold">Your Thoughts!</h3>
+        {previewReadOnly ? (
+          <span className="text-xs text-white/60">Preview · read only</span>
+        ) : !canPost ? (
           <span className="text-xs text-white/60">Login with Nostr to post</span>
-        )}
+        ) : null}
       </div>
 
       <div className="rounded-2xl bg-slate-950/80 ring-1 ring-white/10 p-3 sm:p-4 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
@@ -216,10 +249,17 @@ export default function ProductComments({ productId }) {
             value={input}
             onChange={(e) => setInput(e.target.value.slice(0, maxLen))}
             maxLength={maxLen}
-            placeholder={canPost ? "Share your thoughts… (text only, 600 chars max)" : "Connect Nostr in the header to leave a note."}
+            placeholder={
+              previewReadOnly
+                ? "Commenting is disabled in this preview."
+                : canPost
+                  ? "Share your thoughts… (text only, 600 chars max)"
+                  : "Connect Nostr in the header to leave a note."
+            }
             className="w-full rounded-xl bg-slate-900 ring-1 ring-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 resize-y focus:outline-hidden focus:ring-2 focus:ring-indigo-400"
             rows={3}
-            disabled={!canPost}
+            readOnly={previewReadOnly}
+            disabled={!previewReadOnly && !canPost}
           />
           <div className="flex items-center justify-end text-xs text-white/70">
             <span className="mr-3">{maxLen - input.length} chars left</span>

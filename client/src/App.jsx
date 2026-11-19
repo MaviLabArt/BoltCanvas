@@ -12,9 +12,12 @@ const About = lazy(() => import("./pages/About.jsx"));
 const Gallery = lazy(() => import("./pages/Gallery.jsx"));
 const Commissions = lazy(() => import("./pages/Commissions.jsx"));
 
+import ScrollRestorationManager from "./components/ScrollRestorationManager.jsx";
+
 export default function App() {
   return (
     <div className="min-h-screen bg-slate-950 text-white flex flex-col">
+      <ScrollRestorationManager />
       <Header />
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pb-16">
         <Suspense fallback={<div role="status" className="py-8 text-white/70">Loading…</div>}>

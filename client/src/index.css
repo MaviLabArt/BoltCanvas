@@ -174,6 +174,9 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
 
 [data-theme='ember'] {
   color-scheme: dark;
+  --site-accent: var(--em-accent);
+  --site-hover-bg: #d8b363;
+  --site-hover-fg: #11110f;
 }
 
 [data-theme='ember'] body {
@@ -277,7 +280,12 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
   --lt-accent-hover: #8F5C36;
 }
 
-[data-theme='light'] { color-scheme: light; }
+[data-theme='light'] {
+  color-scheme: light;
+  --site-accent: var(--lt-accent);
+  --site-hover-bg: #d8b363;
+  --site-hover-fg: #11110f;
+}
 
 /* Base canvas & default text */
 [data-theme='light'] body {
@@ -452,21 +460,21 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
   border-color: rgba(31, 27, 22, 0.96) !important;
 }
 
-[data-theme='light'] .bg-slate-900\/95.px-4.py-3 {
+[data-theme='light'] .cart-toast-panel {
   color: var(--lt-text) !important;
   box-shadow: 0 24px 60px rgba(163, 104, 60, 0.18) !important;
 }
-[data-theme='light'] .bg-slate-900\/95.px-4.py-3 .text-white {
+[data-theme='light'] .cart-toast-panel .text-white {
   color: var(--lt-text) !important;
 }
-[data-theme='light'] .bg-slate-900\/95.px-4.py-3 .text-white\/60 {
+[data-theme='light'] .cart-toast-panel .text-white\/60 {
   color: var(--lt-muted) !important;
 }
-[data-theme='light'] .bg-slate-900\/95.px-4.py-3 .bg-slate-800 {
+[data-theme='light'] .cart-toast-panel .bg-slate-800 {
   background-color: rgba(242, 233, 223, 0.92) !important;
   color: var(--lt-muted) !important;
 }
-[data-theme='light'] .bg-slate-900\/95.px-4.py-3 img {
+[data-theme='light'] .cart-toast-panel img {
   background-color: rgba(0, 0, 0, 0.08) !important;
 }
 
@@ -475,6 +483,9 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
    =================================================================== */
 [data-theme='custom'] {
   color-scheme: dark;
+  --site-accent: var(--ct-accent);
+  --site-hover-bg: #d8b363;
+  --site-hover-fg: #11110f;
 }
 [data-theme='custom'] body {
   background-color: var(--ct-surface);
@@ -557,4 +568,1112 @@ h1,h2,h3,h4,.heading { font-family: var(--font-display); letter-spacing: -0.01em
 [data-theme='custom'] .free-shipping-pill {
   background-color: var(--ct-accentSoft);
   color: var(--ct-accent);
+}
+
+
+/* Translucent accent glass header: the page remains visible beneath it. */
+.site-header-accent-gradient {
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--site-accent, var(--ct-accent, #B8734F)) 12%, transparent) 0%,
+    color-mix(in srgb, var(--site-accent, var(--ct-accent, #B8734F)) 28%, transparent) 48%,
+    color-mix(in srgb, var(--site-accent, var(--ct-accent, #B8734F)) 44%, transparent) 100%
+  );
+  border: 0;
+  box-shadow: none;
+}
+
+
+/* Header contrast and active accent for the warm light presets. */
+[data-theme="light"] .site-header-accent-gradient,
+[data-theme="enhanced-light"] .site-header-accent-gradient {
+  color: #292B2A !important;
+}
+[data-theme="light"] .site-header-accent-gradient a,
+[data-theme="light"] .site-header-accent-gradient button,
+[data-theme="enhanced-light"] .site-header-accent-gradient a,
+[data-theme="enhanced-light"] .site-header-accent-gradient button {
+  color: #F5F0E6;
+}
+
+/* Gallery and cart use the same restrained gold hover as the artwork action. */
+@media (hover: hover) and (pointer: fine) {
+  .site-nav-gold-hover:hover {
+    background-color: var(--site-hover-bg, #d8b363) !important;
+    color: var(--site-hover-fg, #11110f) !important;
+    translate: 0 -1px;
+    box-shadow: 0 0 0 1px var(--site-hover-bg, #d8b363), 0 7px 18px rgba(20, 18, 15, 0.16);
+  }
+
+  .site-nav-gold-hover:hover svg {
+    color: var(--site-hover-fg, #11110f) !important;
+  }
+}
+
+/* Subtle public-site interactions: short, transform-only feedback. */
+.site-nav-control,
+.site-nav-avatar,
+.site-nav-menu-action,
+.product-add-to-cart {
+  transition:
+    translate 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease,
+    border-color 180ms ease;
+}
+
+.site-nav-menu-action {
+  display: block;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .site-nav-control:hover,
+  .site-nav-avatar:hover,
+  .site-nav-menu-action:hover {
+    translate: 0 -1px;
+    box-shadow: 0 5px 15px rgba(20, 18, 15, 0.16);
+  }
+
+  .product-detail-page .product-add-to-cart:not(:disabled):hover,
+  [data-theme="custom"] .product-detail-page .product-add-to-cart:not(:disabled):hover {
+    background-color: var(--site-hover-bg, #d8b363) !important;
+    color: var(--site-hover-fg, #11110f) !important;
+    border-color: var(--site-hover-bg, #d8b363) !important;
+    translate: 0 -1px;
+    box-shadow: 0 7px 18px rgba(20, 18, 15, 0.16);
+  }
+}
+
+.site-nav-control:active,
+.site-nav-avatar:active,
+.site-nav-menu-action:active,
+.product-add-to-cart:not(:disabled):active {
+  translate: 0 0;
+  scale: 0.985;
+}
+
+.home-hero-logo,
+.home-hero-tagline {
+  backface-visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Disable the public hover lift without changing Tailwind's centering
+     translate on the product lightbox arrows. */
+  #root > div:not(.admin-shell) button:not(:disabled):hover,
+  #root > div:not(.admin-shell) a[class*="px-"][class*="rounded-"]:not(.cursor-not-allowed):hover {
+    transform: none !important;
+  }
+
+  /* These controls use the standalone translate property for their hover lift.
+     Keep the lightbox arrows' -translate-y-1/2 utility intact. */
+  #root > div:not(.admin-shell) button:not(:disabled):hover:not(.lightbox-arrow),
+  #root > div:not(.admin-shell) a[class*="px-"][class*="rounded-"]:not(.cursor-not-allowed):hover {
+    translate: 0 0 !important;
+  }
+
+  #root > div:not(.admin-shell) button:not(:disabled):active {
+    transform: none !important;
+    scale: 1 !important;
+  }
+
+  .site-nav-control,
+  .site-nav-avatar,
+  .site-nav-menu-action,
+  .product-add-to-cart {
+    transition: none !important;
+    translate: none !important;
+    scale: 1 !important;
+  }
+}
+
+
+/* ===================================================================
+   ISOLABELLART ENHANCED THEMES
+   Shared palette: ivory, charcoal, terracotta and warm gold.
+   =================================================================== */
+
+[data-theme="enhanced-light"] {
+  color-scheme: light;
+  --enh-bg: #F5F0E6;
+  --enh-surface: #FFFCF5;
+  --enh-surface-alt: #EAE2D6;
+  --enh-text: #292B2A;
+  --enh-muted: #6C6E67;
+  --enh-border: rgba(41, 43, 42, 0.14);
+  --enh-accent: #B8734F;
+  --enh-accent-soft: rgba(184, 115, 79, 0.14);
+  --enh-gold: #D8B363;
+  --site-accent: #B8734F;
+  --site-hover-bg: #D8B363;
+  --site-hover-fg: #11110F;
+}
+
+[data-theme="enhanced-dark"] {
+  color-scheme: dark;
+  --enh-bg: #1D201E;
+  --enh-surface: #292B2A;
+  --enh-surface-alt: #3A3C39;
+  --enh-text: #F5F0E6;
+  --enh-muted: #C4BFB4;
+  --enh-border: rgba(245, 240, 230, 0.14);
+  --enh-accent: #B8734F;
+  --enh-accent-soft: rgba(184, 115, 79, 0.19);
+  --enh-gold: #D8B363;
+  --site-accent: #B8734F;
+  --site-hover-bg: #D8B363;
+  --site-hover-fg: #11110F;
+}
+
+/* Canvas and surfaces */
+[data-theme="enhanced-light"] body,
+[data-theme="enhanced-dark"] body {
+  background-color: var(--enh-bg);
+  color: var(--enh-text);
+}
+
+[data-theme="enhanced-light"] .bg-slate-950 { background-color: var(--enh-bg) !important; }
+[data-theme="enhanced-light"] .bg-slate-950\/90,
+[data-theme="enhanced-light"] .bg-slate-950\/80 { background-color: rgba(245, 240, 230, 0.90) !important; }
+[data-theme="enhanced-light"] .bg-slate-900 { background-color: var(--enh-surface) !important; }
+[data-theme="enhanced-light"] .bg-slate-900\/95 { background-color: rgba(255, 252, 245, 0.95) !important; }
+[data-theme="enhanced-light"] .bg-slate-900\/90,
+[data-theme="enhanced-light"] .bg-slate-900\/80,
+[data-theme="enhanced-light"] .bg-slate-900\/70 { background-color: rgba(255, 252, 245, 0.86) !important; }
+[data-theme="enhanced-light"] .bg-slate-800,
+[data-theme="enhanced-light"] .bg-slate-800\/70,
+[data-theme="enhanced-light"] .bg-slate-700 { background-color: var(--enh-surface-alt) !important; }
+[data-theme="enhanced-light"] .bg-black\/20 { background-color: rgba(41, 43, 42, 0.08) !important; }
+
+[data-theme="enhanced-dark"] .bg-slate-950 { background-color: var(--enh-bg) !important; }
+[data-theme="enhanced-dark"] .bg-slate-950\/90,
+[data-theme="enhanced-dark"] .bg-slate-950\/80 { background-color: rgba(29, 32, 30, 0.92) !important; }
+[data-theme="enhanced-dark"] .bg-slate-900,
+[data-theme="enhanced-dark"] .bg-slate-900\/95,
+[data-theme="enhanced-dark"] .bg-slate-900\/90 { background-color: var(--enh-surface) !important; }
+[data-theme="enhanced-dark"] .bg-slate-900\/80,
+[data-theme="enhanced-dark"] .bg-slate-900\/70,
+[data-theme="enhanced-dark"] .bg-slate-800,
+[data-theme="enhanced-dark"] .bg-slate-800\/70,
+[data-theme="enhanced-dark"] .bg-slate-700 { background-color: var(--enh-surface-alt) !important; }
+[data-theme="enhanced-dark"] .bg-black\/20 { background-color: rgba(0, 0, 0, 0.22) !important; }
+
+/* Borders, rings and text */
+[data-theme="enhanced-light"] .ring-white\/10,
+[data-theme="enhanced-light"] .ring-white\/15,
+[data-theme="enhanced-light"] .ring-white\/20,
+[data-theme="enhanced-dark"] .ring-white\/10,
+[data-theme="enhanced-dark"] .ring-white\/15,
+[data-theme="enhanced-dark"] .ring-white\/20 {
+  --tw-ring-color: var(--enh-border) !important;
+}
+[data-theme="enhanced-light"] .border-white\/5,
+[data-theme="enhanced-light"] .border-white\/10,
+[data-theme="enhanced-light"] .border-white\/15,
+[data-theme="enhanced-light"] .border-white\/20,
+[data-theme="enhanced-dark"] .border-white\/5,
+[data-theme="enhanced-dark"] .border-white\/10,
+[data-theme="enhanced-dark"] .border-white\/15,
+[data-theme="enhanced-dark"] .border-white\/20 {
+  border-color: var(--enh-border) !important;
+}
+
+[data-theme="enhanced-light"] .text-white,
+[data-theme="enhanced-light"] .text-white\/95,
+[data-theme="enhanced-light"] .text-white\/90,
+[data-theme="enhanced-light"] .text-white\/85,
+[data-theme="enhanced-light"] .text-slate-50,
+[data-theme="enhanced-light"] .text-slate-100,
+[data-theme="enhanced-light"] .text-gray-50,
+[data-theme="enhanced-light"] .text-gray-100 {
+  color: var(--enh-text) !important;
+}
+[data-theme="enhanced-light"] .text-white\/80,
+[data-theme="enhanced-light"] .text-white\/70,
+[data-theme="enhanced-light"] .text-white\/60,
+[data-theme="enhanced-light"] .text-white\/50,
+[data-theme="enhanced-light"] .text-white\/40,
+[data-theme="enhanced-light"] .text-white\/30,
+[data-theme="enhanced-light"] .text-slate-200,
+[data-theme="enhanced-light"] .text-slate-300,
+[data-theme="enhanced-light"] .text-slate-400,
+[data-theme="enhanced-light"] .text-slate-500 {
+  color: var(--enh-muted) !important;
+}
+[data-theme="enhanced-dark"] .text-white\/95,
+[data-theme="enhanced-dark"] .text-white\/90,
+[data-theme="enhanced-dark"] .text-white\/85,
+[data-theme="enhanced-dark"] .text-white {
+  color: var(--enh-text) !important;
+}
+[data-theme="enhanced-dark"] .text-white\/80,
+[data-theme="enhanced-dark"] .text-white\/70,
+[data-theme="enhanced-dark"] .text-white\/60,
+[data-theme="enhanced-dark"] .text-white\/50,
+[data-theme="enhanced-dark"] .text-white\/40,
+[data-theme="enhanced-dark"] .text-white\/30 {
+  color: var(--enh-muted) !important;
+}
+
+[data-theme="enhanced-light"] a:not(.no-theme-color) { color: var(--enh-text); }
+[data-theme="enhanced-light"] ::placeholder { color: var(--enh-muted); opacity: 1; }
+[data-theme="enhanced-dark"] ::placeholder { color: var(--enh-muted); opacity: 1; }
+
+/* Accent controls, prices and status elements */
+[data-theme="enhanced-light"] .bg-indigo-500,
+[data-theme="enhanced-light"] [class~="bg-indigo-500/90"],
+[data-theme="enhanced-light"] [class~="bg-indigo-500/80"],
+[data-theme="enhanced-dark"] .bg-indigo-500,
+[data-theme="enhanced-dark"] [class~="bg-indigo-500/90"],
+[data-theme="enhanced-dark"] [class~="bg-indigo-500/80"] {
+  background-color: var(--enh-accent) !important;
+  color: #FFF9F1 !important;
+}
+[data-theme="enhanced-light"] .bg-indigo-500\/70,
+[data-theme="enhanced-light"] .bg-indigo-500\/60,
+[data-theme="enhanced-dark"] .bg-indigo-500\/70,
+[data-theme="enhanced-dark"] .bg-indigo-500\/60 {
+  background-color: var(--enh-accent) !important;
+  color: #FFF9F1 !important;
+}
+[data-theme="enhanced-light"] .bg-indigo-500\/15,
+[data-theme="enhanced-dark"] .bg-indigo-500\/15 {
+  background-color: var(--enh-accent-soft) !important;
+  color: var(--enh-accent) !important;
+}
+[data-theme="enhanced-light"] .text-indigo-100,
+[data-theme="enhanced-light"] .text-indigo-200,
+[data-theme="enhanced-light"] .text-indigo-200\/80,
+[data-theme="enhanced-dark"] .text-indigo-100,
+[data-theme="enhanced-dark"] .text-indigo-200,
+[data-theme="enhanced-dark"] .text-indigo-200\/80 {
+  color: var(--enh-accent) !important;
+}
+[data-theme="enhanced-light"] .bg-indigo-400,
+[data-theme="enhanced-dark"] .bg-indigo-400 { background-color: var(--enh-accent) !important; }
+
+[data-theme="enhanced-light"] .pay-now-btn,
+[data-theme="enhanced-dark"] .pay-now-btn {
+  background: linear-gradient(135deg, #B8734F, #965D40);
+  color: #FFF9F1 !important;
+  border-color: rgba(184, 115, 79, 0.35);
+}
+[data-theme="enhanced-light"] .free-shipping-pill,
+[data-theme="enhanced-dark"] .free-shipping-pill {
+  background-color: var(--enh-accent-soft);
+  color: var(--enh-accent);
+}
+[data-theme="enhanced-light"] .view-pill,
+[data-theme="enhanced-dark"] .view-pill { color: #FFF9F1; }
+[data-theme="enhanced-light"] .bg-black\/55.backdrop-blur-sm.ring-white\/20,
+[data-theme="enhanced-dark"] .bg-black\/55.backdrop-blur-sm.ring-white\/20 {
+  color: #FFF9F1 !important;
+}
+[data-theme="enhanced-light"] .bg-black\/60 { background-color: rgba(41, 43, 42, 0.72) !important; }
+[data-theme="enhanced-light"] .bg-black\/40 { background-color: rgba(41, 43, 42, 0.48) !important; }
+[data-theme="enhanced-light"] .bg-black\/30 { background-color: rgba(41, 43, 42, 0.32) !important; }
+
+[data-theme="enhanced-light"] .lightbox-arrow,
+[data-theme="enhanced-light"] .zoom-indicator-pill,
+[data-theme="enhanced-light"] .sold-pill,
+[data-theme="enhanced-light"] .sold-overlay {
+  background-color: rgba(41, 43, 42, 0.88) !important;
+  color: #FFF9F1 !important;
+  border-color: rgba(41, 43, 42, 0.95) !important;
+}
+[data-theme="enhanced-dark"] .lightbox-arrow,
+[data-theme="enhanced-dark"] .zoom-indicator-pill,
+[data-theme="enhanced-dark"] .sold-pill,
+[data-theme="enhanced-dark"] .sold-overlay {
+  background-color: rgba(12, 14, 13, 0.78) !important;
+  color: #FFF9F1 !important;
+  border-color: var(--enh-border) !important;
+}
+
+/* Loading and skeletons */
+[data-theme="enhanced-light"] .skel {
+  background-color: var(--enh-surface) !important;
+  box-shadow: inset 0 0 0 1px var(--enh-border);
+}
+[data-theme="enhanced-light"] .skel-img,
+[data-theme="enhanced-light"] .skel-line { background-color: var(--enh-surface-alt) !important; }
+[data-theme="enhanced-dark"] .skel {
+  background-color: var(--enh-surface) !important;
+  box-shadow: inset 0 0 0 1px var(--enh-border);
+}
+[data-theme="enhanced-dark"] .skel-img,
+[data-theme="enhanced-dark"] .skel-line { background-color: var(--enh-surface-alt) !important; }
+[data-theme="enhanced-light"] .btn-loading,
+[data-theme="enhanced-dark"] .btn-loading {
+  background-color: var(--enh-accent);
+  background-image: linear-gradient(180deg, var(--enh-accent-soft), rgba(0, 0, 0, 0.12));
+}
+
+/* Every enabled public button gets the same restrained gold hover.
+   Button-like links are included; disabled actions remain visually inert. */
+#root > div:not(.admin-shell) button:not(:disabled),
+#root > div:not(.admin-shell) a[class*="px-"][class*="rounded-"]:not(.cursor-not-allowed) {
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    scale 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease,
+    border-color 180ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  #root > div:not(.admin-shell) button:not(:disabled):hover,
+  #root > div:not(.admin-shell) a[class*="px-"][class*="rounded-"]:not(.cursor-not-allowed):hover {
+    background: var(--site-hover-bg, #D8B363) !important;
+    color: var(--site-hover-fg, #11110F) !important;
+    border-color: var(--site-hover-bg, #D8B363) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 0 0 1px var(--site-hover-bg, #D8B363), 0 7px 18px rgba(20, 18, 15, 0.16);
+  }
+  #root > div:not(.admin-shell) button:not(:disabled):hover svg,
+  #root > div:not(.admin-shell) a[class*="px-"][class*="rounded-"]:not(.cursor-not-allowed):hover svg {
+    color: var(--site-hover-fg, #11110F) !important;
+  }
+}
+#root > div:not(.admin-shell) button:not(:disabled):active {
+  transform: translateY(0);
+  scale: 0.985;
+}
+
+
+/* Enhanced Light uses a dark accent header; keep its nav text readable. */
+[data-theme="enhanced-light"] .site-header-accent-gradient a:not(.no-theme-color) {
+  color: #F5F0E6 !important;
+}
+
+/* ISOLABELLART — refined preset identities and touch motion
+   Enhanced Light / Enhanced Dark restano intenzionalmente invariati.
+*/
+
+/* ------------------------------------------------------------
+   DARK INK — indaco e blu
+   Gradiente verticale traslucido, senza filetto inferiore.
+   ------------------------------------------------------------ */
+
+[data-theme="dark"] {
+  --site-accent: #8DA8E8;
+  --site-hover-bg: #B9C8F3;
+  --site-hover-fg: #171D42;
+}
+
+[data-theme="dark"] .site-header-accent-gradient {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #536FAE 44%, transparent) 0%,
+    color-mix(in srgb, #536FAE 28%, transparent) 48%,
+    color-mix(in srgb, #536FAE 12%, transparent) 100%
+  ) !important;
+  border: 0 !important;
+  border-bottom: 0 !important;
+  box-shadow: none !important;
+}
+
+
+/* ------------------------------------------------------------
+   EMBER NIGHT — granata, rubino e rosa antico
+   ------------------------------------------------------------ */
+
+[data-theme="ember"] {
+  --em-bg: #100B12;
+  --em-surface: #21131A;
+  --em-surface2: #331B25;
+  --em-text: #FFF1F3;
+  --em-muted: #D7B8C2;
+  --em-border: #4B2736;
+  --em-accent: #BD627B;
+  --em-accent-soft: rgba(189, 98, 123, 0.16);
+
+  --site-accent: #BD627B;
+  --site-hover-bg: #E9B7C4;
+  --site-hover-fg: #32111E;
+}
+
+[data-theme="ember"] .site-header-accent-gradient {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #9A3857 44%, transparent) 0%,
+    color-mix(in srgb, #9A3857 28%, transparent) 48%,
+    color-mix(in srgb, #9A3857 12%, transparent) 100%
+  ) !important;
+  border: 0 !important;
+  border-bottom: 0 !important;
+  box-shadow: none !important;
+}
+
+[data-theme="ember"] .pay-now-btn {
+  background: linear-gradient(135deg, #A84762, #77263F) !important;
+  color: #FFF1F3 !important;
+  border-color: rgba(211, 121, 148, 0.34) !important;
+}
+
+
+/* ------------------------------------------------------------
+   LIGHT ATELIER — mare, verde acqua e superfici pastello
+   ------------------------------------------------------------ */
+
+[data-theme="light"] {
+  --lt-bg: #EDF7F4;
+  --lt-surface: #FCFEFD;
+  --lt-surface2: #DCEFEB;
+  --lt-text: #193B3D;
+  --lt-muted: #547477;
+  --lt-border: #C8E0DA;
+  --lt-ring: #B6D8D0;
+  --lt-accent: #347C80;
+  --lt-accent-hover: #28676B;
+
+  --site-accent: #347C80;
+  --site-hover-bg: #E9DAB6;
+  --site-hover-fg: #234548;
+}
+
+[data-theme="light"] .site-header-accent-gradient {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #4C999B 44%, transparent) 0%,
+    color-mix(in srgb, #4C999B 28%, transparent) 48%,
+    color-mix(in srgb, #4C999B 12%, transparent) 100%
+  ) !important;
+  border: 0 !important;
+  border-bottom: 0 !important;
+  box-shadow: none !important;
+}
+
+[data-theme="light"] .pay-now-btn {
+  background: linear-gradient(135deg, #3E8E8E, #28696F) !important;
+  color: #FFFFFF !important;
+  border-color: rgba(52, 124, 128, 0.35) !important;
+}
+
+
+/* ------------------------------------------------------------
+   CONTRASTO DELLE INTESTAZIONI
+   Il testo resta chiaro sulle tre nuove palette.
+   ------------------------------------------------------------ */
+
+[data-theme="dark"] .site-header-accent-gradient,
+[data-theme="ember"] .site-header-accent-gradient,
+[data-theme="light"] .site-header-accent-gradient {
+  color: #F5F0E6 !important;
+}
+
+[data-theme="dark"] .site-header-accent-gradient a,
+[data-theme="dark"] .site-header-accent-gradient button,
+[data-theme="ember"] .site-header-accent-gradient a,
+[data-theme="ember"] .site-header-accent-gradient button,
+[data-theme="light"] .site-header-accent-gradient a,
+[data-theme="light"] .site-header-accent-gradient button {
+  color: #F5F0E6 !important;
+}
+
+[data-theme="light"] .site-header-accent-gradient .site-nav-control,
+[data-theme="light"] .site-header-accent-gradient .site-nav-avatar,
+[data-theme="light"] .site-header-accent-gradient .site-nav-menu-action {
+  background-color: rgba(13, 50, 57, 0.48) !important;
+  border-color: rgba(213, 243, 233, 0.34) !important;
+  color: #F5F0E6 !important;
+}
+
+
+/* ------------------------------------------------------------
+   TOUCH — feedback tattile discreto
+   View non deve apparire sui dispositivi touch.
+   ------------------------------------------------------------ */
+
+@media (hover: none) and (pointer: coarse) {
+  .product-card-view-affordance {
+    display: none !important;
+  }
+
+  #root > div:not(.admin-shell) button:not(:disabled),
+  #root > div:not(.admin-shell) a {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #root > div:not(.admin-shell) button:not(:disabled):active,
+  #root > div:not(.admin-shell) a:active:not(.cursor-not-allowed) {
+    transform: scale(0.975);
+    filter: brightness(1.035);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.13);
+  }
+}
+
+
+/* ------------------------------------------------------------
+   ACCESSIBILITÀ — le preferenze reduced-motion prevalgono.
+   ------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .product-card-view-affordance,
+  .site-nav-control,
+  .site-nav-avatar,
+  .site-nav-menu-action,
+  .product-add-to-cart {
+    transition: none !important;
+  }
+}
+
+/* === NOSTR CONNECT LOGIN — THEME-AWARE PRESENTATION === */
+
+
+.nostr-connect-login {
+  --nc-panel: var(--ct-surface, #0f172a);
+  --nc-border: var(--ct-border, rgba(255,255,255,0.08));
+  --nc-control: var(--ct-surfaceAlt, #111827);
+  --nc-text: var(--ct-text, #e5e7eb);
+  --nc-muted: var(--ct-muted, #94a3b8);
+  --nc-accent: var(--ct-accent, #6366f1);
+  --nc-accent-hover: var(--ct-accent, #6366f1);
+  --nc-accent-text: #ffffff;
+  min-width: 0;
+  color: var(--nc-text);
+}
+
+/* Dark Ink */
+[data-theme='dark'] .nostr-connect-login {
+  --nc-panel: #121b2d;
+  --nc-border: rgba(141,168,232,0.25);
+  --nc-control: #1c2a42;
+  --nc-text: #f2f5fd;
+  --nc-muted: #b9c5df;
+  --nc-accent: var(--site-accent, #8da8e8);
+  --nc-accent-hover: var(--site-hover-bg, #b9c8f3);
+  --nc-accent-text: var(--site-hover-fg, #171d42);
+}
+
+/* Ember Night */
+[data-theme='ember'] .nostr-connect-login {
+  --nc-panel: var(--em-surface);
+  --nc-border: var(--em-border);
+  --nc-control: var(--em-surface2);
+  --nc-text: var(--em-text);
+  --nc-muted: var(--em-muted);
+  --nc-accent: var(--em-accent);
+  --nc-accent-hover: var(--site-hover-bg, var(--em-accent));
+  --nc-accent-text: var(--site-hover-fg, #211018);
+}
+
+/* Light Atelier */
+[data-theme='light'] .nostr-connect-login {
+  --nc-panel: var(--lt-surface);
+  --nc-border: var(--lt-border);
+  --nc-control: var(--lt-surface2);
+  --nc-text: var(--lt-text);
+  --nc-muted: var(--lt-muted);
+  --nc-accent: var(--lt-accent);
+  --nc-accent-hover: var(--lt-accent-hover);
+  --nc-accent-text: #ffffff;
+}
+
+/* Custom */
+[data-theme='custom'] .nostr-connect-login {
+  --nc-panel: var(--ct-surface);
+  --nc-border: var(--ct-border);
+  --nc-control: var(--ct-surfaceAlt);
+  --nc-text: var(--ct-text);
+  --nc-muted: var(--ct-muted);
+  --nc-accent: var(--ct-accent);
+  --nc-accent-hover: color-mix(in srgb, var(--ct-accent) 82%, white);
+  --nc-accent-text: #ffffff;
+}
+
+/* Enhanced Light and Enhanced Dark */
+[data-theme='enhanced-light'] .nostr-connect-login,
+[data-theme='enhanced-dark'] .nostr-connect-login {
+  --nc-panel: var(--enh-surface);
+  --nc-border: var(--enh-border);
+  --nc-control: var(--enh-surface-alt);
+  --nc-text: var(--enh-text);
+  --nc-muted: var(--enh-muted);
+  --nc-accent: var(--enh-accent);
+  --nc-accent-hover: var(--site-hover-bg, var(--enh-gold));
+  --nc-accent-text: #FFFFFF;
+}
+
+.nostr-connect-qr-panel {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
+  padding: clamp(0.85rem, 3vw, 1.15rem);
+  border: 1px solid var(--nc-border) !important;
+  border-radius: 1.25rem;
+  background: var(--nc-panel) !important;
+  color: var(--nc-text) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.09);
+}
+
+.nostr-connect-qr-frame {
+  box-sizing: border-box;
+  width: min(100%, 264px);
+  padding: 10px;
+  border: 1px solid rgba(25, 30, 35, 0.10);
+  border-radius: 1.05rem;
+  background: #ffffff !important;
+  box-shadow: 0 8px 22px rgba(18, 24, 30, 0.12);
+}
+
+.nostr-connect-qr-frame svg {
+  display: block;
+  width: 100% !important;
+  max-width: 240px !important;
+  height: auto !important;
+  background: #ffffff;
+}
+
+.nostr-connect-actions {
+  display: flex;
+  width: min(100%, 264px);
+  gap: 0.65rem;
+}
+
+.nostr-connect-action {
+  display: inline-flex;
+  box-sizing: border-box;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--nc-border);
+  border-radius: 0.85rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none !important;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 120ms ease;
+}
+
+.nostr-connect-action-primary {
+  color: var(--nc-accent-text) !important;
+  background: var(--nc-accent) !important;
+  border-color: transparent !important;
+}
+
+.nostr-connect-action-primary:hover {
+  color: var(--nc-accent-text) !important;
+  background: var(--nc-accent-hover) !important;
+}
+
+.nostr-connect-action-secondary {
+  color: var(--nc-text) !important;
+  background: var(--nc-control) !important;
+  border-color: var(--nc-border) !important;
+}
+
+.nostr-connect-action-secondary:hover {
+  color: var(--nc-text) !important;
+  background: var(--nc-panel) !important;
+  border-color: var(--nc-accent) !important;
+}
+
+.nostr-connect-action:active,
+.nostr-connect-back:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.nostr-connect-field {
+  display: block;
+  color: var(--nc-muted) !important;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.nostr-connect-input {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-height: 3.1rem;
+  margin-top: 0.55rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--nc-border) !important;
+  border-radius: 0.9rem;
+  color: var(--nc-text) !important;
+  background: var(--nc-control) !important;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.nostr-connect-input::placeholder {
+  color: var(--nc-muted) !important;
+  opacity: 0.8;
+}
+
+.nostr-connect-input:focus {
+  border-color: var(--nc-accent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--nc-accent) 18%, transparent);
+  outline: none;
+}
+
+.nostr-connect-status {
+  display: flex;
+  min-height: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: var(--nc-muted) !important;
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.nostr-connect-status::before {
+  width: 0.45rem;
+  height: 0.45rem;
+  flex: 0 0 0.45rem;
+  border-radius: 50%;
+  background: var(--nc-muted);
+  content: "";
+}
+
+.nostr-connect-status[data-state='connecting']::before,
+.nostr-connect-status[data-state='copied']::before {
+  background: var(--nc-accent);
+}
+
+.nostr-connect-status[data-state='connected'] {
+  color: #26916e !important;
+}
+
+.nostr-connect-status[data-state='connected']::before {
+  background: #26916e;
+}
+
+.nostr-connect-status[data-state='failed'] {
+  color: #dc6470 !important;
+}
+
+.nostr-connect-status[data-state='failed']::before {
+  background: #dc6470;
+}
+
+.nostr-connect-status[data-state='copied'] {
+  color: var(--nc-accent) !important;
+}
+
+.nostr-connect-error {
+  color: #e07880 !important;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+[data-theme='light'] .nostr-connect-error {
+  color: #a83f4b !important;
+}
+
+.nostr-connect-back-wrap {
+  display: flex;
+  width: 100%;
+}
+
+.nostr-connect-back {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--nc-border) !important;
+  border-radius: 0.95rem;
+  color: var(--nc-muted) !important;
+  background: transparent !important;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease, transform 120ms ease;
+}
+
+.nostr-connect-back:hover {
+  color: var(--nc-text) !important;
+  border-color: var(--nc-accent) !important;
+  background: var(--nc-control) !important;
+}
+
+.nostr-connect-action:focus-visible,
+.nostr-connect-input:focus-visible,
+.nostr-connect-back:focus-visible {
+  outline: 2px solid var(--nc-accent);
+  outline-offset: 3px;
+}
+
+@media (max-width: 420px) {
+  .nostr-connect-qr-panel {
+    gap: 0.75rem;
+    padding: 0.85rem;
+  }
+
+  .nostr-connect-qr-frame {
+    width: min(100%, 248px);
+    padding: 8px;
+  }
+
+  .nostr-connect-qr-frame svg {
+    max-width: 224px !important;
+  }
+
+  .nostr-connect-actions {
+    width: min(100%, 248px);
+    gap: 0.5rem;
+  }
+
+  .nostr-connect-action {
+    min-height: 42px;
+    padding-inline: 0.6rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nostr-connect-action,
+  .nostr-connect-back,
+  .nostr-connect-input {
+    transition: none !important;
+  }
+}
+
+/* === NOSTR CONNECT LOGIN — CONTRAST HOTFIX === */
+/*
+ * Le regole globali dei temi trasformano le utility Tailwind
+ * .bg-slate-800 e .bg-slate-900 con selettori più specifici.
+ * Queste regole, limitate al login Nostr, ripristinano i colori
+ * previsti dai token --nc-* per tutti i temi attivi.
+ */
+
+[data-theme] .nostr-connect-login .nostr-connect-qr-panel {
+  background: var(--nc-panel) !important;
+  border-color: var(--nc-border) !important;
+  color: var(--nc-text) !important;
+}
+
+[data-theme] .nostr-connect-login .nostr-connect-action-primary,
+[data-theme] .nostr-connect-login .nostr-connect-action-primary:focus-visible {
+  background-color: var(--nc-accent) !important;
+  background-image: none !important;
+  color: var(--nc-accent-text) !important;
+  border-color: transparent !important;
+  opacity: 1 !important;
+}
+
+[data-theme] .nostr-connect-login .nostr-connect-action-primary:hover:not(:disabled) {
+  background-color: var(--nc-accent-hover) !important;
+  background-image: none !important;
+  color: var(--nc-accent-text) !important;
+  border-color: transparent !important;
+  opacity: 1 !important;
+}
+
+[data-theme] .nostr-connect-login .nostr-connect-action-secondary,
+[data-theme] .nostr-connect-login .nostr-connect-action-secondary:focus-visible {
+  background-color: var(--nc-control) !important;
+  background-image: none !important;
+  color: var(--nc-text) !important;
+  border-color: var(--nc-border) !important;
+  opacity: 1 !important;
+}
+
+[data-theme] .nostr-connect-login .nostr-connect-action-secondary:hover:not(:disabled) {
+  background-color: var(--nc-panel) !important;
+  background-image: none !important;
+  color: var(--nc-text) !important;
+  border-color: var(--nc-accent) !important;
+  opacity: 1 !important;
+}
+
+[data-theme] .nostr-connect-login a.nostr-connect-action-secondary {
+  color: var(--nc-text) !important;
+}
+
+[data-theme] .nostr-connect-login .nostr-connect-back,
+[data-theme] .nostr-connect-login .nostr-connect-back:focus-visible {
+  background-color: var(--nc-control) !important;
+  background-image: none !important;
+  color: var(--nc-text) !important;
+  border-color: var(--nc-border) !important;
+  opacity: 1 !important;
+}
+
+[data-theme] .nostr-connect-login .nostr-connect-back:hover:not(:disabled) {
+  background-color: var(--nc-control) !important;
+  background-image: none !important;
+  color: var(--nc-text) !important;
+  border-color: var(--nc-accent) !important;
+  opacity: 1 !important;
+}
+
+/* Enhanced themes use a gold hover surface: keep its foreground dark
+   on touch browsers as well as desktop, without changing other themes. */
+[data-theme="enhanced-light"] .nostr-connect-login .nostr-connect-action-primary:hover:not(:disabled),
+[data-theme="enhanced-dark"] .nostr-connect-login .nostr-connect-action-primary:hover:not(:disabled) {
+  color: var(--site-hover-fg) !important;
+}
+
+[data-theme] .nostr-connect-login .nostr-connect-field {
+  color: var(--nc-muted) !important;
+  opacity: 1 !important;
+}
+
+[data-theme] .nostr-connect-login .nostr-connect-input,
+[data-theme] .nostr-connect-login .nostr-connect-input:focus {
+  background-color: var(--nc-control) !important;
+  background-image: none !important;
+  color: var(--nc-text) !important;
+  border-color: var(--nc-border) !important;
+  opacity: 1 !important;
+  caret-color: var(--nc-accent) !important;
+}
+
+[data-theme] .nostr-connect-login .nostr-connect-input::placeholder {
+  color: var(--nc-muted) !important;
+  opacity: 1 !important;
+}
+
+[data-theme] .nostr-connect-login .nostr-connect-status {
+  color: var(--nc-muted) !important;
+  opacity: 1 !important;
+}
+
+[data-theme] .nostr-connect-login .nostr-connect-error {
+  opacity: 1 !important;
+}
+
+[data-theme] .nostr-connect-login .nostr-connect-action:disabled,
+[data-theme] .nostr-connect-login .nostr-connect-back:disabled {
+  opacity: 0.65 !important;
+  cursor: not-allowed !important;
+}
+
+
+/* === ENHANCED HEADER NAV — COPPER CONTROLS === */
+
+[data-theme="enhanced-light"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control,
+[data-theme="enhanced-dark"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control {
+  background-color: #B8734F !important;
+  background-image: none !important;
+  color: #20140F !important;
+  border-color: rgba(32,20,15,0.22) !important;
+  box-shadow: inset 0 1px 0 rgba(255,249,241,0.12);
+}
+
+[data-theme="enhanced-light"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control svg,
+[data-theme="enhanced-dark"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control svg {
+  color: #20140F !important;
+  stroke: currentColor;
+}
+
+[data-theme="enhanced-light"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control:hover,
+[data-theme="enhanced-light"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control:focus-visible,
+[data-theme="enhanced-dark"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control:hover,
+[data-theme="enhanced-dark"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control:focus-visible {
+  background-color: #C4815E !important;
+  background-image: none !important;
+  color: #20140F !important;
+  border-color: #D8B363 !important;
+  outline-color: #D8B363;
+}
+
+/* === COPPER CONTROLS CUSTOM + WHITE TEXT FIX === */
+
+[data-theme="custom"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control,
+[data-theme="enhanced-light"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control,
+[data-theme="enhanced-dark"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control {
+  background-color: #B8734F !important;
+  background-image: none !important;
+  color: #FFFFFF !important;
+  border-color: rgba(255,255,255,0.30) !important;
+  box-shadow: inset 0 1px 0 rgba(255,249,241,0.16);
+}
+
+[data-theme="custom"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control svg,
+[data-theme="enhanced-light"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control svg,
+[data-theme="enhanced-dark"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control svg {
+  color: #FFFFFF !important;
+  stroke: currentColor;
+}
+
+[data-theme="custom"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control:hover,
+[data-theme="custom"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control:focus-visible,
+[data-theme="enhanced-light"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control:hover,
+[data-theme="enhanced-light"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control:focus-visible,
+[data-theme="enhanced-dark"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control:hover,
+[data-theme="enhanced-dark"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-copper-control:focus-visible {
+  background-color: #C4815E !important;
+  background-image: none !important;
+  color: #FFFFFF !important;
+  border-color: #D8B363 !important;
+  outline-color: #D8B363;
+}
+
+/* Cart toast: fixed charcoal and ivory across all themes */
+:root .cart-toast-panel {
+  background-color: #292B2A !important;
+  color: #F5F0E6 !important;
+}
+
+:root .cart-toast-panel .cart-toast-product-title {
+  color: #F5F0E6 !important;
+}
+
+
+/* Enhanced Light/Dark: copper base for the three primary navigation controls. */
+[data-theme="enhanced-light"] .site-nav-copper-control:not(:hover),
+[data-theme="enhanced-dark"] .site-nav-copper-control:not(:hover) {
+  background-color: #B8734F !important;
+  color: #11110F !important;
+}
+[data-theme="enhanced-light"] .site-nav-copper-control:not(:hover) svg,
+[data-theme="enhanced-dark"] .site-nav-copper-control:not(:hover) svg {
+  color: #11110F !important;
+}
+
+/* HOME ICON HOVER — MATCH GALLERY AND CART
+   Enhanced Light/Dark: stesso hover oro degli altri controlli.
+*/
+[data-theme="enhanced-light"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:hover,
+[data-theme="enhanced-light"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:focus-visible,
+[data-theme="enhanced-dark"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:hover,
+[data-theme="enhanced-dark"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:focus-visible {
+  background: var(--site-hover-bg, #D8B363) !important;
+  background-image: none !important;
+  color: var(--site-hover-fg, #11110F) !important;
+  border-color: var(--site-hover-bg, #D8B363) !important;
+  box-shadow: 0 0 0 1px var(--site-hover-bg, #D8B363),
+              0 7px 18px rgba(20, 18, 15, 0.16) !important;
+}
+
+[data-theme="enhanced-light"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:hover svg,
+[data-theme="enhanced-light"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:focus-visible svg,
+[data-theme="enhanced-dark"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:hover svg,
+[data-theme="enhanced-dark"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:focus-visible svg {
+  color: var(--site-hover-fg, #11110F) !important;
+  stroke: currentColor;
+}
+
+/* HOME ICON HOVER — CUSTOM THEME
+   Allinea il pulsante Home all'hover oro degli altri temi.
+   Sovrascrive esclusivamente il vecchio override del tema Custom.
+*/
+[data-theme="custom"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:hover,
+[data-theme="custom"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:focus-visible {
+  background: var(--site-hover-bg, #D8B363) !important;
+  background-image: none !important;
+  color: var(--site-hover-fg, #11110F) !important;
+  border-color: var(--site-hover-bg, #D8B363) !important;
+  box-shadow: 0 0 0 1px var(--site-hover-bg, #D8B363),
+              0 7px 18px rgba(20, 18, 15, 0.16) !important;
+}
+
+[data-theme="custom"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:hover svg,
+[data-theme="custom"] #root > div:not(.admin-shell) .site-header-accent-gradient .site-nav-home-control:focus-visible svg {
+  color: var(--site-hover-fg, #11110F) !important;
+  stroke: currentColor;
 }

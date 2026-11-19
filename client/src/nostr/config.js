@@ -33,7 +33,7 @@ function normalizeListInput(val) {
   return [];
 }
 
-function normalizePubkey(str) {
+export function normalizePubkey(str) {
   const raw = String(str || "").trim();
   if (!raw) return "";
   if (raw.startsWith("npub1")) {
